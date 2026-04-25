@@ -1,5 +1,5 @@
 """
-military_auth/models.py — AuditLog for sensitive user actions.
+military_auth/models.py — AuditLog + PendingRegistration for sensitive user actions.
 """
 from django.contrib.auth import get_user_model
 from django.db import models
@@ -28,3 +28,64 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.timestamp:%Y-%m-%d %H:%M}] {self.user} {self.method} {self.path} → {self.status_code}"
+
+
+# ---------------------------------------------------------------------------
+# PendingRegistration — การสมัครสมาชิกที่รอ Admin อนุมัติ
+# ---------------------------------------------------------------------------
+
+class PendingRegistration(models.Model):
+    """
+    เก็บข้อมูลคำขอสมัครสมาชิก (self-registration) ก่อน Admin อนุมัติ
+    ข้อมูลสำคัญ (national_id, military_id) เก็บ encrypted เหมือน MilitaryUserProfile
+    """
+
+    STATUS_CHOICES = [
+        ("pending",  "รอการอนุมัติ"),
+        ("approved", "อนุมัติแล้ว"),
+        ("rejected", "ปฏิเสธ"),
+    ]
+
+    # ข้อมูลส่วนตัว
+    full_name_th            = models.CharField(max_length=255, verbose_name="ชื่อ-นามสกุล")
+    rank                    = models.CharField(max_length=10,  verbose_name="ชั้นยศ")
+    unit                    = models.CharField(max_length=255, verbose_name="หน่วยต้นสังกัด")
+    birth_date              = models.DateField(verbose_name="วันเกิด")
+    email                   = models.EmailField(blank=True, default="", verbose_name="อีเมล")
+
+    # Encrypted — ใช้ encrypt_field() จาก military_profile.models
+    national_id_encrypted   = models.CharField(max_length=500, verbose_name="เลขบัตรประชาชน (encrypted)")
+    military_id_encrypted   = models.CharField(max_length=500, verbose_name="เลขประจำตัวทหาร (encrypted)")
+
+    # Workflow
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
+    submitted_at    = models.DateTimeField(auto_now_add=True)
+    reviewed_by     = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="reviewed_registrations",
+        verbose_name="ผู้อนุมัติ/ปฏิเสธ",
+    )
+    reviewed_at     = models.DateTimeField(null=True, blank=True)
+    reject_reason   = models.TextField(blank=True, default="", verbose_name="เหตุผลที่ปฏิเสธ")
+
+    # เก็บ user ที่สร้างหลัง approve
+    approved_user   = models.OneToOneField(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="registration_request",
+        verbose_name="User ที่สร้างหลัง approve",
+    )
+
+    class Meta:
+        verbose_name = "คำขอสมัครสมาชิก"
+        verbose_name_plural = "คำขอสมัครสมาชิก"
+        ordering = ["-submitted_at"]
+        indexes = [
+            models.Index(fields=["status", "submitted_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.full_name_th} [{self.get_status_display()}] — {self.submitted_at:%Y-%m-%d}"

@@ -101,6 +101,19 @@ class MilitaryUserProfile(models.Model):
     service_start_date = models.DateField(verbose_name="วันเริ่มรับราชการ")
     birth_date = models.DateField(verbose_name="วันเกิด")
 
+    # Role-based access control
+    ROLE_CHOICES = [
+        ("admin",      "ผู้ดูแลระบบ"),
+        ("instructor", "ครูอาจารย์"),
+        ("student",    "กำลังพล"),
+    ]
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default="student",
+        verbose_name="บทบาทในระบบ",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
