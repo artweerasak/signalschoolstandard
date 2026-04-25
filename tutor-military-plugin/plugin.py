@@ -87,6 +87,9 @@ for _tpl in TEMPLATES:
 # ── Custom ROOT_URLCONF (inject military URLs without image rebuild) ──
 ROOT_URLCONF = "military_custom_urls"
 
+# ── Disable authn MFE redirect (ใช้ standard LMS login แทน MFE) ──
+FEATURES['ENABLE_AUTHN_MICROFRONTEND'] = False
+
 # ── Thai Language & Timezone ──────────────────────────────────────
 LANGUAGE_CODE = "th"
 TIME_ZONE = "Asia/Bangkok"
