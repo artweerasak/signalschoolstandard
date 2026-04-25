@@ -1,0 +1,81 @@
+{% extends "admin/index.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  /* Full-width banner — overrides admin content padding at top */
+  #military-banner {
+    margin: -18px -18px 20px -18px;  /* pull out to edge of #content */
+    background: linear-gradient(135deg, #1a237e 0%, #283593 60%, #3949ab 100%);
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  #military-banner h2 {
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    margin: 0 0 6px 0;
+  }
+  #military-banner p {
+    color: #c5cae9;
+    margin: 0;
+    font-size: 13px;
+  }
+  .mil-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    background: rgba(255,255,255,0.12);
+    color: #fff !important;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: bold;
+    border: 1px solid rgba(255,255,255,0.25);
+    transition: background 0.2s;
+  }
+  .mil-btn:hover {
+    background: rgba(255,255,255,0.25);
+    text-decoration: none;
+    color: #fff !important;
+  }
+  .mil-btn-links {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  /* Fix Django admin header when our banner extends to edge */
+  #content { position: relative; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="military-banner">
+  <div style="display: flex; align-items: center; gap: 16px;">
+    {# Logo — copy signal_logo.png ไปไว้ที่ /openedx/staticfiles/signal_logo.png #}
+    <img src="/static/signal_logo.png"
+         alt="กรมการทหารสื่อสาร"
+         style="height: 60px; width: auto;"
+         onerror="this.style.display='none'">
+    <div>
+      <h2>🪖 กรมการทหารสื่อสาร — Signal Standard</h2>
+      <p>ระบบ eLearning กำลังพล &nbsp;|&nbsp; จัดการโดยเจ้าหน้าที่ Admin / HR</p>
+    </div>
+  </div>
+
+  <div class="mil-btn-links">
+    <a href="/military/dashboard/" class="mil-btn">📊 แดชบอร์ดภาพรวม</a>
+    <a href="/military/reports/"   class="mil-btn">📋 รายงานผู้ผ่านการทดสอบ</a>
+    <a href="/military/renewal/"   class="mil-btn">🎓 ใบประกาศ / ต่ออายุ</a>
+  </div>
+</div>
+
+{# แสดง App list ของ Django Admin ปกติด้านล่าง #}
+{{ block.super }}
+{% endblock %}

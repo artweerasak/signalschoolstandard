@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="UTF-8"><title>ใบประกาศหมดอายุ</title></head>
+<body style="font-family: sans-serif; color: #333; max-width: 600px; margin: auto;">
+  <div style="background:#c00;padding:20px;border-radius:8px 8px 0 0;">
+    <h2 style="color:#fff;margin:0;">🚨 ใบประกาศของคุณหมดอายุแล้ว</h2>
+  </div>
+  <div style="border:1px solid #ddd;padding:24px;border-radius:0 0 8px 8px;">
+    <p>เรียน <strong>{{ user.military_profile.full_name_th }}</strong></p>
+    <p>ใบประกาศสำหรับหลักสูตร <strong>{{ course_id }}</strong>
+       <span style="color:#c00;font-weight:bold;">หมดอายุแล้ว</span>
+    </p>
+    <p>กรุณาดำเนินการต่ออายุโดยเร็วที่สุดเพื่อให้ใบประกาศของท่านมีผลบังคับใช้ต่อไป</p>
+    <div style="text-align:center;margin:24px 0;">
+      <a href="{{ LMS_ROOT_URL }}/renewal/"
+         style="background:#c00;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;">
+        ต่ออายุใบประกาศทันที
+      </a>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="UTF-8"></head>
+<body style="font-family:sans-serif;color:#333;max-width:600px;margin:auto;">
+  <div style="background:#e67e00;padding:20px;border-radius:8px 8px 0 0;">
+    <h2 style="color:#fff;margin:0;">🔔 ใบประกาศจะหมดอายุเร็วๆ นี้</h2>
+  </div>
+  <div style="border:1px solid #ddd;padding:24px;border-radius:0 0 8px 8px;">
+    <p>เรียน <strong>{{ user.military_profile.full_name_th }}</strong></p>
+    <p>ใบประกาศสำหรับหลักสูตร <strong>{{ course_id }}</strong>
+       จะหมดอายุใน <span style="color:#e67e00;font-weight:bold;">{{ days_remaining }} วัน</span>
+    </p>
+    <div style="text-align:center;margin:20px 0;">
+      <a href="{{ LMS_ROOT_URL }}/renewal/"
+         style="background:#e67e00;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;">
+        ต่ออายุใบประกาศ
+      </a>
+    </div>
+  </div>
+</body>
+</html>

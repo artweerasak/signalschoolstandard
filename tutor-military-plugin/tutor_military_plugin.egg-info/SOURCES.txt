@@ -1,0 +1,8 @@
+plugin.py
+setup.py
+tutor_military_plugin.egg-info/PKG-INFO
+tutor_military_plugin.egg-info/SOURCES.txt
+tutor_military_plugin.egg-info/dependency_links.txt
+tutor_military_plugin.egg-info/entry_points.txt
+tutor_military_plugin.egg-info/requires.txt
+tutor_military_plugin.egg-info/top_level.txt

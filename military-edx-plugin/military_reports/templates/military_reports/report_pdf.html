@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>รายงานบุคลากร — {{ report_date|date:"d/m/Y" }}</title>
+  <style>
+    @page { size: A4 landscape; margin: 15mm; }
+    body { font-family: "Sarabun", "TH Sarabun New", sans-serif; font-size: 11pt; color: #222; }
+    h1 { color: #1F4E79; font-size: 16pt; margin-bottom: 4px; }
+    .subtitle { color: #555; font-size: 10pt; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+    thead tr { background: #1F4E79; color: #fff; }
+    th, td { border: 1px solid #bbb; padding: 5px 8px; }
+    tbody tr:nth-child(even) { background: #f5f8fc; }
+    .badge-active   { color: #155724; background: #d4edda; padding: 2px 6px; border-radius: 4px; }
+    .badge-expired  { color: #721c24; background: #f8d7da; padding: 2px 6px; border-radius: 4px; }
+    .badge-renewed  { color: #004085; background: #cce5ff; padding: 2px 6px; border-radius: 4px; }
+    .footer { margin-top: 16px; font-size: 9pt; color: #888; text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>รายงานบุคลากร</h1>
+  <p class="subtitle">ณ วันที่ {{ report_date|date:"d/m/Y" }} &nbsp;|&nbsp; จำนวน {{ results|length }} รายการ</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>ชื่อ-นามสกุล</th>
+        <th>ชั้นยศ</th>
+        <th>หน่วยต้นสังกัด</th>
+        <th>หน่วยรอง</th>
+        <th>อายุ (ปี)</th>
+        <th>อายุราชการ (ปี)</th>
+        <th>วันเริ่มรับราชการ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for profile in results %}
+      <tr>
+        <td style="text-align:center;">{{ forloop.counter }}</td>
+        <td>{{ profile.full_name_th }}</td>
+        <td style="text-align:center;">{{ profile.get_rank_display }}</td>
+        <td>{{ profile.unit }}</td>
+        <td>{{ profile.sub_unit|default:"—" }}</td>
+        <td style="text-align:center;">{{ profile.age }}</td>
+        <td style="text-align:center;">{{ profile.service_years }}</td>
+        <td style="text-align:center;">{{ profile.service_start_date|date:"d/m/Y" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" style="text-align:center;color:#888;">ไม่พบข้อมูล</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="footer">พิมพ์โดย: ระบบ eLearning &nbsp;|&nbsp; {{ report_date|date:"d/m/Y H:i" }}</p>
+</body>
+</html>

@@ -1,0 +1,5 @@
+แจ้งเตือน HR: ใบประกาศของ {{ user.military_profile.full_name_th }} จะหมดอายุใน {{ days_remaining }} วัน
+หลักสูตร: {{ course_id }}
+กรุณาติดตามและแจ้งให้บุคลากรดำเนินการต่ออายุ
+
+ระบบ eLearning

@@ -1,0 +1,9 @@
+Metadata-Version: 2.1
+Name: military-edx-plugin
+Version: 1.0.0
+Summary: Open edX plugin for military/government eLearning system
+Requires-Dist: Django>=3.2
+Requires-Dist: celery>=5.0
+Requires-Dist: openpyxl>=3.0
+Requires-Dist: WeasyPrint>=53.0
+Requires-Dist: cryptography>=3.4

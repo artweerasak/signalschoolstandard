@@ -1,0 +1,43 @@
+# docker-compose.override.yml
+# Local development override — mounts the plugin package directly into the
+# LMS and CMS containers so changes are reflected without rebuilding.
+#
+# Usage (must always pair with Tutor base compose file):
+#   docker compose \
+#     -f "$(tutor config printroot)/env/local/docker-compose.yml" \
+#     -f docker-compose.override.yml \
+#     up -d lms cms lms-worker cms-worker
+
+services:
+  lms:
+    image: overhangio/openedx:21.0.4-indigo
+    volumes:
+      - /Users/weerasakmatcha/Library/Application Support/tutor/env/build/openedx/themes/indigo:/openedx/themes/indigo:ro
+    environment:
+      - MILITARY_ENCRYPTION_KEY=${MILITARY_ENCRYPTION_KEY:-CHANGE_ME}
+    command: >
+      sh -c "pip install -e /mnt/military-edx-plugin &&
+             cp /mnt/military-edx-plugin/static/images/signal_logo.png /openedx/staticfiles/signal_logo.png &&
+             cp /mnt/military-edx-plugin/static/images/signal_logo.png /openedx/staticfiles/images/logo.b6c374d66d57.png &&
+             cp /mnt/military-edx-plugin/static/images/signal_logo.png /openedx/staticfiles/indigo/images/logo.084faf06c64b.png &&
+             exec uwsgi /openedx/uwsgi.ini"
+
+  cms:
+    image: overhangio/openedx:21.0.4-indigo
+    ports:
+      - "8001:8000"
+    environment:
+      - MILITARY_ENCRYPTION_KEY=${MILITARY_ENCRYPTION_KEY:-CHANGE_ME}
+    command: >
+      sh -c "pip install -e /mnt/military-edx-plugin &&
+             exec uwsgi /openedx/uwsgi.ini"
+
+  lms-worker:
+    image: overhangio/openedx:21.0.4-indigo
+    environment:
+      - MILITARY_ENCRYPTION_KEY=${MILITARY_ENCRYPTION_KEY:-CHANGE_ME}
+
+  cms-worker:
+    image: overhangio/openedx:21.0.4-indigo
+    environment:
+      - MILITARY_ENCRYPTION_KEY=${MILITARY_ENCRYPTION_KEY:-CHANGE_ME}

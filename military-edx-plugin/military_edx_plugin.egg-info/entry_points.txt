@@ -1,0 +1,11 @@
+[cms.djangoapp]
+certificate_expiry = certificate_expiry.apps:CertificateExpiryConfig
+military_profile = military_profile.apps:MilitaryProfileConfig
+
+[lms.djangoapp]
+certificate_expiry = certificate_expiry.apps:CertificateExpiryConfig
+certificate_renewal = certificate_renewal.apps:CertificateRenewalConfig
+expiry_notifications = expiry_notifications.apps:ExpiryNotificationsConfig
+military_auth = military_auth.apps:MilitaryAuthConfig
+military_profile = military_profile.apps:MilitaryProfileConfig
+military_reports = military_reports.apps:MilitaryReportsConfig

@@ -1,0 +1,6 @@
+เรียน {{ user.military_profile.full_name_th }}
+
+ใบประกาศสำหรับหลักสูตร {{ course_id }} จะหมดอายุในอีก {{ days_remaining }} วัน
+กรุณาต่ออายุโดยเร็ว: {{ LMS_ROOT_URL }}/renewal/
+
+ระบบ eLearning

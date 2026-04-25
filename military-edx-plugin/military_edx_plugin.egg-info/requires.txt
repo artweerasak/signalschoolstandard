@@ -1,0 +1,5 @@
+Django>=3.2
+celery>=5.0
+openpyxl>=3.0
+WeasyPrint>=53.0
+cryptography>=3.4

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}สถานะใบประกาศของฉัน{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+  <h2 class="mb-4">📜 สถานะใบประกาศของฉัน</h2>
+
+  {% if messages %}
+    {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- ใบประกาศที่หมดอายุ -->
+  {% if expired_certs %}
+  <div class="card border-danger mb-4">
+    <div class="card-header bg-danger text-white">
+      <strong>⚠️ ใบประกาศที่หมดอายุแล้ว ({{ expired_certs.count }} รายการ)</strong>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>หลักสูตร</th>
+            <th>วันที่ออก</th>
+            <th>วันหมดอายุ</th>
+            <th>ต่ออายุครั้งที่</th>
+            <th>ดำเนินการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cert in expired_certs %}
+          <tr>
+            <td>{{ cert.course_id }}</td>
+            <td>{{ cert.issued_date|date:"d/m/Y" }}</td>
+            <td class="text-danger fw-bold">{{ cert.expiry_date|date:"d/m/Y" }}</td>
+            <td>{{ cert.renewal_count }}</td>
+            <td>
+              <a href="{% url 'certificate_renewal:exam' cert.course_id %}"
+                 class="btn btn-warning btn-sm">
+                🎓 ทำแบบทดสอบต่ออายุ
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ใบประกาศที่ใกล้หมดอายุ -->
+  {% if near_expiry_certs %}
+  <div class="card border-warning mb-4">
+    <div class="card-header bg-warning">
+      <strong>🕐 ใบประกาศที่จะหมดอายุใน 30 วัน ({{ near_expiry_certs.count }} รายการ)</strong>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>หลักสูตร</th>
+            <th>วันที่ออก</th>
+            <th>วันหมดอายุ</th>
+            <th>เหลือ (วัน)</th>
+            <th>ดำเนินการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cert in near_expiry_certs %}
+          <tr>
+            <td>{{ cert.course_id }}</td>
+            <td>{{ cert.issued_date|date:"d/m/Y" }}</td>
+            <td class="text-warning fw-bold">{{ cert.expiry_date|date:"d/m/Y" }}</td>
+            <td>{{ cert.days_until_expiry }}</td>
+            <td>
+              <a href="{% url 'certificate_renewal:exam' cert.course_id %}"
+                 class="btn btn-outline-warning btn-sm">
+                ต่ออายุล่วงหน้า
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not expired_certs and not near_expiry_certs %}
+  <div class="alert alert-success">
+    ✅ ใบประกาศทั้งหมดของคุณยังอยู่ในสถานะปกติ
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

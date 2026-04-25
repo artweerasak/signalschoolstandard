@@ -1,0 +1,45 @@
+# docker/Dockerfile.test
+# Standalone test image for military-edx-plugin
+# Does NOT require full Open edX — tests the plugin apps with Django + PostgreSQL + Redis
+
+FROM python:3.11-slim
+
+# System dependencies needed by WeasyPrint (Pango, Cairo)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-xlib-2.0-0 \
+    libffi-dev \
+    libssl-dev \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps
+COPY requirements/military.txt /tmp/military.txt
+RUN pip install --no-cache-dir \
+    Django==4.2 \
+    psycopg2-binary \
+    redis \
+    celery \
+    django-redis \
+    pytest \
+    pytest-django \
+    pytest-cov \
+    python-dateutil \
+    -r /tmp/military.txt
+
+# Copy plugin source (includes settings_docker.py and test_urls.py)
+COPY military-edx-plugin/ /app/
+
+# Install plugin in editable mode
+RUN pip install --no-cache-dir -e /app/
+
+# Copy entrypoint
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

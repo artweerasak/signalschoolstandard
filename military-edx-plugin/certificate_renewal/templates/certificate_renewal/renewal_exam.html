@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}แบบทดสอบต่ออายุใบประกาศ — {{ course_id }}{% endblock %}
+
+{% block content %}
+<div class="container my-4" style="max-width: 800px;">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'certificate_renewal:status' %}">ใบประกาศของฉัน</a></li>
+      <li class="breadcrumb-item active">แบบทดสอบต่ออายุ</li>
+    </ol>
+  </nav>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white">
+      <h4 class="mb-0">🎓 แบบทดสอบต่ออายุใบประกาศ</h4>
+    </div>
+    <div class="card-body">
+      <dl class="row">
+        <dt class="col-sm-4">หลักสูตร</dt>
+        <dd class="col-sm-8">{{ course_id }}</dd>
+
+        <dt class="col-sm-4">ใบประกาศหมดอายุ</dt>
+        <dd class="col-sm-8 text-danger fw-bold">{{ cert_expiry.expiry_date|date:"d/m/Y" }}</dd>
+
+        <dt class="col-sm-4">คะแนนผ่าน</dt>
+        <dd class="col-sm-8">{{ config.renewal_passing_score }}%</dd>
+
+        <dt class="col-sm-4">หากผ่าน จะได้ใบประกาศใหม่อีก</dt>
+        <dd class="col-sm-8">{{ config.validity_years }} ปี</dd>
+      </dl>
+
+      <hr>
+
+      <div class="alert alert-info">
+        <strong>📋 คำแนะนำ:</strong> ทำแบบทดสอบด้านล่างให้ผ่านเกณฑ์ {{ config.renewal_passing_score }}%
+        เพื่อต่ออายุใบประกาศโดยไม่ต้องเรียนซ้ำทั้งหลักสูตร
+      </div>
+
+      <!-- XBlock Exam Embed -->
+      {% if config.renewal_exam_block_id %}
+      <div id="renewal-exam-container" class="border rounded p-3 bg-light">
+        <iframe
+          src="/xblock/{{ config.renewal_exam_block_id }}?student_id={{ request.user.id }}"
+          width="100%"
+          height="600"
+          frameborder="0"
+          id="renewal-exam-frame"
+          onload="attachExamListener()">
+        </iframe>
+      </div>
+
+      <!-- Hidden form submitted by JS after exam grading -->
+      <form id="renewal-submit-form"
+            method="POST"
+            action="{% url 'certificate_renewal:submit' course_id %}">
+        {% csrf_token %}
+        <input type="hidden" name="score" id="exam-score-input" value="0">
+      </form>
+
+      <script>
+        function attachExamListener() {
+          window.addEventListener("message", function(event) {
+            // edX XBlock sends grade result via postMessage
+            if (event.data && event.data.type === "xblock.grade") {
+              var score = parseFloat(event.data.score) || 0;
+              document.getElementById("exam-score-input").value = score;
+              document.getElementById("renewal-submit-form").submit();
+            }
+          });
+        }
+      </script>
+      {% else %}
+      <div class="alert alert-warning">
+        ⚠️ ยังไม่ได้กำหนดแบบทดสอบต่ออายุสำหรับหลักสูตรนี้ กรุณาติดต่อผู้ดูแลระบบ
+      </div>
+      {% endif %}
+
+    </div>
+    <div class="card-footer text-muted">
+      <a href="{% url 'certificate_renewal:status' %}" class="btn btn-outline-secondary btn-sm">
+        ← กลับ
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

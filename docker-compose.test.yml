@@ -1,0 +1,97 @@
+# docker-compose.test.yml
+# Standalone Docker environment for military-edx-plugin.
+# Does NOT require Tutor or full Open edX.
+#
+# ── Commands ──────────────────────────────────────────────────────────────────
+#   รัน server (http://localhost:8080):
+#     docker compose -f docker-compose.test.yml up app
+#     docker compose -f docker-compose.test.yml up app --build   (rebuild)
+#
+#   รัน tests แล้วออก:
+#     docker compose -f docker-compose.test.yml run --rm test
+#
+#   เปิด shell:
+#     docker compose -f docker-compose.test.yml run --rm test bash
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: military_test
+      POSTGRES_USER: military
+      POSTGRES_PASSWORD: military
+    ports:
+      - "5433:5432"
+    volumes:
+      - military_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U military -d military_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # รัน Django dev server — http://localhost:8080
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      MODE: server
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: military_test
+      DB_USER: military
+      DB_PASSWORD: military
+      REDIS_HOST: redis
+      DJANGO_SETTINGS_MODULE: settings_docker
+      MILITARY_ENCRYPTION_KEY: Sh6B8wZUw9zPMVl8t9IcCb8le81vu+ipydBjmDpnLc0=
+      MILITARY_HR_EMAILS: hr@test.mil.th
+    volumes:
+      - ./military-edx-plugin:/app:delegated
+
+  # รัน pytest แล้วออก (ไม่ start server, ไม่เปิด port)
+  test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MODE: test
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: military_test
+      DB_USER: military
+      DB_PASSWORD: military
+      REDIS_HOST: redis
+      DJANGO_SETTINGS_MODULE: settings_docker
+      MILITARY_ENCRYPTION_KEY: Sh6B8wZUw9zPMVl8t9IcCb8le81vu+ipydBjmDpnLc0=
+      MILITARY_HR_EMAILS: hr@test.mil.th
+    volumes:
+      - ./military-edx-plugin:/app:delegated
+    profiles:
+      - test   # ไม่รันอัตโนมัติเมื่อ `up` ไม่ระบุ profile
+
+volumes:
+  military_pgdata:

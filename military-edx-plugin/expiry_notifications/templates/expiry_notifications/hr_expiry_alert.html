@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="UTF-8"></head>
+<body style="font-family:sans-serif;max-width:600px;margin:auto;">
+  <div style="background:#1F4E79;padding:16px;border-radius:8px 8px 0 0;">
+    <h3 style="color:#fff;margin:0;">[HR] แจ้งเตือนใบประกาศใกล้หมดอายุ</h3>
+  </div>
+  <div style="border:1px solid #ddd;padding:20px;border-radius:0 0 8px 8px;">
+    <p>บุคลากร <strong>{{ user.military_profile.full_name_th }}</strong>
+       ({{ user.military_profile.get_rank_display }} — {{ user.military_profile.unit }})</p>
+    <p>ใบประกาศสำหรับหลักสูตร <strong>{{ course_id }}</strong>
+       จะหมดอายุใน <strong style="color:#c00;">{{ days_remaining }} วัน</strong></p>
+    <p>กรุณาติดตามให้บุคลากรดำเนินการต่ออายุ</p>
+  </div>
+</body>
+</html>
