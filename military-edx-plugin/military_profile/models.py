@@ -3,8 +3,11 @@ military_profile/models.py
 
 Extended user profile for military personnel.
 Sensitive fields (national_id, military_id) are stored AES-256 encrypted.
+national_id_hmac is used for DB lookups (HMAC-SHA256, deterministic).
 """
 import base64
+import hashlib
+import hmac as _hmac
 import os
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -46,6 +49,15 @@ def decrypt_field(ciphertext_b64: str) -> str:
     nonce, ct = raw[:12], raw[12:]
     aesgcm = AESGCM(key)
     return aesgcm.decrypt(nonce, ct, None).decode()
+
+
+def hmac_field(plaintext: str) -> str:
+    """Return a deterministic HMAC-SHA256 hex digest for DB lookups.
+    AES-GCM uses random nonce so the encrypted field cannot be used for
+    equality lookups — this HMAC provides a safe, indexed lookup token.
+    """
+    key = _get_key()
+    return _hmac.new(key, plaintext.encode(), hashlib.sha256).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +102,12 @@ class MilitaryUserProfile(models.Model):
     )
 
     # Encrypted sensitive fields — CharField for MySQL index compatibility
-    national_id_encrypted = models.CharField(max_length=500, unique=True, db_index=True)
+    national_id_encrypted = models.CharField(max_length=500)
     military_id_encrypted = models.CharField(max_length=500)
+
+    # HMAC-SHA256 digest of national_id — used for deterministic DB lookups.
+    # The encrypted field uses random nonce and cannot be used for equality queries.
+    national_id_hmac = models.CharField(max_length=64, unique=True, db_index=True, null=True, blank=True)
 
     # Custom password hash — ถ้า None ให้ใช้ military_id เป็น default password
     custom_password_hash = models.CharField(
@@ -148,6 +164,20 @@ class MilitaryUserProfile(models.Model):
     @staticmethod
     def decrypt(value: str) -> str:
         return decrypt_field(value)
+
+    @staticmethod
+    def hmac_value(value: str) -> str:
+        """Return HMAC-SHA256 digest for DB lookups (deterministic)."""
+        return hmac_field(value)
+
+    def save(self, *args, **kwargs):
+        """Auto-compute national_id_hmac before saving."""
+        if self.national_id_encrypted and not self.national_id_hmac:
+            try:
+                self.national_id_hmac = hmac_field(self.national_id)
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # Convenience properties (decrypt on access)

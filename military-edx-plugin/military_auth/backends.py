@@ -43,7 +43,7 @@ class MilitaryAuthBackend(ModelBackend):
             from military_profile.models import MilitaryUserProfile
 
             profile = MilitaryUserProfile.objects.select_related("user").get(
-                national_id_encrypted=MilitaryUserProfile.encrypt(national_id)
+                national_id_hmac=MilitaryUserProfile.hmac_value(national_id)
             )
             user = profile.user
 
