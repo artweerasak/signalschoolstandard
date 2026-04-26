@@ -99,22 +99,15 @@ USE_TZ = True
 ALL_LANGUAGES = ALL_LANGUAGES  # keep existing list
 LANGUAGE_DICT = dict(ALL_LANGUAGES)
 
-# ── CSRF / CORS for ngrok & custom domains ────────────────────────
+# ── CSRF / CORS — HTTPS เท่านั้น สำหรับ production ────────────────
+# ลบ: HTTP origins (ไม่ปลอดภัย), ngrok URL (ใช้เฉพาะ dev เท่านั้น)
 CSRF_TRUSTED_ORIGINS = [
     "https://signalstandard.rta.mi.th",
-    "http://signalstandard.rta.mi.th",
     "https://www.signalstandard.rta.mi.th",
-    "http://www.signalstandard.rta.mi.th",
-    "https://dill-sixth-scouting.ngrok-free.dev",
-    "http://dill-sixth-scouting.ngrok-free.dev",
 ]
 CORS_ORIGIN_WHITELIST = [
     "https://signalstandard.rta.mi.th",
-    "http://signalstandard.rta.mi.th",
     "https://www.signalstandard.rta.mi.th",
-    "http://www.signalstandard.rta.mi.th",
-    "https://dill-sixth-scouting.ngrok-free.dev",
-    "http://dill-sixth-scouting.ngrok-free.dev",
 ]
 CORS_ALLOW_CREDENTIALS = True
 

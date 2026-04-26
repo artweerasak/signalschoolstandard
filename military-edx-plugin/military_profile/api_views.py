@@ -32,7 +32,10 @@ def _require_admin(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        if not request.user.is_staff:
+        # ต้องเป็น staff หรือมี role=admin ใน military profile — ป้องกัน non-military staff เข้าถึง API
+        profile = getattr(request.user, "military_profile", None)
+        is_military_admin = profile and profile.role == "admin"
+        if not (request.user.is_staff or is_military_admin):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return view_func(request, *args, **kwargs)
     return wrapper
@@ -320,8 +323,18 @@ def api_register(request):
         if not body.get(field):
             return JsonResponse({"error": f"กรุณากรอก {field}"}, status=400)
 
+    # Validate national_id — 13 หลักตัวเลขเท่านั้น
+    national_id = body.get("national_id", "").strip()
+    if not national_id.isdigit() or len(national_id) != 13:
+        return JsonResponse({"error": "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก"}, status=400)
+
+    # Validate military_id — 10 ตัวอักษร (อักษรนำหน้า + ตัวเลข)
+    military_id = body.get("military_id", "").strip()
+    if len(military_id) < 6 or len(military_id) > 15:
+        return JsonResponse({"error": "เลขประจำตัวทหารต้องมี 6-15 ตัวอักษร"}, status=400)
+
     # ป้องกัน duplicate — ถ้ามี national_id เดิมและยัง pending/approved
-    enc_national_id = encrypt_field(body["national_id"])
+    enc_national_id = encrypt_field(national_id)
     dup = PendingRegistration.objects.filter(
         national_id_encrypted=enc_national_id,
         status__in=("pending", "approved"),
@@ -339,7 +352,7 @@ def api_register(request):
         birth_date=body["birth_date"],
         email=body.get("email", ""),
         national_id_encrypted=enc_national_id,
-        military_id_encrypted=encrypt_field(body["military_id"]),
+        military_id_encrypted=encrypt_field(military_id),
     )
 
     return JsonResponse({
@@ -594,6 +607,13 @@ def api_change_password(request):
     if len(new_password) < 8:
         return JsonResponse({"error": "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร"}, status=400)
 
+    # Password complexity — ต้องมีตัวเลขหรืออักขระพิเศษอย่างน้อย 1 ตัว และมีตัวอักษรอย่างน้อย 1 ตัว
+    import re
+    if not re.search(r'[A-Za-z]', new_password):
+        return JsonResponse({"error": "รหัสผ่านต้องมีตัวอักษรภาษาอังกฤษอย่างน้อย 1 ตัว"}, status=400)
+    if not re.search(r'[0-9!@#$%^&*()_+\-=\[\]{};\'"\\|,.<>\/?]', new_password):
+        return JsonResponse({"error": "รหัสผ่านต้องมีตัวเลขหรืออักขระพิเศษอย่างน้อย 1 ตัว"}, status=400)
+
     profile = getattr(request.user, "military_profile", None)
     if not profile:
         return JsonResponse({"error": "ไม่พบข้อมูลผู้ใช้"}, status=404)
@@ -617,12 +637,23 @@ def api_admin_reset_password(request, user_id: int):
     """
     POST /military/api/v1/admin/users/<user_id>/reset-password/
     Admin รีเซ็ตรหัสผ่านผู้ใช้กลับเป็น default (เลขทหาร = military_id)
+    ป้องกัน: admin ไม่สามารถรีเซ็ตรหัสผ่านของ admin/superuser คนอื่นได้
     """
     try:
         target_user = User.objects.get(pk=user_id)
         profile = target_user.military_profile
     except (User.DoesNotExist, MilitaryUserProfile.DoesNotExist):
         return JsonResponse({"error": "ไม่พบผู้ใช้"}, status=404)
+
+    # ป้องกัน privilege escalation — admin ทั่วไปรีเซ็ตรหัส admin/superuser คนอื่นไม่ได้
+    if target_user.is_superuser:
+        return JsonResponse({"error": "ไม่สามารถรีเซ็ตรหัสผ่านของ superuser ได้"}, status=403)
+
+    if target_user.is_staff and not request.user.is_superuser:
+        return JsonResponse({"error": "ต้องการสิทธิ์ superuser ในการรีเซ็ตรหัสผ่านของ admin"}, status=403)
+
+    if profile.role == "admin" and not request.user.is_superuser:
+        return JsonResponse({"error": "ต้องการสิทธิ์ superuser ในการรีเซ็ตรหัสผ่านของ admin"}, status=403)
 
     profile.reset_to_default_password()
     return JsonResponse({
