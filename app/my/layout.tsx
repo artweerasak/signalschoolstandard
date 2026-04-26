@@ -59,22 +59,33 @@ function StudentSidebar({ user }: { user: CurrentUser | null }) {
 
 export default function MyLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api.me()
       .then((u) => {
-        // Admin → ส่งไป dashboard, instructor → ส่งไป instructor portal
-        if (u.is_staff || u.role === "admin") { router.replace("/dashboard"); return }
-        if (u.role === "instructor") { router.replace("/instructor"); return }
+        // Admin และ instructor เป็นกำลังพลที่ต้องถูกตรวจสอบใบประกาศเช่นเดียวกับ student
+        // จึงอนุญาตให้เข้าถึง /my/certificates และ /my/profile ได้ แต่ redirect จากหน้าอื่นๆ ใน /my/
+        const personalPages = ["/my/certificates", "/my/profile"]
+        const isPersonalPage = personalPages.some((p) => pathname.startsWith(p))
+
+        if ((u.is_staff || u.role === "admin") && !isPersonalPage) {
+          router.replace("/dashboard")
+          return
+        }
+        if (u.role === "instructor" && !isPersonalPage) {
+          router.replace("/instructor")
+          return
+        }
         setUser(u)
       })
       .catch((err) => {
         if (err.message === "UNAUTHORIZED") router.replace("/login")
       })
       .finally(() => setLoading(false))
-  }, [router])
+  }, [router, pathname])
 
   if (loading) {
     return (
