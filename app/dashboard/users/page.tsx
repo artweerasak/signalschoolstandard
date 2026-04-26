@@ -26,14 +26,14 @@ const ROLE_COLORS: Record<string, string> = {
 type FormData = {
   full_name_th: string; rank: string; unit: string; sub_unit: string;
   birth_date: string; service_start_date: string;
-  email: string; username: string; password: string; role: string;
+  username: string; password: string; role: string;
   national_id: string; military_id: string;
 }
 
 const emptyForm: FormData = {
   full_name_th: "", rank: "", unit: "", sub_unit: "",
   birth_date: "", service_start_date: "",
-  email: "", username: "", password: "", role: "student",
+  username: "", password: "", role: "student",
   national_id: "", military_id: "",
 }
 
@@ -76,7 +76,7 @@ export default function UsersPage() {
     setForm({
       full_name_th: u.full_name, rank: u.rank, unit: u.unit, sub_unit: u.sub_unit,
       birth_date: u.birth_date, service_start_date: u.service_start_date,
-      email: u.email, username: u.username, password: "", role: u.role,
+      username: u.username, password: "", role: u.role,
       national_id: "", military_id: "",
     })
     setError("")
@@ -300,9 +300,8 @@ export default function UsersPage() {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                     </Field>
                   </div>
-                  <Field label="อีเมล">
-                    <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  <Field label="อีเมล (ไม่บังคับ — ใช้เลขบัตรประชาชนเข้าสู่ระบบ)">
+                    <p className="text-xs text-gray-400 py-2">อีเมลถูกตั้งเป็นเลขบัตรประชาชนโดยอัตโนมัติ</p>
                   </Field>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="เลขบัตรประชาชน" required>
