@@ -93,6 +93,15 @@ class MilitaryUserProfile(models.Model):
     national_id_encrypted = models.CharField(max_length=500, unique=True, db_index=True)
     military_id_encrypted = models.CharField(max_length=500)
 
+    # Custom password hash — ถ้า None ให้ใช้ military_id เป็น default password
+    custom_password_hash = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="รหัสผ่านที่กำหนดเอง (hashed)",
+    )
+
     # Plain profile fields
     full_name_th = models.CharField(max_length=255, verbose_name="ชื่อ-นามสกุล (ภาษาไทย)")
     rank = models.CharField(max_length=10, choices=RANK_CHOICES, verbose_name="ชั้นยศ")
@@ -172,3 +181,21 @@ class MilitaryUserProfile(models.Model):
         from datetime import date
         delta = date.today() - self.birth_date
         return delta.days // 365
+
+    def set_custom_password(self, raw_password: str) -> None:
+        """Hash and store a custom password."""
+        from django.contrib.auth.hashers import make_password
+        self.custom_password_hash = make_password(raw_password)
+        self.save(update_fields=["custom_password_hash"])
+
+    def check_custom_password(self, raw_password: str) -> bool:
+        """Verify against stored custom password hash."""
+        from django.contrib.auth.hashers import check_password
+        if not self.custom_password_hash:
+            return False
+        return check_password(raw_password, self.custom_password_hash)
+
+    def reset_to_default_password(self) -> None:
+        """Reset custom password — user will auth with military_id again."""
+        self.custom_password_hash = None
+        self.save(update_fields=["custom_password_hash"])

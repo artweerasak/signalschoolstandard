@@ -563,3 +563,69 @@ def api_instructor_course_grades(request, course_id: str):
     except Exception as exc:
         return JsonResponse({"error": str(exc), "results": [], "count": 0}, status=200)
 
+
+
+# ── Password Management ────────────────────────────────────────────────────
+
+@csrf_exempt
+@_require_login
+@require_POST
+def api_change_password(request):
+    """
+    POST /military/api/v1/change-password/
+    เปลี่ยนรหัสผ่านของตัวเอง — ต้องผ่าน login แล้ว
+    Body: { "current_password": "...", "new_password": "...", "confirm_password": "..." }
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    current_password = body.get("current_password", "").strip()
+    new_password = body.get("new_password", "").strip()
+    confirm_password = body.get("confirm_password", "").strip()
+
+    if not current_password or not new_password or not confirm_password:
+        return JsonResponse({"error": "กรุณากรอกข้อมูลให้ครบถ้วน"}, status=400)
+
+    if new_password != confirm_password:
+        return JsonResponse({"error": "รหัสผ่านใหม่ไม่ตรงกัน"}, status=400)
+
+    if len(new_password) < 8:
+        return JsonResponse({"error": "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร"}, status=400)
+
+    profile = getattr(request.user, "military_profile", None)
+    if not profile:
+        return JsonResponse({"error": "ไม่พบข้อมูลผู้ใช้"}, status=404)
+
+    # Verify current password
+    if profile.custom_password_hash:
+        if not profile.check_custom_password(current_password):
+            return JsonResponse({"error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"}, status=400)
+    else:
+        if not profile.check_military_id(current_password):
+            return JsonResponse({"error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"}, status=400)
+
+    profile.set_custom_password(new_password)
+    return JsonResponse({"success": True, "message": "เปลี่ยนรหัสผ่านสำเร็จ"})
+
+
+@csrf_exempt
+@_require_admin
+@require_POST
+def api_admin_reset_password(request, user_id: int):
+    """
+    POST /military/api/v1/admin/users/<user_id>/reset-password/
+    Admin รีเซ็ตรหัสผ่านผู้ใช้กลับเป็น default (เลขทหาร = military_id)
+    """
+    try:
+        target_user = User.objects.get(pk=user_id)
+        profile = target_user.military_profile
+    except (User.DoesNotExist, MilitaryUserProfile.DoesNotExist):
+        return JsonResponse({"error": "ไม่พบผู้ใช้"}, status=404)
+
+    profile.reset_to_default_password()
+    return JsonResponse({
+        "success": True,
+        "message": f"รีเซ็ตรหัสผ่านของ {profile.full_name_th} เป็นค่า default (เลขทหาร) สำเร็จ",
+    })

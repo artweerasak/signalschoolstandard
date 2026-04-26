@@ -35,9 +35,8 @@ class MilitaryAuthBackend(ModelBackend):
             log.debug("MilitaryAuthBackend: invalid national_id format, skipping.")
             return None
 
-        if not validate_military_id(military_id):
-            log.debug("MilitaryAuthBackend: invalid military_id format, skipping.")
-            return None
+        # Note: we no longer pre-validate military_id format here because
+        # users may have set a custom password that isn't 10 digits.
 
         try:
             # MilitaryUserProfile stores national_id mapped to a User.
@@ -48,13 +47,26 @@ class MilitaryAuthBackend(ModelBackend):
             )
             user = profile.user
 
-            # Verify military_id against stored value.
-            if not profile.check_military_id(military_id):
-                log.warning(
-                    "MilitaryAuthBackend: wrong military_id for national_id=%s",
-                    national_id[:4] + "XXXXXXXXX",  # partial log only
-                )
-                return None
+            # Verify password: custom hash takes priority, falls back to military_id.
+            if profile.custom_password_hash:
+                # User has set a custom password — verify against bcrypt hash.
+                if not profile.check_custom_password(military_id):
+                    log.warning(
+                        "MilitaryAuthBackend: wrong custom password for national_id=%s",
+                        national_id[:4] + "XXXXXXXXX",
+                    )
+                    return None
+            else:
+                # Default: password must be the 10-digit military ID.
+                if not validate_military_id(military_id):
+                    log.debug("MilitaryAuthBackend: password not military_id format, skipping.")
+                    return None
+                if not profile.check_military_id(military_id):
+                    log.warning(
+                        "MilitaryAuthBackend: wrong military_id for national_id=%s",
+                        national_id[:4] + "XXXXXXXXX",
+                    )
+                    return None
 
             if not self.user_can_authenticate(user):
                 return None

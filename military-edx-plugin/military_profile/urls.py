@@ -12,12 +12,15 @@ from .api_views import (
     api_admin_deactivate_user,
     api_admin_registrations,
     api_admin_registration_action,
+    api_admin_reset_password,
     # Public
     api_register,
     # Instructor
     api_instructor_courses,
     api_instructor_course_students,
     api_instructor_course_grades,
+    # Password
+    api_change_password,
 )
 
 app_name = "military_profile"
@@ -39,6 +42,12 @@ urlpatterns = [
     # Admin — Registrations
     path("api/v1/admin/registrations/",                    api_admin_registrations,       name="api_admin_registrations"),
     path("api/v1/admin/registrations/<int:registration_id>/", api_admin_registration_action, name="api_admin_registration_action"),
+
+    # Admin — Password Reset
+    path("api/v1/admin/users/<int:user_id>/reset-password/", api_admin_reset_password, name="api_admin_reset_password"),
+
+    # Password Change (self)
+    path("api/v1/change-password/", api_change_password, name="api_change_password"),
 
     # Instructor
     path("api/v1/instructor/courses/",                              api_instructor_courses,         name="api_instructor_courses"),
