@@ -13,7 +13,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .models import MilitaryUserProfile, RANK_CHOICES, encrypt_field
+from .models import MilitaryUserProfile, RANK_CHOICES, encrypt_field, decrypt_field
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 from military_auth.models import PendingRegistration
 
@@ -208,20 +208,22 @@ def api_admin_create_user(request):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     required = ["national_id", "military_id", "full_name_th", "rank", "unit",
-                "service_start_date", "birth_date", "email", "username"]
+                "service_start_date", "birth_date", "username"]
     for field in required:
         if not body.get(field):
             return JsonResponse({"error": f"Missing field: {field}"}, status=400)
 
     if User.objects.filter(username=body["username"]).exists():
         return JsonResponse({"error": "Username already exists"}, status=409)
-    if User.objects.filter(email=body["email"]).exists():
-        return JsonResponse({"error": "Email already exists"}, status=409)
+    # Use national_id as email so OpenEdX login_ajax can look up the user.
+    national_id = body["national_id"]
+    if User.objects.filter(email=national_id).exists():
+        return JsonResponse({"error": "National ID already registered"}, status=409)
 
     try:
         user = User.objects.create_user(
             username=body["username"],
-            email=body["email"],
+            email=national_id,
             password=body.get("password") or User.objects.make_random_password(),
             first_name=body["full_name_th"],
         )
@@ -449,9 +451,10 @@ def api_admin_registration_action(request, registration_id: int):
         return JsonResponse({"error": f"Username '{username}' already exists"}, status=409)
 
     try:
+        national_id = decrypt_field(reg.national_id_encrypted)
         user = User.objects.create_user(
             username=username,
-            email=reg.email,
+            email=national_id,   # national_id as email so edX login can look up the user
             password=password,
             first_name=reg.full_name_th,
         )
