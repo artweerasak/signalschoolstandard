@@ -24,11 +24,24 @@ class MilitaryAuthBackend(ModelBackend):
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
-        # Only handle inputs that look like National ID + Military ID.
-        if not username or not password:
+        # OpenEdX login_ajax calls authenticate(username=user.username, password=...)
+        # after looking up the user by email/username.  When no Django User is found
+        # (national_id is not stored as email/username), it passes username="" — so we
+        # fall back to reading the raw POST field that the frontend submitted.
+        if request and hasattr(request, "POST"):
+            raw = (
+                request.POST.get("email")
+                or request.POST.get("email_or_username")
+                or username
+                or ""
+            )
+        else:
+            raw = username or ""
+
+        if not raw or not password:
             return None
 
-        national_id = username.strip()
+        national_id = raw.strip()
         military_id = password.strip()
 
         if not validate_national_id(national_id):
