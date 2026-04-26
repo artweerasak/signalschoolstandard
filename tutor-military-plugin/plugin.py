@@ -101,17 +101,22 @@ LANGUAGE_DICT = dict(ALL_LANGUAGES)
 
 # ── CSRF / CORS for ngrok & custom domains ────────────────────────
 CSRF_TRUSTED_ORIGINS = [
-    "https://dill-sixth-scouting.ngrok-free.dev",
-    "http://dill-sixth-scouting.ngrok-free.dev",
+    "https://signalstandard.rta.mi.th",
+    "http://signalstandard.rta.mi.th",
     "https://www.signalstandard.rta.mi.th",
     "http://www.signalstandard.rta.mi.th",
+    "https://dill-sixth-scouting.ngrok-free.dev",
+    "http://dill-sixth-scouting.ngrok-free.dev",
 ]
 CORS_ORIGIN_WHITELIST = [
-    "https://dill-sixth-scouting.ngrok-free.dev",
-    "http://dill-sixth-scouting.ngrok-free.dev",
+    "https://signalstandard.rta.mi.th",
+    "http://signalstandard.rta.mi.th",
     "https://www.signalstandard.rta.mi.th",
     "http://www.signalstandard.rta.mi.th",
+    "https://dill-sixth-scouting.ngrok-free.dev",
+    "http://dill-sixth-scouting.ngrok-free.dev",
 ]
+CORS_ALLOW_CREDENTIALS = True
 
 from celery.schedules import crontab
 CELERYBEAT_SCHEDULE.update({
