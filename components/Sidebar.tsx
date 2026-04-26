@@ -16,6 +16,7 @@ const adminNavItems = [
 
 // เมนูใบประกาศ/โปรไฟล์ส่วนตัวสำหรับ admin และ instructor (กำลังพลที่ต้องถูกตรวจสอบด้วย)
 const adminPersonalItems = [
+  { href: "/my/courses", label: "สมัครเรียนหลักสูตร", icon: "📚" },
   { href: "/my/certificates", label: "ใบประกาศของฉัน", icon: "📜" },
   { href: "/my/profile", label: "ข้อมูลส่วนตัว", icon: "👤" },
 ]
@@ -25,6 +26,7 @@ const instructorNavItems = [
 ]
 
 const instructorPersonalItems = [
+  { href: "/my/courses", label: "สมัครเรียนหลักสูตร", icon: "📚" },
   { href: "/my/certificates", label: "ใบประกาศของฉัน", icon: "📜" },
   { href: "/my/profile", label: "ข้อมูลส่วนตัว", icon: "👤" },
 ]

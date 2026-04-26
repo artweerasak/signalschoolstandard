@@ -1,6 +1,7 @@
 /**
  * app/my/layout.tsx
- * Layout สำหรับกำลังพลทั่วไป — Sidebar สีม่วง เหมือนกัน แต่เมนูต่างออกไป
+ * Layout สำหรับหน้าเรียน/ใบประกาศ — ทุก role เข้าได้ (student, admin, instructor)
+ * admin/instructor มีปุ่มกลับ dashboard/instructor portal ด้วย
  */
 "use client"
 
@@ -11,15 +12,45 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { api, CurrentUser } from "@/lib/api"
 
-const navItems = [
-  { href: "/my",              label: "หน้าหลัก",      icon: "🏠" },
-  { href: "/my/courses",      label: "หลักสูตรทั้งหมด", icon: "📚" },
-  { href: "/my/certificates", label: "ใบประกาศของฉัน", icon: "📜" },
-  { href: "/my/profile",      label: "ข้อมูลส่วนตัว",  icon: "👤" },
+const studentNavItems = [
+  { href: "/my",              label: "หน้าหลัก",         icon: "🏠" },
+  { href: "/my/courses",      label: "หลักสูตรทั้งหมด",  icon: "📚" },
+  { href: "/my/certificates", label: "ใบประกาศของฉัน",  icon: "📜" },
+  { href: "/my/profile",      label: "ข้อมูลส่วนตัว",   icon: "👤" },
 ]
 
-function StudentSidebar({ user }: { user: CurrentUser | null }) {
+const adminNavItems = [
+  { href: "/my/courses",      label: "สมัครเรียนหลักสูตร", icon: "📚" },
+  { href: "/my/certificates", label: "ใบประกาศของฉัน",    icon: "📜" },
+  { href: "/my/profile",      label: "ข้อมูลส่วนตัว",     icon: "👤" },
+]
+
+const instructorNavItems = [
+  { href: "/my/courses",      label: "สมัครเรียนหลักสูตร", icon: "📚" },
+  { href: "/my/certificates", label: "ใบประกาศของฉัน",    icon: "📜" },
+  { href: "/my/profile",      label: "ข้อมูลส่วนตัว",     icon: "👤" },
+]
+
+function LearnerSidebar({ user }: { user: CurrentUser | null }) {
   const pathname = usePathname()
+
+  const isAdmin = user?.is_staff || user?.role === "admin"
+  const isInstructor = user?.role === "instructor"
+
+  const navItems = isAdmin
+    ? adminNavItems
+    : isInstructor
+    ? instructorNavItems
+    : studentNavItems
+
+  const backLink = isAdmin
+    ? { href: "/dashboard", label: "← กลับหน้า Admin" }
+    : isInstructor
+    ? { href: "/instructor", label: "← กลับหน้าครูอาจารย์" }
+    : null
+
+  const roleLabel = isAdmin ? "ผู้ดูแลระบบ" : isInstructor ? "ครูอาจารย์" : "กรมทหารสื่อสาร"
+
   return (
     <aside className="w-60 min-h-screen bg-[#2D0F42] flex flex-col">
       <div className="flex flex-col items-center gap-3 px-6 py-8 border-b border-[#4A1A6B]">
@@ -27,12 +58,20 @@ function StudentSidebar({ user }: { user: CurrentUser | null }) {
           className="rounded-full border-2 border-[#C9A84C] bg-white p-0.5" />
         <div className="text-center">
           <p className="text-white text-sm font-bold">กรมการทหารสื่อสาร</p>
-          <p className="text-[#C9A84C] text-xs mt-0.5">ระบบการเรียนออนไลน์</p>
+          <p className="text-[#C9A84C] text-xs mt-0.5">{roleLabel}</p>
         </div>
       </div>
+
       <nav className="flex-1 px-3 py-6 space-y-1">
+        {/* ปุ่มกลับ portal หลักสำหรับ admin/instructor */}
+        {backLink && (
+          <Link href={backLink.href}
+            className="flex items-center gap-2 px-4 py-2 mb-3 rounded-lg text-xs text-purple-300 hover:text-white hover:bg-[#4A1A6B] transition-colors border border-purple-700">
+            {backLink.label}
+          </Link>
+        )}
         {navItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive = pathname === item.href || (item.href !== "/my" && pathname.startsWith(item.href))
           return (
             <Link key={item.href} href={item.href}
               className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-colors
@@ -42,6 +81,7 @@ function StudentSidebar({ user }: { user: CurrentUser | null }) {
           )
         })}
       </nav>
+
       {user && (
         <div className="px-4 py-4 border-t border-[#4A1A6B]">
           <p className="text-[#C9A84C] text-xs font-semibold uppercase tracking-wide mb-1">ผู้ใช้งาน</p>
@@ -59,33 +99,21 @@ function StudentSidebar({ user }: { user: CurrentUser | null }) {
 
 export default function MyLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const pathname = usePathname()
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api.me()
       .then((u) => {
-        // Admin และ instructor เป็นกำลังพลที่ต้องถูกตรวจสอบใบประกาศเช่นเดียวกับ student
-        // จึงอนุญาตให้เข้าถึง /my/certificates และ /my/profile ได้ แต่ redirect จากหน้าอื่นๆ ใน /my/
-        const personalPages = ["/my/certificates", "/my/profile"]
-        const isPersonalPage = personalPages.some((p) => pathname.startsWith(p))
-
-        if ((u.is_staff || u.role === "admin") && !isPersonalPage) {
-          router.replace("/dashboard")
-          return
-        }
-        if (u.role === "instructor" && !isPersonalPage) {
-          router.replace("/instructor")
-          return
-        }
+        // admin และ instructor เป็นกำลังพลที่ต้องเรียนและมีใบประกาศเช่นเดียวกับ student
+        // จึงอนุญาตให้เข้าถึงทุกหน้าใน /my/ ได้ครบเหมือน student
         setUser(u)
       })
       .catch((err) => {
         if (err.message === "UNAUTHORIZED") router.replace("/login")
       })
       .finally(() => setLoading(false))
-  }, [router, pathname])
+  }, [router])
 
   if (loading) {
     return (
@@ -100,7 +128,7 @@ export default function MyLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[#f5f3f7]">
-      <StudentSidebar user={user} />
+      <LearnerSidebar user={user} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <h1 className="text-[#4A1A6B] font-bold text-base">
