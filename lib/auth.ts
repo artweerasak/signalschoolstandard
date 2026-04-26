@@ -55,7 +55,7 @@ export async function loginWithMilitaryId(
     if (data.success) {
       return { success: true }
     }
-    return { success: false, error: "เลขบัตรประชาชนหรือเลขทหารไม่ถูกต้อง" }
+    return { success: false, error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes("Cannot get CSRF")) {

@@ -246,4 +246,12 @@ export const api = {
   instructorStudents: (courseId: string) => fetchAPI<{ results: InstructorStudent[]; count: number }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/students/`),
 
   instructorGrades: (courseId: string) => fetchAPI<{ results: InstructorGrade[]; count: number }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/grades/`),
+
+  // ── Password ─────────────────────────────────────────────────────────────
+
+  changePassword: (body: { current_password: string; new_password: string; confirm_password: string }) =>
+    fetchAPIPost<{ success: boolean; message: string }>("api/v1/change-password/", body),
+
+  adminResetPassword: (userId: number) =>
+    fetchAPIPost<{ success: boolean; message: string }>(`api/v1/admin/users/${userId}/reset-password/`, {}),
 }

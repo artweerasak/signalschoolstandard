@@ -14,35 +14,29 @@ import { api } from "@/lib/api"
 
 function validateNationalId(id: string): boolean {
   if (!/^\d{13}$/.test(id)) return false
-  // checksum ตรวจ digit สุดท้าย
   let sum = 0
   for (let i = 0; i < 12; i++) sum += parseInt(id[i]) * (13 - i)
   const check = (11 - (sum % 11)) % 10
   return check === parseInt(id[12])
 }
 
-function validateMilitaryId(id: string): boolean {
-  return /^\d{10}$/.test(id)
-}
-
 export default function LoginPage() {
   const router = useRouter()
-  const [nationalId, setNationalId] = useState("")
-  const [militaryId, setMilitaryId] = useState("")
-  const [errors, setErrors] = useState<{ nationalId?: string; militaryId?: string }>({})
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({})
   const [apiError, setApiError] = useState("")
   const [loading, setLoading] = useState(false)
 
-  function handleNationalIdChange(value: string) {
+  function handleUsernameChange(value: string) {
     const digits = value.replace(/\D/g, "").slice(0, 13)
-    setNationalId(digits)
-    if (errors.nationalId) setErrors((e) => ({ ...e, nationalId: undefined }))
+    setUsername(digits)
+    if (errors.username) setErrors((e) => ({ ...e, username: undefined }))
   }
 
-  function handleMilitaryIdChange(value: string) {
-    const digits = value.replace(/\D/g, "").slice(0, 10)
-    setMilitaryId(digits)
-    if (errors.militaryId) setErrors((e) => ({ ...e, militaryId: undefined }))
+  function handlePasswordChange(value: string) {
+    setPassword(value)
+    if (errors.password) setErrors((e) => ({ ...e, password: undefined }))
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -50,11 +44,11 @@ export default function LoginPage() {
     setApiError("")
 
     const newErrors: typeof errors = {}
-    if (!validateNationalId(nationalId)) {
-      newErrors.nationalId = "เลขบัตรประชาชน 13 หลักไม่ถูกต้อง"
+    if (!validateNationalId(username)) {
+      newErrors.username = "เลขบัตรประชาชน 13 หลักไม่ถูกต้อง"
     }
-    if (!validateMilitaryId(militaryId)) {
-      newErrors.militaryId = "เลขประจำตัวทหาร 10 หลักไม่ถูกต้อง"
+    if (!password) {
+      newErrors.password = "กรุณากรอกรหัสผ่าน"
     }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -62,10 +56,9 @@ export default function LoginPage() {
     }
 
     setLoading(true)
-    const result = await loginWithMilitaryId(nationalId, militaryId)
+    const result = await loginWithMilitaryId(username, password)
 
     if (result.success) {
-      // เช็ค role แล้ว redirect ไปหน้าที่เหมาะสม
       const user = await api.me()
       if (user.role === "admin" || user.is_staff) {
         router.push("/dashboard")
@@ -82,10 +75,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2D0F42] via-[#4A1A6B] to-[#7B3FA0] px-4">
-      {/* Card */}
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
 
-        {/* Header — แถบสีม่วง */}
+        {/* Header */}
         <div className="bg-[#4A1A6B] px-8 py-8 flex flex-col items-center gap-3">
           <Image
             src="/signal_logo.png"
@@ -111,50 +103,52 @@ export default function LoginPage() {
             เข้าสู่ระบบ
           </p>
 
-          {/* National ID */}
+          {/* Username (National ID) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              เลขบัตรประชาชน <span className="text-red-500">*</span>
+              ชื่อผู้ใช้ <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               inputMode="numeric"
-              placeholder="หมายเลข 13 หลัก"
-              value={nationalId}
-              onChange={(e) => handleNationalIdChange(e.target.value)}
+              placeholder="เลขบัตรประชาชน 13 หลัก"
+              value={username}
+              onChange={(e) => handleUsernameChange(e.target.value)}
               className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition
-                ${errors.nationalId
+                ${errors.username
                   ? "border-red-400 focus:ring-red-300"
                   : "border-gray-300 focus:ring-[#7B3FA0] focus:border-[#4A1A6B]"
                 }`}
               autoComplete="username"
             />
-            {errors.nationalId && (
-              <p className="text-red-500 text-xs mt-1">{errors.nationalId}</p>
+            {errors.username && (
+              <p className="text-red-500 text-xs mt-1">{errors.username}</p>
             )}
           </div>
 
-          {/* Military ID */}
+          {/* Password */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              เลขประจำตัวทหาร <span className="text-red-500">*</span>
+              รหัสผ่าน <span className="text-red-500">*</span>
             </label>
             <input
               type="password"
-              inputMode="numeric"
-              placeholder="หมายเลข 10 หลัก"
-              value={militaryId}
-              onChange={(e) => handleMilitaryIdChange(e.target.value)}
+              placeholder="กรอกรหัสผ่าน"
+              value={password}
+              onChange={(e) => handlePasswordChange(e.target.value)}
               className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition
-                ${errors.militaryId
+                ${errors.password
                   ? "border-red-400 focus:ring-red-300"
                   : "border-gray-300 focus:ring-[#7B3FA0] focus:border-[#4A1A6B]"
                 }`}
               autoComplete="current-password"
             />
-            {errors.militaryId && (
-              <p className="text-red-500 text-xs mt-1">{errors.militaryId}</p>
+            {errors.password && (
+              <p className="text-red-500 text-xs mt-1">{errors.password}</p>
             )}
+            <p className="text-xs text-gray-400 mt-1">
+              รหัสผ่าน default คือเลขประจำตัวทหาร 10 หลัก
+            </p>
           </div>
 
           {/* API Error */}
@@ -191,6 +185,9 @@ export default function LoginPage() {
             <Link href="/register" className="text-[#4A1A6B] hover:underline font-medium">
               สมัครสมาชิก
             </Link>
+          </p>
+          <p className="text-xs text-gray-400">
+            หากลืมรหัสผ่าน กรุณาติดต่อผู้ดูแลระบบเพื่อรีเซ็ต
           </p>
           <p className="text-xs text-gray-400">
             © {new Date().getFullYear()} กรมการทหารสื่อสาร · กรมทหารสื่อสาร

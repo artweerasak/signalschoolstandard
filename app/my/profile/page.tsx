@@ -1,6 +1,6 @@
 /**
  * app/my/profile/page.tsx
- * หน้าข้อมูลส่วนตัวของกำลังพล
+ * หน้าข้อมูลส่วนตัวของกำลังพล + เปลี่ยนรหัสผ่าน
  */
 "use client"
 
@@ -12,6 +12,90 @@ function InfoRow({ label, value }: { label: string; value: string | number | nul
     <div className="flex gap-4 py-3 border-b border-gray-50 last:border-0">
       <span className="text-gray-400 text-sm w-36 shrink-0">{label}</span>
       <span className="text-gray-800 text-sm font-medium">{value ?? "—"}</span>
+    </div>
+  )
+}
+
+function ChangePasswordSection() {
+  const [form, setForm] = useState({ current_password: "", new_password: "", confirm_password: "" })
+  const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState("")
+  const [error, setError] = useState("")
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSuccess("")
+    setError("")
+    if (form.new_password !== form.confirm_password) {
+      setError("รหัสผ่านใหม่ไม่ตรงกัน")
+      return
+    }
+    if (form.new_password.length < 8) {
+      setError("รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร")
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await api.changePassword(form)
+      setSuccess(res.message)
+      setForm({ current_password: "", new_password: "", confirm_password: "" })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-6">
+      <h3 className="font-semibold text-[#2D0F42] mb-4">เปลี่ยนรหัสผ่าน</h3>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">รหัสผ่านปัจจุบัน</label>
+          <input
+            type="password"
+            value={form.current_password}
+            onChange={(e) => setForm(f => ({ ...f, current_password: e.target.value }))}
+            placeholder="รหัสผ่านปัจจุบัน (หรือเลขทหาร 10 หลัก)"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">รหัสผ่านใหม่</label>
+          <input
+            type="password"
+            value={form.new_password}
+            onChange={(e) => setForm(f => ({ ...f, new_password: e.target.value }))}
+            placeholder="อย่างน้อย 8 ตัวอักษร"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">ยืนยันรหัสผ่านใหม่</label>
+          <input
+            type="password"
+            value={form.confirm_password}
+            onChange={(e) => setForm(f => ({ ...f, confirm_password: e.target.value }))}
+            placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]"
+            required
+          />
+        </div>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+        {success && <p className="text-green-600 text-sm">{success}</p>}
+        <button
+          type="submit"
+          disabled={saving}
+          className="bg-[#4A1A6B] hover:bg-[#2D0F42] disabled:bg-[#9B7AB8] text-white text-sm font-medium px-6 py-2 rounded-lg transition"
+        >
+          {saving ? "กำลังบันทึก..." : "เปลี่ยนรหัสผ่าน"}
+        </button>
+      </form>
+      <p className="text-xs text-gray-400 mt-3">
+        หากลืมรหัสผ่าน กรุณาติดต่อผู้ดูแลระบบเพื่อรีเซ็ตเป็น default (เลขทหาร)
+      </p>
     </div>
   )
 }
@@ -67,6 +151,9 @@ export default function MyProfilePage() {
             : null} />
         <InfoRow label="อีเมล" value={profile?.email} />
       </div>
+
+      {/* Change Password */}
+      <ChangePasswordSection />
 
       <p className="text-xs text-gray-400 text-center">
         หากข้อมูลไม่ถูกต้อง กรุณาติดต่อเจ้าหน้าที่ฝ่ายบุคลากร

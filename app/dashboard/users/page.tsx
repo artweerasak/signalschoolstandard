@@ -202,6 +202,20 @@ export default function UsersPage() {
                       >
                         แก้ไข
                       </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`รีเซ็ตรหัสผ่านของ ${u.full_name} เป็นค่า default (เลขทหาร)?`)) return
+                          try {
+                            const res = await api.adminResetPassword(u.id)
+                            setSuccessMsg(res.message)
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
+                          }
+                        }}
+                        className="text-amber-600 hover:underline text-xs font-medium"
+                      >
+                        รีเซ็ตรหัสผ่าน
+                      </button>
                       {u.is_active && (
                         <button
                           onClick={() => setConfirmDeactivate(u)}
