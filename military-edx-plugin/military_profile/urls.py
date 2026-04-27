@@ -10,6 +10,7 @@ from .api_views import (
     api_admin_create_user,
     api_admin_update_user,
     api_admin_deactivate_user,
+    api_admin_hard_delete_user,
     api_admin_registrations,
     api_admin_registration_action,
     api_admin_reset_password,
@@ -38,6 +39,7 @@ urlpatterns = [
     path("api/v1/admin/users/create/",        api_admin_create_user, name="api_admin_create_user"),
     path("api/v1/admin/users/<int:user_id>/", api_admin_update_user, name="api_admin_update_user"),
     path("api/v1/admin/users/<int:user_id>/delete/", api_admin_deactivate_user, name="api_admin_deactivate_user"),
+    path("api/v1/admin/users/<int:user_id>/hard-delete/", api_admin_hard_delete_user, name="api_admin_hard_delete_user"),
 
     # Admin — Registrations
     path("api/v1/admin/registrations/",                    api_admin_registrations,       name="api_admin_registrations"),

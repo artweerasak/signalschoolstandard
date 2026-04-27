@@ -349,6 +349,27 @@ def api_admin_deactivate_user(request, user_id: int):
     return JsonResponse({"success": True, "message": "User deactivated"})
 
 
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@_require_admin
+def api_admin_hard_delete_user(request, user_id: int):
+    """
+    DELETE /military/api/v1/admin/users/<user_id>/hard-delete/
+    ลบ user ออกจากระบบถาวร (hard delete)
+    """
+    try:
+        profile = MilitaryUserProfile.objects.select_related("user").get(user_id=user_id)
+    except MilitaryUserProfile.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if profile.user_id == request.user.id:
+        return JsonResponse({"error": "Cannot delete yourself"}, status=400)
+
+    username = profile.user.username
+    profile.user.delete()  # cascade deletes profile via FK
+    return JsonResponse({"success": True, "message": f"User {username} deleted permanently"})
+
+
 # ============================================================================
 # Public: Self-Registration
 # ============================================================================
