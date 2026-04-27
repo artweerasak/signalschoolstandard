@@ -511,7 +511,8 @@ def api_admin_registration_action(request, registration_id: int):
 
     # Approve — สร้าง User + MilitaryUserProfile
     username = body.get("username") or reg.email.split("@")[0] or f"user_{reg.id}"
-    password = body.get("password") or User.objects.make_random_password()
+    # Default password = military_id (ผู้ใช้เปลี่ยนได้ภายหลัง)
+    password = body.get("password") or decrypt_field(reg.military_id_encrypted)
 
     if User.objects.filter(username=username).exists():
         return JsonResponse({"error": f"Username '{username}' already exists"}, status=409)
