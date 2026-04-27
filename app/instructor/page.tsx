@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { api, Course } from "@/lib/api"
 
-const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio.signalstandard.rta.mi.th"
+const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio-signalstandard.rta.mi.th"
 
 export default function InstructorCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])

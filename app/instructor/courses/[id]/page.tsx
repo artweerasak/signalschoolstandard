@@ -17,7 +17,7 @@ export default function CourseDetailPage() {
   const [loadingGrades, setLoadingGrades] = useState(false)
   const [gradesLoaded, setGradesLoaded] = useState(false)
 
-  const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://signalstandard.rta.mi.th/studio"
+  const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio-signalstandard.rta.mi.th"
 
   useEffect(() => {
     if (!courseId) return
