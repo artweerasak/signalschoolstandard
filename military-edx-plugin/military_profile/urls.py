@@ -3,6 +3,7 @@ military_profile/urls.py
 """
 from django.urls import path
 from .api_views import (
+    api_me,
     api_my_profile,
     api_my_certificates,
     # Admin
@@ -27,6 +28,9 @@ from .api_views import (
 app_name = "military_profile"
 
 urlpatterns = [
+    # Current user info
+    path("api/v1/me/",              api_me,          name="api_me"),
+
     # Student
     path("api/v1/my/profile/",      api_my_profile,      name="api_my_profile"),
     path("api/v1/my/certificates/", api_my_certificates, name="api_my_certificates"),

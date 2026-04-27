@@ -116,6 +116,28 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
 
 @require_GET
 @_require_login
+def api_me(request):
+    """
+    GET /military/api/v1/me/
+    ข้อมูลพื้นฐานของ user ที่ login อยู่ (สำหรับ frontend หลัง login)
+    """
+    user = request.user
+    profile = getattr(user, "military_profile", None)
+    role = profile.role if profile else ("admin" if user.is_staff else "student")
+    return JsonResponse({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "is_staff": user.is_staff,
+        "role": role,
+        "full_name": (profile.full_name_th if profile else None) or user.get_full_name() or user.username,
+        "rank": profile.rank if profile else None,
+        "unit": profile.unit if profile else None,
+    })
+
+
+@require_GET
+@_require_login
 def api_my_profile(request):
     """
     GET /military/api/v1/my/profile/
