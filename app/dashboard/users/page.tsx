@@ -50,6 +50,7 @@ export default function UsersPage() {
   const [error, setError] = useState("")
   const [successMsg, setSuccessMsg] = useState("")
   const [confirmDeactivate, setConfirmDeactivate] = useState<AdminUser | null>(null)
+  const [confirmActivate, setConfirmActivate] = useState<AdminUser | null>(null)
 
   function loadUsers() {
     setLoading(true)
@@ -108,6 +109,17 @@ export default function UsersPage() {
       await api.adminDeactivateUser(u.id)
       setSuccessMsg("ปิดใช้งานผู้ใช้เรียบร้อยแล้ว")
       setConfirmDeactivate(null)
+      loadUsers()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
+    }
+  }
+
+  async function handleActivate(u: AdminUser) {
+    try {
+      await api.adminUpdateUser(u.id, { is_active: true })
+      setSuccessMsg("เปิดใช้งานผู้ใช้เรียบร้อยแล้ว")
+      setConfirmActivate(null)
       loadUsers()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
@@ -216,12 +228,19 @@ export default function UsersPage() {
                       >
                         รีเซ็ตรหัสผ่าน
                       </button>
-                      {u.is_active && (
+                      {u.is_active ? (
                         <button
                           onClick={() => setConfirmDeactivate(u)}
                           className="text-red-500 hover:underline text-xs font-medium"
                         >
                           ปิดใช้งาน
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmActivate(u)}
+                          className="text-green-600 hover:underline text-xs font-medium"
+                        >
+                          เปิดใช้งาน
                         </button>
                       )}
                     </div>
@@ -350,6 +369,29 @@ export default function UsersPage() {
               <button onClick={() => handleDeactivate(confirmDeactivate)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
                 ยืนยัน ปิดใช้งาน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activate Confirm */}
+      {confirmActivate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+            <div className="text-4xl mb-3">✅</div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">ยืนยันการเปิดใช้งาน</h3>
+            <p className="text-gray-600 text-sm mb-6">
+              ต้องการเปิดใช้งานบัญชี <strong>{confirmActivate.full_name}</strong> อีกครั้ง?
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setConfirmActivate(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                ยกเลิก
+              </button>
+              <button onClick={() => handleActivate(confirmActivate)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+                ยืนยัน เปิดใช้งาน
               </button>
             </div>
           </div>
