@@ -4,6 +4,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.m
 
 const securityHeaders = [
   // ป้องกัน clickjacking
+  // ป้องกัน browser cache redirect (แก้ปัญหา ERR_TOO_MANY_REDIRECTS จาก stale cache)
+  { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
   { key: "X-Frame-Options", value: "DENY" },
   // ป้องกัน MIME sniffing
   { key: "X-Content-Type-Options", value: "nosniff" },
