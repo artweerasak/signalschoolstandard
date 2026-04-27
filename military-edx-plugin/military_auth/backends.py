@@ -70,10 +70,9 @@ class MilitaryAuthBackend(ModelBackend):
                     )
                     return None
             else:
-                # Default: password must be the 10-digit military ID.
-                if not validate_military_id(military_id):
-                    log.debug("MilitaryAuthBackend: password not military_id format, skipping.")
-                    return None
+                # Default password = stored military_id (any format).
+                # We only compare the provided value against the stored one;
+                # format validation is done at registration time, not login.
                 if not profile.check_military_id(military_id):
                     log.warning(
                         "MilitaryAuthBackend: wrong military_id for national_id=%s",

@@ -9,6 +9,7 @@ import json
 from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
@@ -18,6 +19,34 @@ from certificate_expiry.models import UserCertificateExpiry, CourseCertificateCo
 from military_auth.models import PendingRegistration
 
 User = get_user_model()
+
+
+def _parse_date(value) -> date:
+    """Parse a date string ('YYYY-MM-DD') or date object to datetime.date."""
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    return date.fromisoformat(str(value).strip())
+
+
+def _grant_course_creator(user) -> None:
+    """Grant CourseCreator 'granted' status to a user via raw SQL.
+    The course_creators app lives in CMS which shares the same DB, but the
+    model is not registered in LMS INSTALLED_APPS, so we use raw SQL.
+    """
+    try:
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO course_creators_coursecreator "
+                "(user_id, state, note, created, updated) "
+                "VALUES (%s, 'granted', '', %s, %s) "
+                "ON DUPLICATE KEY UPDATE state='granted', updated=%s",
+                [user.id, now_str, now_str, now_str],
+            )
+    except Exception:
+        pass  # Table may not exist in dev; non-fatal
 
 
 def _require_login(view_func):
@@ -53,6 +82,8 @@ def _require_instructor(view_func):
 
 
 def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
+    ssd = profile.service_start_date
+    bd = profile.birth_date
     return {
         "id": profile.user_id,
         "username": profile.user.username,
@@ -65,8 +96,8 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
         "rank_display": profile.get_rank_display(),
         "unit": profile.unit,
         "sub_unit": profile.sub_unit,
-        "service_start_date": profile.service_start_date.isoformat(),
-        "birth_date": profile.birth_date.isoformat(),
+        "service_start_date": ssd.isoformat() if hasattr(ssd, "isoformat") else str(ssd),
+        "birth_date": bd.isoformat() if hasattr(bd, "isoformat") else str(bd),
         "created_at": profile.created_at.isoformat(),
     }
 
@@ -106,9 +137,9 @@ def api_my_profile(request):
         "rank_display": profile.get_rank_display(),
         "unit": profile.unit,
         "sub_unit": profile.sub_unit,
-        "service_start_date": profile.service_start_date.isoformat(),
+        "service_start_date": profile.service_start_date.isoformat() if hasattr(profile.service_start_date, "isoformat") else str(profile.service_start_date),
         "service_years": profile.service_years,
-        "birth_date": profile.birth_date.isoformat(),
+        "birth_date": profile.birth_date.isoformat() if hasattr(profile.birth_date, "isoformat") else str(profile.birth_date),
         "age": profile.age,
     })
 
@@ -238,10 +269,14 @@ def api_admin_create_user(request):
             rank=body["rank"],
             unit=body["unit"],
             sub_unit=body.get("sub_unit", ""),
-            service_start_date=body["service_start_date"],
-            birth_date=body["birth_date"],
+            service_start_date=_parse_date(body["service_start_date"]),
+            birth_date=_parse_date(body["birth_date"]),
             role=body.get("role", "student"),
         )
+
+        if profile.role == "instructor":
+            _grant_course_creator(user)
+
         return JsonResponse(_profile_to_dict(profile), status=201)
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -266,14 +301,21 @@ def api_admin_update_user(request, user_id: int):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     # อัปเดต profile fields
-    for field in ("full_name_th", "rank", "unit", "sub_unit", "service_start_date", "birth_date"):
+    for field in ("full_name_th", "rank", "unit", "sub_unit"):
         if field in body:
             setattr(profile, field, body[field])
+    for date_field in ("service_start_date", "birth_date"):
+        if date_field in body:
+            setattr(profile, date_field, _parse_date(body[date_field]))
 
     if "role" in body:
+        old_role = profile.role
         profile.role = body["role"]
         profile.user.is_staff = body["role"] == "admin"
         profile.user.save()
+        # Grant CourseCreator when promoting to instructor
+        if body["role"] == "instructor" and old_role != "instructor":
+            _grant_course_creator(profile.user)
 
     if "is_active" in body:
         profile.user.is_active = body["is_active"]
