@@ -244,6 +244,8 @@ export const api = {
 
   adminDeactivateUser: (id: number) => fetchAPIPost<{ success: boolean }>(`api/v1/admin/users/${id}/delete/`, {}, "DELETE"),
 
+  adminHardDeleteUser: (id: number) => fetchAPIPost<{ success: boolean; message: string }>(`api/v1/admin/users/${id}/hard-delete/`, {}, "DELETE"),
+
   adminRegistrations: (status = "pending") => fetchAPI<RegistrationListResponse>(`api/v1/admin/registrations/?status=${status}`),
 
   adminRegistrationAction: (id: number, body: unknown) => fetchAPIPost<{ success: boolean; status: string }>(`api/v1/admin/registrations/${id}/`, body, "PATCH"),

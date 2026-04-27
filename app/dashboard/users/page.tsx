@@ -51,6 +51,7 @@ export default function UsersPage() {
   const [successMsg, setSuccessMsg] = useState("")
   const [confirmDeactivate, setConfirmDeactivate] = useState<AdminUser | null>(null)
   const [confirmActivate, setConfirmActivate] = useState<AdminUser | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<AdminUser | null>(null)
 
   function loadUsers() {
     setLoading(true)
@@ -120,6 +121,17 @@ export default function UsersPage() {
       await api.adminUpdateUser(u.id, { is_active: true })
       setSuccessMsg("เปิดใช้งานผู้ใช้เรียบร้อยแล้ว")
       setConfirmActivate(null)
+      loadUsers()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
+    }
+  }
+
+  async function handleHardDelete(u: AdminUser) {
+    try {
+      await api.adminHardDeleteUser(u.id)
+      setSuccessMsg(`ลบผู้ใช้ ${u.full_name} ออกจากระบบเรียบร้อยแล้ว`)
+      setConfirmDelete(null)
       loadUsers()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
@@ -243,6 +255,12 @@ export default function UsersPage() {
                           เปิดใช้งาน
                         </button>
                       )}
+                      <button
+                        onClick={() => setConfirmDelete(u)}
+                        className="text-gray-400 hover:text-red-700 hover:underline text-xs font-medium"
+                      >
+                        ลบ
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -392,6 +410,30 @@ export default function UsersPage() {
               <button onClick={() => handleActivate(confirmActivate)}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
                 ยืนยัน เปิดใช้งาน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hard Delete Confirm */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+            <div className="text-4xl mb-3">🗑️</div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">ยืนยันการลบผู้ใช้</h3>
+            <p className="text-gray-600 text-sm mb-2">
+              ต้องการลบบัญชี <strong>{confirmDelete.full_name}</strong> ออกจากระบบถาวร?
+            </p>
+            <p className="text-red-600 text-xs font-medium mb-6">⚠️ การลบนี้ไม่สามารถย้อนกลับได้ ข้อมูลทั้งหมดจะหายไป</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                ยกเลิก
+              </button>
+              <button onClick={() => handleHardDelete(confirmDelete)}
+                className="px-4 py-2 bg-red-700 text-white rounded-lg text-sm font-medium hover:bg-red-800">
+                ยืนยัน ลบถาวร
               </button>
             </div>
           </div>
