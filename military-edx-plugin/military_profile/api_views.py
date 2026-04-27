@@ -18,6 +18,11 @@ from .models import MilitaryUserProfile, RANK_CHOICES, encrypt_field, decrypt_fi
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 from military_auth.models import PendingRegistration
 
+try:
+    from common.djangoapps.student.models import UserProfile as EdxUserProfile
+except ImportError:
+    EdxUserProfile = None
+
 User = get_user_model()
 
 
@@ -79,6 +84,13 @@ def _require_instructor(view_func):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return view_func(request, *args, **kwargs)
     return wrapper
+
+
+def _ensure_edx_user_profile(user, full_name: str = "") -> None:
+    """Create the Open edX UserProfile if it doesn't exist — required for login to work."""
+    if EdxUserProfile is None:
+        return
+    EdxUserProfile.objects.get_or_create(user=user, defaults={"name": full_name or user.get_full_name() or user.username})
 
 
 def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
@@ -255,7 +267,7 @@ def api_admin_create_user(request):
         user = User.objects.create_user(
             username=body["username"],
             email=national_id,
-            password=body.get("password") or User.objects.make_random_password(),
+            password=body.get("password") or body["military_id"],
             first_name=body["full_name_th"],
         )
         # Force active — Open edX post-save signals may set is_active=False
@@ -276,6 +288,8 @@ def api_admin_create_user(request):
             birth_date=_parse_date(body["birth_date"]),
             role=body.get("role", "student"),
         )
+
+        _ensure_edx_user_profile(user, body["full_name_th"])
 
         if profile.role == "instructor":
             _grant_course_creator(user)
@@ -540,6 +554,8 @@ def api_admin_registration_action(request, registration_id: int):
             service_start_date=reg.birth_date,  # placeholder — admin แก้ไขได้ภายหลัง
             role="student",
         )
+
+        _ensure_edx_user_profile(user, reg.full_name_th)
 
         reg.status = "approved"
         reg.reviewed_by = request.user
