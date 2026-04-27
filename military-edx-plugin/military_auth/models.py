@@ -51,7 +51,8 @@ class PendingRegistration(models.Model):
     rank                    = models.CharField(max_length=10,  verbose_name="ชั้นยศ")
     unit                    = models.CharField(max_length=255, verbose_name="หน่วยต้นสังกัด")
     birth_date              = models.DateField(verbose_name="วันเกิด")
-    email                   = models.EmailField(blank=True, default="", verbose_name="อีเมล")
+    email                   = models.EmailField(blank=True, default="", verbose_name="อีเมลติดต่อ")
+    phone_number            = models.CharField(max_length=20, blank=True, default="", verbose_name="เบอร์โทรศัพท์")
 
     # Encrypted — ใช้ encrypt_field() จาก military_profile.models
     national_id_encrypted   = models.CharField(max_length=500, verbose_name="เลขบัตรประชาชน (encrypted)")

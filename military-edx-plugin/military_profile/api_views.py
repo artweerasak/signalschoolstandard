@@ -108,6 +108,8 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
         "rank_display": profile.get_rank_display(),
         "unit": profile.unit,
         "sub_unit": profile.sub_unit,
+        "contact_email": profile.contact_email,
+        "phone_number": profile.phone_number,
         "service_start_date": ssd.isoformat() if hasattr(ssd, "isoformat") else str(ssd),
         "birth_date": bd.isoformat() if hasattr(bd, "isoformat") else str(bd),
         "created_at": profile.created_at.isoformat(),
@@ -309,6 +311,8 @@ def api_admin_create_user(request):
             service_start_date=_parse_date(body["service_start_date"]),
             birth_date=_parse_date(body["birth_date"]),
             role=body.get("role", "student"),
+            contact_email=body.get("contact_email", ""),
+            phone_number=body.get("phone_number", ""),
         )
 
         _ensure_edx_user_profile(user, body["full_name_th"])
@@ -340,7 +344,7 @@ def api_admin_update_user(request, user_id: int):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     # อัปเดต profile fields
-    for field in ("full_name_th", "rank", "unit", "sub_unit"):
+    for field in ("full_name_th", "rank", "unit", "sub_unit", "contact_email", "phone_number"):
         if field in body:
             setattr(profile, field, body[field])
     for date_field in ("service_start_date", "birth_date"):
@@ -455,6 +459,7 @@ def api_register(request):
         unit=body["unit"],
         birth_date=body["birth_date"],
         email=body.get("email", ""),
+        phone_number=body.get("phone_number", ""),
         national_id_encrypted=enc_national_id,
         military_id_encrypted=encrypt_field(military_id),
     )
@@ -575,6 +580,8 @@ def api_admin_registration_action(request, registration_id: int):
             birth_date=reg.birth_date,
             service_start_date=reg.birth_date,  # placeholder — admin แก้ไขได้ภายหลัง
             role="student",
+            contact_email=reg.email,
+            phone_number=reg.phone_number,
         )
 
         _ensure_edx_user_profile(user, reg.full_name_th)

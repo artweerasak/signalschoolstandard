@@ -126,6 +126,20 @@ class MilitaryUserProfile(models.Model):
     service_start_date = models.DateField(verbose_name="วันเริ่มรับราชการ")
     birth_date = models.DateField(verbose_name="วันเกิด")
 
+    # Contact information — สำหรับ admin ใช้ติดต่อ/ประชาสัมพันธ์
+    contact_email = models.EmailField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="อีเมลติดต่อ",
+    )
+    phone_number = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="เบอร์โทรศัพท์",
+    )
+
     # Role-based access control
     ROLE_CHOICES = [
         ("admin",      "ผู้ดูแลระบบ"),
