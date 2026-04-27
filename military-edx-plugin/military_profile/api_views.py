@@ -54,6 +54,21 @@ def _grant_course_creator(user) -> None:
         pass  # Table may not exist in dev; non-fatal
 
 
+def _revoke_course_creator(user) -> None:
+    """Revoke CourseCreator by setting state='denied' via raw SQL."""
+    try:
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE course_creators_coursecreator "
+                "SET state='denied', updated=%s "
+                "WHERE user_id=%s",
+                [now_str, user.id],
+            )
+    except Exception:
+        pass  # Non-fatal
+
+
 def _require_login(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
@@ -353,12 +368,16 @@ def api_admin_update_user(request, user_id: int):
 
     if "role" in body:
         old_role = profile.role
-        profile.role = body["role"]
-        profile.user.is_staff = body["role"] == "admin"
+        new_role = body["role"]
+        profile.role = new_role
+        profile.user.is_staff = new_role == "admin"
         profile.user.save()
         # Grant CourseCreator when promoting to instructor
-        if body["role"] == "instructor" and old_role != "instructor":
+        if new_role == "instructor" and old_role != "instructor":
             _grant_course_creator(profile.user)
+        # Revoke CourseCreator when demoting from instructor
+        elif old_role == "instructor" and new_role != "instructor":
+            _revoke_course_creator(profile.user)
 
     if "is_active" in body:
         profile.user.is_active = body["is_active"]
