@@ -3,8 +3,11 @@
  * API client สำหรับเรียก Django backend
  */
 
-// ใช้ /edx proxy (next.config.ts rewrites) เพื่อให้ cookie ทำงาน same-origin
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th"
+// Caddy routes /military/* และ /login_ajax, /csrf/* ตรงไปที่ LMS โดยไม่ผ่าน Next.js proxy
+// ทั้ง browser และ SSR ใช้ base URL เดียวกัน
+const API_URL = typeof window !== "undefined"
+  ? ""   // browser: relative path (same-origin → Caddy → LMS)
+  : (process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th")
 
 /** อ่าน CSRF token จาก cookie ที่ Open edX ตั้งค่าไว้หลัง login */
 function getCsrfToken(): string {
@@ -14,8 +17,7 @@ function getCsrfToken(): string {
 }
 
 async function fetchAPI<T>(path: string): Promise<T> {
-  const base = typeof window !== "undefined" ? "/edx" : API_URL
-  const res = await fetch(`${base}/military/${path}`, {
+  const res = await fetch(`${API_URL}/military/${path}`, {
     credentials: "include",
     headers: { "Accept": "application/json" },
   })
@@ -25,9 +27,8 @@ async function fetchAPI<T>(path: string): Promise<T> {
 }
 
 async function fetchAPIPost<T>(path: string, body: unknown, method = "POST"): Promise<T> {
-  const base = typeof window !== "undefined" ? "/edx" : API_URL
   const csrfToken = getCsrfToken()
-  const res = await fetch(`${base}/military/${path}`, {
+  const res = await fetch(`${API_URL}/military/${path}`, {
     method,
     credentials: "include",
     headers: {

@@ -1,10 +1,8 @@
 /**
  * lib/auth.ts
- * ฟังก์ชัน authentication — เชื่อมกับ Open edX session login ผ่าน Next.js proxy
+ * ฟังก์ชัน authentication — เชื่อมกับ Open edX session login
+ * Caddy routes /csrf/*, /login_ajax, /logout ตรงไปที่ LMS (same-origin cookies)
  */
-
-// ใช้ /edx proxy (next.config.ts rewrites) เพื่อให้ cookie ทำงานได้ (same-origin)
-const EDX_PROXY = "/edx"
 
 export interface LoginResult {
   success: boolean
@@ -13,7 +11,7 @@ export interface LoginResult {
 
 /** ดึง CSRF token จาก Open edX ก่อน POST */
 async function getCsrfToken(): Promise<string> {
-  const res = await fetch(`${EDX_PROXY}/csrf/api/v1/token`, {
+  const res = await fetch(`/csrf/api/v1/token`, {
     credentials: "include",
     headers: { Accept: "application/json" },
   })
@@ -33,7 +31,7 @@ export async function loginWithMilitaryId(
   try {
     const csrf = await getCsrfToken()
 
-    const res = await fetch(`${EDX_PROXY}/login_ajax`, {
+    const res = await fetch(`/login_ajax`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -69,7 +67,7 @@ export async function loginWithMilitaryId(
 export async function logout(): Promise<void> {
   try {
     const csrf = await getCsrfToken()
-    await fetch(`${EDX_PROXY}/logout`, {
+    await fetch(`/logout`, {
       method: "POST",
       headers: { "X-CSRFToken": csrf },
       credentials: "include",
