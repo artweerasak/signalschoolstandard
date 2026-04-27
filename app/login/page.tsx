@@ -5,10 +5,10 @@
  * สีหลัก: ม่วงเม็ดมะปราง (#4A1A6B) สีประจำเหล่าทหารสื่อสาร
  */
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { loginWithMilitaryId } from "@/lib/auth"
 import { api } from "@/lib/api"
 
@@ -20,8 +20,9 @@ function validateNationalId(id: string): boolean {
   return check === parseInt(id[12])
 }
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({})
@@ -59,6 +60,12 @@ export default function LoginPage() {
     const result = await loginWithMilitaryId(username, password)
 
     if (result.success) {
+      // รองรับ OAuth2 SSO redirect สำหรับ Studio
+      const next = searchParams.get("next")
+      if (next && next.startsWith("/oauth2/")) {
+        window.location.href = next
+        return
+      }
       const user = await api.me()
       if (user.role === "admin" || user.is_staff) {
         router.push("/dashboard")
@@ -195,5 +202,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginPageInner />
+    </Suspense>
   )
 }
