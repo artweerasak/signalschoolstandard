@@ -258,6 +258,9 @@ def api_admin_create_user(request):
             password=body.get("password") or User.objects.make_random_password(),
             first_name=body["full_name_th"],
         )
+        # Force active — Open edX post-save signals may set is_active=False
+        # for users created programmatically (email verification flow).
+        user.is_active = True
         user.is_staff = body.get("role") == "admin"
         user.save()
 
@@ -500,6 +503,9 @@ def api_admin_registration_action(request, registration_id: int):
             password=password,
             first_name=reg.full_name_th,
         )
+        # Force active — Open edX post-save signals may set is_active=False
+        user.is_active = True
+        user.save()
 
         profile = MilitaryUserProfile.objects.create(
             user=user,
