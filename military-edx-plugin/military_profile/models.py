@@ -87,6 +87,27 @@ RANK_CHOICES = [
     ("GEN", "พลเอก"),
 ]
 
+# ยศที่อยู่ในระดับ นายทหารประทวน (Non-Commissioned Officers)
+NCO_RANKS = {"CPL", "SGT3", "SGT2", "SSGT", "MSGT", "CSGT", "WO1", "WO2", "WO3"}
+
+# ยศที่อยู่ในระดับ นายทหารสัญญาบัตร (Commissioned Officers)
+OFFICER_RANKS = {"2LT", "1LT", "CPT", "MAJ", "LTCOL", "COL", "BGEN", "MGEN", "GEN"}
+
+RANK_CLASS_CHOICES = [
+    ("nco",     "นายทหารประทวน"),
+    ("officer", "นายทหารสัญญาบัตร"),
+    ("pvt",     "พลทหาร"),
+    ("all",     "ทุกระดับ"),
+]
+
+ARMY_REGION_CHOICES = [
+    ("",    "ไม่ระบุ"),
+    ("1",   "กองทัพภาคที่ 1"),
+    ("2",   "กองทัพภาคที่ 2"),
+    ("3",   "กองทัพภาคที่ 3"),
+    ("4",   "กองทัพภาคที่ 4"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Model
@@ -140,6 +161,16 @@ class MilitaryUserProfile(models.Model):
         verbose_name="เบอร์โทรศัพท์",
     )
 
+    # สังกัดกองทัพภาค
+    army_region = models.CharField(
+        max_length=1,
+        choices=ARMY_REGION_CHOICES,
+        blank=True,
+        default="",
+        verbose_name="กองทัพภาค",
+        db_index=True,
+    )
+
     # Role-based access control
     ROLE_CHOICES = [
         ("admin",      "ผู้ดูแลระบบ"),
@@ -162,10 +193,25 @@ class MilitaryUserProfile(models.Model):
         indexes = [
             models.Index(fields=["unit"]),
             models.Index(fields=["rank"]),
+            models.Index(fields=["army_region", "rank"]),
         ]
 
     def __str__(self):
         return f"{self.get_rank_display()} {self.full_name_th}"
+
+    @property
+    def rank_class(self) -> str:
+        """ระดับชั้น: 'nco' | 'officer' | 'pvt'"""
+        if self.rank in NCO_RANKS:
+            return "nco"
+        if self.rank in OFFICER_RANKS:
+            return "officer"
+        return "pvt"
+
+    @property
+    def rank_class_display(self) -> str:
+        mapping = {"nco": "นายทหารประทวน", "officer": "นายทหารสัญญาบัตร", "pvt": "พลทหาร"}
+        return mapping.get(self.rank_class, "-")
 
     # ------------------------------------------------------------------
     # Encryption helpers (class-level)
@@ -243,3 +289,47 @@ class MilitaryUserProfile(models.Model):
         """Reset custom password — user will auth with military_id again."""
         self.custom_password_hash = None
         self.save(update_fields=["custom_password_hash"])
+
+
+# ---------------------------------------------------------------------------
+# CourseRequirement — admin กำหนดว่า rank_class ไหนต้องเรียน course ไหน
+# ---------------------------------------------------------------------------
+
+class CourseRequirement(models.Model):
+    """
+    Maps rank_class → required course.
+    Admin creates entries to define which courses each rank class must complete
+    to be considered "passed standard" (ผ่านมาตรฐาน).
+    """
+
+    rank_class = models.CharField(
+        max_length=10,
+        choices=RANK_CLASS_CHOICES,
+        verbose_name="ระดับชั้น",
+        db_index=True,
+    )
+    course_id = models.CharField(
+        max_length=255,
+        verbose_name="Course ID (edX)",
+        db_index=True,
+    )
+    course_name = models.CharField(
+        max_length=500,
+        verbose_name="ชื่อหลักสูตร",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="เปิดใช้งาน",
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("rank_class", "course_id")
+        verbose_name = "หลักสูตรที่กำหนดให้เรียน"
+        verbose_name_plural = "หลักสูตรที่กำหนดให้เรียน"
+        ordering = ["rank_class", "course_name"]
+
+    def __str__(self):
+        return f"{self.get_rank_class_display()} → {self.course_name}"

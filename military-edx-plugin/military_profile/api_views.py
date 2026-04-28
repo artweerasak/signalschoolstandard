@@ -14,7 +14,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .models import MilitaryUserProfile, RANK_CHOICES, encrypt_field, decrypt_field
+from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES, encrypt_field, decrypt_field
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 from military_auth.models import PendingRegistration
 
@@ -121,8 +121,12 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
         "full_name": profile.full_name_th,
         "rank": profile.rank,
         "rank_display": profile.get_rank_display(),
+        "rank_class": profile.rank_class,
+        "rank_class_display": profile.rank_class_display,
         "unit": profile.unit,
         "sub_unit": profile.sub_unit,
+        "army_region": profile.army_region,
+        "army_region_display": profile.get_army_region_display(),
         "contact_email": profile.contact_email,
         "phone_number": profile.phone_number,
         "service_start_date": ssd.isoformat() if hasattr(ssd, "isoformat") else str(ssd),
@@ -328,6 +332,7 @@ def api_admin_create_user(request):
             role=body.get("role", "student"),
             contact_email=body.get("contact_email", ""),
             phone_number=body.get("phone_number", ""),
+            army_region=body.get("army_region", ""),
         )
 
         _ensure_edx_user_profile(user, body["full_name_th"])
@@ -359,7 +364,7 @@ def api_admin_update_user(request, user_id: int):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     # อัปเดต profile fields
-    for field in ("full_name_th", "rank", "unit", "sub_unit", "contact_email", "phone_number"):
+    for field in ("full_name_th", "rank", "unit", "sub_unit", "contact_email", "phone_number", "army_region"):
         if field in body:
             setattr(profile, field, body[field])
     for date_field in ("service_start_date", "birth_date"):
@@ -601,6 +606,7 @@ def api_admin_registration_action(request, registration_id: int):
             role="student",
             contact_email=reg.email,
             phone_number=reg.phone_number,
+            army_region=body.get("army_region", ""),
         )
 
         _ensure_edx_user_profile(user, reg.full_name_th)
