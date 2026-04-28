@@ -50,6 +50,9 @@ class PendingRegistration(models.Model):
     full_name_th            = models.CharField(max_length=255, verbose_name="ชื่อ-นามสกุล")
     rank                    = models.CharField(max_length=10,  verbose_name="ชั้นยศ")
     unit                    = models.CharField(max_length=255, verbose_name="หน่วยต้นสังกัด")
+    sub_unit                = models.CharField(max_length=255, blank=True, default="", verbose_name="หน่วยรอง")
+    army_region             = models.CharField(max_length=1, blank=True, default="", verbose_name="ทัพภาค",
+                                choices=[("","ไม่ระบุ"),("1","ทัพภาคที่ 1"),("2","ทัพภาคที่ 2"),("3","ทัพภาคที่ 3"),("4","ทัพภาคที่ 4")])
     birth_date              = models.DateField(verbose_name="วันเกิด")
     email                   = models.EmailField(blank=True, default="", verbose_name="อีเมลติดต่อ")
     phone_number            = models.CharField(max_length=20, blank=True, default="", verbose_name="เบอร์โทรศัพท์")

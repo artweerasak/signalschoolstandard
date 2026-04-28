@@ -323,6 +323,15 @@ def api_compliance_not_passed(request):
     """
     filters = _parse_filters(request)
     qs = _apply_profile_filters(MilitaryUserProfile.objects.all(), filters)
+    # text search by name or unit
+    search = request.GET.get("search", "").strip()
+    if search:
+        from django.db.models import Q as _Q
+        qs = qs.filter(
+            _Q(full_name_th__icontains=search) |
+            _Q(unit__icontains=search) |
+            _Q(sub_unit__icontains=search)
+        )
     page = int(request.GET.get("page", 1))
     per_page = int(request.GET.get("per_page", 50))
     offset = (page - 1) * per_page
@@ -333,12 +342,16 @@ def api_compliance_not_passed(request):
         if result["status"] == "not_passed":
             not_passed.append({
                 "user_id": profile.user.id,
+                "username": profile.user.username,
                 "full_name": profile.full_name_th,
-                "rank": profile.get_rank_display(),
-                "rank_class": profile.rank_class_display,
+                "rank": profile.rank,
+                "rank_display": profile.get_rank_display(),
+                "rank_class": profile.rank_class,
+                "rank_class_display": profile.rank_class_display,
                 "unit": profile.unit,
                 "sub_unit": profile.sub_unit,
-                "army_region": profile.get_army_region_display(),
+                "army_region": profile.army_region,
+                "army_region_display": profile.get_army_region_display(),
                 "contact_email": profile.contact_email,
                 "phone_number": profile.phone_number,
                 "missing_courses": result["missing"],
