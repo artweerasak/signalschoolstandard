@@ -212,6 +212,67 @@ export interface InstructorGrade {
   passed: boolean
 }
 
+
+// ── Compliance Report Types ────────────────────────────────────────────────
+
+export interface ComplianceOverview {
+  total: number
+  passed: number
+  not_passed: number
+  no_requirements: number
+  percent_passed: number
+}
+
+export interface ComplianceByGroup {
+  label: string
+  key: string
+  total: number
+  passed: number
+  not_passed: number
+  no_requirements: number
+  percent_passed: number
+}
+
+export interface NotPassedPersonnel {
+  user_id: number
+  username: string
+  full_name: string
+  rank: string
+  rank_display: string
+  unit: string
+  sub_unit: string
+  army_region: string
+  army_region_display: string
+  rank_class: string
+  rank_class_display: string
+  contact_email: string
+  phone_number: string
+  missing_courses: string[]
+  expired_courses: string[]
+}
+
+export interface CertificateAlert {
+  user_id: number
+  full_name: string
+  rank: string
+  unit: string
+  army_region: string
+  course_id: string
+  course_name: string
+  expiry_date: string
+  days_left: number
+}
+
+export interface CourseRequirement {
+  id: number
+  rank_class: string
+  rank_class_display: string
+  course_id: string
+  course_name: string
+  is_active: boolean
+  created_at: string
+}
+
 export const api = {
   me:               () => fetchAPI<CurrentUser>("api/v1/me/"),
   dashboardSummary: () => fetchAPI<DashboardSummary>("api/v1/dashboard/summary/"),
@@ -270,4 +331,48 @@ export const api = {
 
   adminResetPassword: (userId: number) =>
     fetchAPIPost<{ success: boolean; message: string }>(`api/v1/admin/users/${userId}/reset-password/`, {}),
+  // ── Compliance Reports ───────────────────────────────────────────────────
+
+  complianceOverview: () => fetchAPI<ComplianceOverview>("api/v1/reports/compliance/overview/"),
+
+  complianceByRegion: () =>
+    fetchAPI<ComplianceByGroup[]>("api/v1/reports/compliance/by-region/"),
+
+  complianceByRankClass: () =>
+    fetchAPI<ComplianceByGroup[]>("api/v1/reports/compliance/by-rank-class/"),
+
+  complianceByRank: () =>
+    fetchAPI<ComplianceByGroup[]>("api/v1/reports/compliance/by-rank/"),
+
+  complianceByUnit: (params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params ?? {})
+    return fetchAPI<ComplianceByGroup[]>(`api/v1/reports/compliance/by-unit/?${qs}`)
+  },
+
+  complianceNotPassed: (params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params ?? {})
+    return fetchAPI<{ results: NotPassedPersonnel[]; count: number }>(`api/v1/reports/compliance/not-passed/?${qs}`)
+  },
+
+  certificatesExpiring: (days = 30) =>
+    fetchAPI<{ results: CertificateAlert[]; count: number }>(`api/v1/reports/certificates/expiring/?days=${days}`),
+
+  certificatesExpired: () =>
+    fetchAPI<{ results: CertificateAlert[]; count: number }>("api/v1/reports/certificates/expired/"),
+
+  // ── Course Requirements CRUD ─────────────────────────────────────────────
+
+  courseRequirements: () =>
+    fetchAPI<{ results: CourseRequirement[]; count: number }>("api/v1/admin/course-requirements/"),
+
+  createCourseRequirement: (body: unknown) =>
+    fetchAPIPost<CourseRequirement>("api/v1/admin/course-requirements/", body),
+
+  updateCourseRequirement: (id: number, body: unknown) =>
+    fetchAPIPost<CourseRequirement>(`api/v1/admin/course-requirements/${id}/`, body, "PATCH"),
+
+  deleteCourseRequirement: (id: number) =>
+    fetchAPIPost<{ success: boolean }>(`api/v1/admin/course-requirements/${id}/`, {}, "DELETE"),
+
+
 }

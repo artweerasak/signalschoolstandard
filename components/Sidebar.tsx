@@ -12,6 +12,9 @@ const adminNavItems = [
   { href: "/dashboard", label: "ภาพรวม", icon: "📊" },
   { href: "/dashboard/users", label: "จัดการผู้ใช้", icon: "👥" },
   { href: "/dashboard/registrations", label: "อนุมัติสมัครสมาชิก", icon: "📋", badge: true },
+  { href: "/dashboard/reports", label: "รายงานมาตรฐาน", icon: "📈" },
+  { href: "/dashboard/certificates", label: "แจ้งเตือนใบประกาศ", icon: "🔔" },
+  { href: "/dashboard/course-requirements", label: "กำหนดหลักสูตร", icon: "⚙️" },
 ]
 
 // เมนูใบประกาศ/โปรไฟล์ส่วนตัวสำหรับ admin และ instructor (กำลังพลที่ต้องถูกตรวจสอบด้วย)
