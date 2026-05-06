@@ -194,11 +194,12 @@ def _parse_filters(request):
         "army_region": request.GET.get("army_region", "").strip(),
         "rank_class": request.GET.get("rank_class", "").strip(),
         "unit": request.GET.get("unit", "").strip(),
+        "rank": request.GET.get("rank", "").strip(),
     }
 
 
 def _apply_profile_filters(queryset, filters: dict):
-    """Apply army_region, rank_class, unit filters to MilitaryUserProfile queryset."""
+    """Apply army_region, rank_class, rank, unit filters to MilitaryUserProfile queryset."""
     if filters.get("army_region"):
         queryset = queryset.filter(army_region=filters["army_region"])
     if filters.get("rank_class"):
@@ -209,6 +210,8 @@ def _apply_profile_filters(queryset, filters: dict):
             queryset = queryset.filter(rank__in=list(OFFICER_RANKS))
         elif rc == "pvt":
             queryset = queryset.filter(rank="PVT")
+    if filters.get("rank"):
+        queryset = queryset.filter(rank=filters["rank"])
     if filters.get("unit"):
         queryset = queryset.filter(unit__icontains=filters["unit"])
     return queryset
@@ -242,12 +245,9 @@ def api_compliance_by_region(request):
         else:
             qs = qs.filter(army_region="")
         stats = bulk_compliance_stats(qs)
-        results.append({
-            "army_region": code,
-            "army_region_label": label,
-            **stats,
-        })
-    return JsonResponse({"results": results})
+        if stats["total"] > 0:
+            results.append({"key": code, "label": label, **stats})
+    return JsonResponse(results, safe=False)
 
 
 @require_GET
@@ -269,8 +269,9 @@ def api_compliance_by_rank_class(request):
         if filters.get("army_region"):
             qs = qs.filter(army_region=filters["army_region"])
         stats = bulk_compliance_stats(qs)
-        results.append({"rank_class": code, "rank_class_label": label, **stats})
-    return JsonResponse({"results": results})
+        if stats["total"] > 0:
+            results.append({"key": code, "label": label, **stats})
+    return JsonResponse(results, safe=False)
 
 
 @require_GET
@@ -287,8 +288,8 @@ def api_compliance_by_rank(request):
         qs = _apply_profile_filters(qs, {k: v for k, v in filters.items() if k != "rank_class"})
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
-            results.append({"rank": code, "rank_label": label, **stats})
-    return JsonResponse({"results": results})
+            results.append({"key": code, "label": label, **stats})
+    return JsonResponse(results, safe=False)
 
 
 @require_GET
@@ -307,9 +308,10 @@ def api_compliance_by_unit(request):
     for unit in units:
         unit_qs = qs.filter(unit=unit)
         stats = bulk_compliance_stats(unit_qs)
-        results.append({"unit": unit, **stats})
+        if stats["total"] > 0:
+            results.append({"key": unit, "label": unit or "ไม่ระบุหน่วย", **stats})
 
-    return JsonResponse({"results": results})
+    return JsonResponse(results, safe=False)
 
 
 @require_GET
@@ -317,13 +319,17 @@ def api_compliance_by_unit(request):
 def api_compliance_not_passed(request):
     """
     GET /military/api/v1/reports/compliance/not-passed/
-    รายชื่อกำลังพลที่ยังไม่ผ่านมาตรฐาน
-    Optional filters: army_region, rank_class, unit
-    สำหรับ admin ทำหนังสือติดตาม
+    รายชื่อกำลังพลตามสถานะมาตรฐาน
+    Query params:
+      passed=true → ผู้ผ่านมาตรฐาน (default: false = ไม่ผ่าน)
+      army_region, rank_class, rank, unit, search
+      page, per_page
     """
+    import math
     filters = _parse_filters(request)
+    want_passed = request.GET.get("passed", "false").lower() == "true"
     qs = _apply_profile_filters(MilitaryUserProfile.objects.all(), filters)
-    # text search by name or unit
+
     search = request.GET.get("search", "").strip()
     if search:
         from django.db.models import Q as _Q
@@ -332,15 +338,14 @@ def api_compliance_not_passed(request):
             _Q(unit__icontains=search) |
             _Q(sub_unit__icontains=search)
         )
-    page = int(request.GET.get("page", 1))
-    per_page = int(request.GET.get("per_page", 50))
-    offset = (page - 1) * per_page
 
-    not_passed = []
-    for profile in qs.select_related("user")[offset:offset + per_page + 50]:
+    # Compute compliance for all matching profiles first, then paginate
+    all_results = []
+    for profile in qs.select_related("user").order_by("full_name_th"):
         result = get_compliance_status(profile.user)
-        if result["status"] == "not_passed":
-            not_passed.append({
+        is_passed = result["status"] in ("passed", "no_requirements")
+        if (want_passed and is_passed) or (not want_passed and not is_passed):
+            all_results.append({
                 "user_id": profile.user.id,
                 "username": profile.user.username,
                 "full_name": profile.full_name_th,
@@ -354,13 +359,26 @@ def api_compliance_not_passed(request):
                 "army_region_display": profile.get_army_region_display(),
                 "contact_email": profile.contact_email,
                 "phone_number": profile.phone_number,
-                "missing_courses": result["missing"],
-                "expired_courses": result["expired"],
+                "missing_courses": [c["course_name"] for c in result.get("missing", [])],
+                "expired_courses": [c["course_name"] for c in result.get("expired", [])],
+                "passed_courses": [c["course_name"] for c in result.get("passed", [])],
             })
-        if len(not_passed) >= per_page:
-            break
 
-    return JsonResponse({"results": not_passed, "count": len(not_passed), "page": page})
+    total_count = len(all_results)
+    page = max(1, int(request.GET.get("page", 1)))
+    per_page = min(100, max(10, int(request.GET.get("per_page", 20))))
+    total_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
+    start = (page - 1) * per_page
+    paginated = all_results[start:start + per_page]
+
+    return JsonResponse({
+        "results": paginated,
+        "count": len(paginated),
+        "total_count": total_count,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+    })
 
 
 @require_GET

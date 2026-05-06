@@ -3,6 +3,7 @@ military_profile/urls.py
 """
 from django.urls import path
 from .api_views import (
+    api_my_certificate_detail,
     api_me,
     api_my_profile,
     api_my_certificates,
@@ -21,6 +22,9 @@ from .api_views import (
     api_instructor_courses,
     api_instructor_course_students,
     api_instructor_course_grades,
+    # Courses proxy
+    api_courses_catalog,
+    api_enroll_course,
     # Password
     api_change_password,
 )
@@ -34,6 +38,7 @@ urlpatterns = [
     # Student
     path("api/v1/my/profile/",      api_my_profile,      name="api_my_profile"),
     path("api/v1/my/certificates/", api_my_certificates, name="api_my_certificates"),
+    path("api/v1/my/certificates/<int:cert_id>/", api_my_certificate_detail, name="api_my_certificate_detail"),
 
     # Public
     path("api/v1/register/", api_register, name="api_register"),
@@ -54,6 +59,10 @@ urlpatterns = [
 
     # Password Change (self)
     path("api/v1/change-password/", api_change_password, name="api_change_password"),
+
+    # Courses catalog proxy
+    path("api/v1/courses/", api_courses_catalog, name="api_courses_catalog"),
+    path("api/v1/enroll/", api_enroll_course, name="api_enroll_course"),
 
     # Instructor
     path("api/v1/instructor/courses/",                              api_instructor_courses,         name="api_instructor_courses"),

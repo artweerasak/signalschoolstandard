@@ -803,3 +803,179 @@ def api_admin_reset_password(request, user_id: int):
         "success": True,
         "message": f"รีเซ็ตรหัสผ่านของ {profile.full_name_th} เป็นค่า default (เลขทหาร) สำเร็จ",
     })
+
+
+@require_GET
+@_require_login
+def api_courses_catalog(request):
+    """
+    GET /military/api/v1/courses/
+    Return course catalog using Django ORM directly (avoids HTTP self-call deadlock).
+    """
+    from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+    from common.djangoapps.student.models import CourseEnrollment
+
+    search = request.GET.get('search_term', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 24))
+
+    qs = CourseOverview.objects.filter(
+        catalog_visibility__in=['both', 'about'],
+    ).order_by('display_name')
+
+    if search:
+        qs = qs.filter(display_name__icontains=search)
+
+    total = qs.count()
+    offset = (page - 1) * page_size
+    courses = qs[offset:offset + page_size]
+
+    enrolled_ids = set(
+        str(e.course_id)
+        for e in CourseEnrollment.objects.filter(user=request.user, is_active=True)
+    )
+
+    # Count active enrollments per course in one query
+    from django.db.models import Count as _Count
+    _enroll_counts = dict(
+        CourseEnrollment.objects
+        .filter(course_id__in=[c.id for c in courses], is_active=True)
+        .values('course_id')
+        .annotate(_cnt=_Count('id'))
+        .values_list('course_id', '_cnt')
+    )
+
+    results = []
+    for c in courses:
+        course_image = None
+        if c.course_image_url:
+            if c.course_image_url.startswith('http'):
+                course_image = c.course_image_url
+            else:
+                course_image = f'https://signalstandard.rta.mi.th{c.course_image_url}'
+        results.append({
+            'id': str(c.id),
+            'name': c.display_name or '',
+            'short_description': c.short_description or '',
+            'course_image_url': course_image,
+            'start': c.start.isoformat() if c.start else None,
+            'end': c.end.isoformat() if c.end else None,
+            'enrollment_start': c.enrollment_start.isoformat() if c.enrollment_start else None,
+            'enrollment_end': c.enrollment_end.isoformat() if c.enrollment_end else None,
+            'org': c.org,
+            'number': c.number,
+            'effort': None,
+            'is_enrolled': str(c.id) in enrolled_ids,
+            'category': '',
+            'enrollment_count': _enroll_counts.get(c.id, 0),
+        })
+
+    base_url = '/military/api/v1/courses/'
+    next_url = f'{base_url}?page={page + 1}&page_size={page_size}' if offset + page_size < total else None
+    prev_url = f'{base_url}?page={page - 1}&page_size={page_size}' if page > 1 else None
+
+    return JsonResponse({
+        'count': total,
+        'next': next_url,
+        'previous': prev_url,
+        'results': results,
+    })
+
+
+@csrf_exempt
+@require_POST
+@_require_login
+def api_enroll_course(request):
+    """
+    POST /military/api/v1/enroll/
+    Enroll current user into a course using Django ORM directly.
+    """
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+        course_id = body.get("course_id") or (body.get("course_details") or {}).get("course_id")
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if not course_id:
+        return JsonResponse({"error": "course_id required"}, status=400)
+
+    try:
+        from opaque_keys.edx.keys import CourseKey
+        from common.djangoapps.student.models import CourseEnrollment
+        from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+
+        course_key = CourseKey.from_string(course_id)
+
+        # Verify course exists
+        CourseOverview.objects.get(id=course_key)
+
+        # Auto-create audit mode if course has no modes (required for enrollment to work)
+        from common.djangoapps.course_modes.models import CourseMode
+        if not CourseMode.objects.filter(course_id=course_key).exists():
+            CourseMode.objects.create(course_id=course_key, mode_slug='audit',
+                                      mode_display_name='Audit', min_price=0)
+
+        result = CourseEnrollment.enroll(request.user, course_key, check_access=False)
+        if isinstance(result, tuple):
+            enrollment, created = result
+        else:
+            enrollment, created = result, not CourseEnrollment.is_enrolled(request.user, course_key)
+        return JsonResponse({
+            "success": True,
+            "created": created,
+            "course_id": course_id,
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+@require_GET
+@_require_login
+def api_my_certificate_detail(request, cert_id):
+    """
+    GET /military/api/v1/my/certificates/<cert_id>/
+    ข้อมูลครบสำหรับแสดงใบประกาศ พร้อม profile ผู้รับ
+    """
+    try:
+        cert = UserCertificateExpiry.objects.get(id=cert_id, user=request.user)
+    except UserCertificateExpiry.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    try:
+        config = CourseCertificateConfig.objects.get(course_id=cert.course_id)
+        course_name  = config.course_name
+        validity_yrs = config.validity_years
+    except CourseCertificateConfig.DoesNotExist:
+        course_name  = str(cert.course_id)
+        validity_yrs = None
+
+    # ดึง profile ผู้รับ
+    try:
+        from military_profile.models import MilitaryUserProfile
+        profile = MilitaryUserProfile.objects.get(user=request.user)
+        rank      = profile.get_rank_display()
+        full_name = profile.full_name_th
+        unit      = profile.unit
+        sub_unit  = profile.sub_unit or ''
+        position  = profile.get_rank_display()  # ใช้ยศแทน ถ้าไม่มี position field
+    except Exception:
+        rank = full_name = unit = sub_unit = position = ''
+
+    today = date.today()
+    days_left = (cert.expiry_date - today).days if cert.expiry_date else None
+
+    return JsonResponse({
+        'id':          cert.id,
+        'cert_no':     f'สส.{cert.issued_date.year + 543 if cert.issued_date else ""}-{cert.id:04d}',
+        'course_id':   str(cert.course_id),
+        'course_name': course_name,
+        'issued_date': cert.issued_date.isoformat() if cert.issued_date else None,
+        'expiry_date': cert.expiry_date.isoformat() if cert.expiry_date else None,
+        'status':      cert.status,
+        'days_left':   days_left,
+        'rank':        rank,
+        'full_name':   full_name,
+        'unit':        unit,
+        'sub_unit':    sub_unit,
+    })
