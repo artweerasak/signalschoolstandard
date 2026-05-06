@@ -104,11 +104,13 @@ export default function CoursesPage() {
   const [category, setCategory] = useState("")
   const [enrolling, setEnrolling] = useState<string | null>(null)
   const [enrollMsg, setEnrollMsg] = useState("")
+  const [courseError, setCourseError] = useState<string | null>(null)
 
   const loadCourses = useCallback(() => {
     setLoading(true)
     api.courses(search, category)
-      .then((res) => setCourses(res.results))
+      .then((res) => { setCourseError(null); setCourses(res.results ?? []) })
+      .catch((err) => { console.error("courses error:", err); setCourseError(String(err)) })
       .finally(() => setLoading(false))
   }, [search, category])
 
@@ -124,17 +126,17 @@ export default function CoursesPage() {
     setEnrolling(courseId)
     setEnrollMsg("")
     try {
-      const res = await fetch(`/edx/api/enrollment/v1/enrollment`, {
+      const res = await fetch(`/military/api/v1/enroll/`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ course_details: { course_id: courseId } }),
+        body: JSON.stringify({ course_id: courseId }),
       })
       if (res.ok) {
         setEnrollMsg("✅ ลงทะเบียนสำเร็จ!")
         setCourses(prev => prev.map(c => c.id === courseId ? { ...c, is_enrolled: true, enrollment_count: c.enrollment_count + 1 } : c))
       } else {
-        setEnrollMsg("❌ ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่")
+        res.json().catch(()=>({})).then(e => setEnrollMsg("❌ " + (e.error || "ลงทะเบียนไม่สำเร็จ")))
       }
     } catch {
       setEnrollMsg("❌ ไม่สามารถเชื่อมต่อ server ได้")
@@ -171,6 +173,14 @@ export default function CoursesPage() {
           )}
         </div>
       </div>
+
+      {/* Course fetch error */}
+      {courseError && (
+        <div className="px-4 py-3 rounded-xl text-sm font-medium bg-red-50 text-red-700 border border-red-200">
+          ❌ โหลดหลักสูตรไม่สำเร็จ: {courseError}
+          <button onClick={loadCourses} className="ml-3 underline text-red-600">ลองใหม่</button>
+        </div>
+      )}
 
       {/* Flash message */}
       {enrollMsg && (

@@ -5,6 +5,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { api, MyCertificate } from "@/lib/api"
 
 const statusStyles: Record<string, string> = {
@@ -86,13 +87,21 @@ export default function MyCertificatesPage() {
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-3 flex items-center justify-between gap-2">
                 <DaysLeftBadge days={cert.days_left} />
-                {cert.can_renew && (
-                  <button className="text-xs bg-[#4A1A6B] hover:bg-[#2D0F42] text-white px-3 py-1.5 rounded-lg transition-colors">
-                    ต่ออายุใบประกาศ
-                  </button>
-                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  {cert.can_renew && (
+                    <button className="text-xs bg-[#4A1A6B] hover:bg-[#2D0F42] text-white px-3 py-1.5 rounded-lg transition-colors">
+                      ต่ออายุใบประกาศ
+                    </button>
+                  )}
+                  <Link
+                    href={`/certificate/${cert.id}`}
+                    className="text-xs flex items-center gap-1 bg-[#15376D] hover:bg-[#0f2650] text-white px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    📥 ดาวน์โหลดใบประกาศ
+                  </Link>
+                </div>
               </div>
             </div>
           ))}

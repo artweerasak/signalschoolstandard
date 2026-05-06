@@ -23,8 +23,17 @@ const ROLE_COLORS: Record<string, string> = {
   student: "bg-green-100 text-green-700",
 }
 
+const ARMY_REGION_CHOICES = [
+  ["", "ไม่ระบุ / ส่วนกลาง"],
+  ["1", "ทัพภาคที่ 1"],
+  ["2", "ทัพภาคที่ 2"],
+  ["3", "ทัพภาคที่ 3"],
+  ["4", "ทัพภาคที่ 4"],
+]
+
 type FormData = {
   full_name_th: string; rank: string; unit: string; sub_unit: string;
+  army_region: string; phone_number: string; contact_email: string;
   birth_date: string; service_start_date: string;
   username: string; password: string; role: string;
   national_id: string; military_id: string;
@@ -32,6 +41,7 @@ type FormData = {
 
 const emptyForm: FormData = {
   full_name_th: "", rank: "", unit: "", sub_unit: "",
+  army_region: "", phone_number: "", contact_email: "",
   birth_date: "", service_start_date: "",
   username: "", password: "", role: "student",
   national_id: "", military_id: "",
@@ -40,6 +50,8 @@ const emptyForm: FormData = {
 export default function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState("")
   const [loading, setLoading] = useState(true)
@@ -53,18 +65,25 @@ export default function UsersPage() {
   const [confirmActivate, setConfirmActivate] = useState<AdminUser | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<AdminUser | null>(null)
 
-  function loadUsers() {
+  const PAGE_SIZE = 20
+
+  function loadUsers(p = page) {
     setLoading(true)
-    const params: Record<string, string> = {}
+    const params: Record<string, string> = { page: String(p), page_size: String(PAGE_SIZE) }
     if (search) params.search = search
     if (roleFilter) params.role = roleFilter
     api.adminUsers(params)
-      .then((r) => { setUsers(r.results); setTotal(r.count) })
+      .then((r) => {
+        setUsers(r.results)
+        setTotal(r.count)
+        setTotalPages(Math.ceil(r.count / PAGE_SIZE) || 1)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadUsers() }, [search, roleFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); loadUsers(1) }, [search, roleFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadUsers() }, [page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openCreate() {
     setEditUser(null)
@@ -77,6 +96,7 @@ export default function UsersPage() {
     setEditUser(u)
     setForm({
       full_name_th: u.full_name, rank: u.rank, unit: u.unit, sub_unit: u.sub_unit,
+      army_region: (u as any).army_region ?? "", phone_number: (u as any).phone_number ?? "", contact_email: (u as any).contact_email ?? "",
       birth_date: u.birth_date, service_start_date: u.service_start_date,
       username: u.username, password: "", role: u.role,
       national_id: "", military_id: "",
@@ -270,6 +290,23 @@ export default function UsersPage() {
         )}
       </div>
 
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
+          <span className="text-xs text-gray-500">
+            แสดง {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} รายการ
+          </span>
+          <div className="flex gap-1 items-center">
+            <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
+            <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+            <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{page}</span>
+            <span className="text-xs text-gray-400">/ {totalPages}</span>
+            <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
+            <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+          </div>
+        </div>
+      )}
+
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
@@ -314,6 +351,33 @@ export default function UsersPage() {
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
+                <Field label="หน่วยรอง">
+                  <input type="text" value={form.sub_unit} onChange={e => setForm(f => ({...f, sub_unit: e.target.value}))}
+                    placeholder="หน่วยย่อย (ถ้ามี)"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </Field>
+                <Field label="ทัพภาค">
+                  <select value={form.army_region} onChange={e => setForm(f => ({...f, army_region: e.target.value}))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                    {ARMY_REGION_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  </select>
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="เบอร์โทรศัพท์">
+                  <input type="tel" value={form.phone_number} onChange={e => setForm(f => ({...f, phone_number: e.target.value}))}
+                    placeholder="0812345678"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </Field>
+                <Field label="อีเมลติดต่อ">
+                  <input type="email" value={form.contact_email} onChange={e => setForm(f => ({...f, contact_email: e.target.value}))}
+                    placeholder="email@example.com"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <Field label="วันเกิด">
                   <input type="date" value={form.birth_date} onChange={e => setForm(f => ({...f, birth_date: e.target.value}))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
@@ -337,9 +401,6 @@ export default function UsersPage() {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                     </Field>
                   </div>
-                  <Field label="อีเมล (ไม่บังคับ — ใช้เลขบัตรประชาชนเข้าสู่ระบบ)">
-                    <p className="text-xs text-gray-400 py-2">อีเมลถูกตั้งเป็นเลขบัตรประชาชนโดยอัตโนมัติ</p>
-                  </Field>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="เลขบัตรประชาชน" required>
                       <input type="text" value={form.national_id} onChange={e => setForm(f => ({...f, national_id: e.target.value.replace(/\D/g,"").slice(0,13)}))}

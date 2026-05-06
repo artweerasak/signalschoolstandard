@@ -251,6 +251,22 @@ export interface NotPassedPersonnel {
   expired_courses: string[]
 }
 
+
+export interface CertificateDetail {
+  id: number
+  cert_no: string
+  course_id: string
+  course_name: string
+  issued_date: string | null
+  expiry_date: string | null
+  status: string
+  days_left: number | null
+  rank: string
+  full_name: string
+  unit: string
+  sub_unit: string
+}
+
 export interface CertificateAlert {
   user_id: number
   full_name: string
@@ -280,17 +296,14 @@ export const api = {
   expiringSoon:     () => fetchAPI<{ results: ExpiringSoonItem[]; count: number }>("api/v1/dashboard/expiring-soon/"),
   rankStats:        () => fetchAPI<{ results: RankStat[] }>("api/v1/dashboard/rank-stats/"),
   myProfile:        () => fetchAPI<MyProfile>("api/v1/my/profile/"),
+  myCertificateDetail: (id: number) => fetchAPI<CertificateDetail>(`api/v1/my/certificates/${id}/`),
   myCertificates:   () => fetchAPI<{ results: MyCertificate[]; count: number }>("api/v1/my/certificates/"),
 
-  // Open edX Course API — ดึงตรงจาก LMS ไม่ต้องผ่าน Django plugin
+  // Course catalog — proxied through military plugin (avoids LMS CORS/redirect issues)
   courses: (search?: string, _category?: string) => {
     const params = new URLSearchParams({ page_size: "24" })
     if (search) params.set("search_term", search)
-    const base = typeof window !== "undefined" ? "/edx" : API_URL
-    return fetch(`${base}/api/courses/v1/courses/?${params}`, {
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    }).then(r => r.json() as Promise<CourseListResponse>)
+    return fetchAPI<CourseListResponse>(`api/v1/courses/?${params}`)
   },
 
   // ── Admin ────────────────────────────────────────────────────────────────

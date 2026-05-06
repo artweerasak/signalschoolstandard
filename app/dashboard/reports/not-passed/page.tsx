@@ -29,6 +29,7 @@ export default function NotPassedPage() {
   const [regionFilter, setRegionFilter] = useState("")
   const [rankClassFilter, setRankClassFilter] = useState("")
   const [unitFilter, setUnitFilter] = useState("")
+  const [searchText, setSearchText] = useState("")
 
   const load = () => {
     setLoading(true)
@@ -36,13 +37,14 @@ export default function NotPassedPage() {
     if (regionFilter) params.army_region = regionFilter
     if (rankClassFilter) params.rank_class = rankClassFilter
     if (unitFilter) params.unit = unitFilter
+    if (searchText.trim()) params.search = searchText.trim()
     api.complianceNotPassed(params)
       .then((r) => setData(r.results))
       .catch(() => setError("ไม่สามารถโหลดข้อมูลได้"))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [regionFilter, rankClassFilter, unitFilter])
+  useEffect(() => { load() }, [regionFilter, rankClassFilter, unitFilter, searchText])
 
   return (
     <div className="space-y-6">
@@ -80,6 +82,13 @@ export default function NotPassedPage() {
           value={unitFilter}
           onChange={(e) => setUnitFilter(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+        />
+        <input
+          type="text"
+          placeholder="ค้นหาชื่อ-สกุล..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] min-w-44"
         />
       </div>
 

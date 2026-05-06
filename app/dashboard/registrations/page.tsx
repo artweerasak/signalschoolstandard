@@ -123,7 +123,10 @@ export default function RegistrationsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-gray-700">{item.rank_display}</p>
-                    <p className="text-gray-500 text-xs">{item.unit}</p>
+                    <p className="text-gray-500 text-xs">{item.unit}{(item as any).sub_unit ? ` / ${(item as any).sub_unit}` : ""}</p>
+                    {(item as any).army_region_display && (item as any).army_region_display !== "ไม่ระบุ" && (
+                      <p className="text-purple-500 text-xs">{(item as any).army_region_display}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-xs">
                     {new Date(item.submitted_at).toLocaleDateString("th-TH", {
@@ -181,7 +184,13 @@ export default function RegistrationsPage() {
               <div className="bg-gray-50 rounded-lg p-4 space-y-1 text-sm">
                 <p><span className="text-gray-500">ชื่อ:</span> <strong>{selected.full_name_th}</strong></p>
                 <p><span className="text-gray-500">ยศ:</span> {selected.rank_display}</p>
-                <p><span className="text-gray-500">หน่วย:</span> {selected.unit}</p>
+                <p><span className="text-gray-500">หน่วย:</span> {selected.unit}{(selected as any).sub_unit ? ` / ${(selected as any).sub_unit}` : ""}</p>
+                {(selected as any).army_region_display && (selected as any).army_region_display !== "ไม่ระบุ" && (
+                  <p><span className="text-gray-500">ทัพภาค:</span> {(selected as any).army_region_display}</p>
+                )}
+                {(selected as any).phone_number && (
+                  <p><span className="text-gray-500">เบอร์โทร:</span> {(selected as any).phone_number}</p>
+                )}
                 {selected.email && <p><span className="text-gray-500">อีเมล:</span> {selected.email}</p>}
               </div>
 
