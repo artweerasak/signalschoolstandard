@@ -289,6 +289,21 @@ export interface CourseRequirement {
   created_at: string
 }
 
+export interface AdminCourseInstructor {
+  user_id: number
+  username: string
+  full_name: string
+}
+
+export interface AdminCourse {
+  id: string
+  name: string
+  short_description: string
+  effort: string
+  enrollment_count: number
+  instructors: AdminCourseInstructor[]
+}
+
 export const api = {
   me:               () => fetchAPI<CurrentUser>("api/v1/me/"),
   dashboardSummary: () => fetchAPI<DashboardSummary>("api/v1/dashboard/summary/"),
@@ -322,6 +337,11 @@ export const api = {
   adminHardDeleteUser: (id: number) => fetchAPIPost<{ success: boolean; message: string }>(`api/v1/admin/users/${id}/hard-delete/`, {}, "DELETE"),
 
   adminRegistrations: (status = "pending") => fetchAPI<RegistrationListResponse>(`api/v1/admin/registrations/?status=${status}`),
+  adminCourses: () => fetchAPI<{ results: AdminCourse[]; count: number }>("api/v1/admin/courses/"),
+  adminAssignInstructor: (courseId: string, userId: number, action: "add" | "remove") =>
+    fetchAPIPost<{ success: boolean }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/assign-instructor/`, { user_id: userId, action }),
+  adminDeleteCourse: (courseId: string) =>
+    fetchAPIPost<{ success: boolean }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/delete/`, {}, "DELETE"),
 
   adminRegistrationAction: (id: number, body: unknown) => fetchAPIPost<{ success: boolean; status: string }>(`api/v1/admin/registrations/${id}/`, body, "PATCH"),
 
@@ -332,6 +352,7 @@ export const api = {
   // ── Instructor ───────────────────────────────────────────────────────────
 
   instructorCourses: () => fetchAPI<CourseListResponse>("api/v1/instructor/courses/"),
+  deleteInstructorCourse: (courseId: string) => fetchAPIPost<{ success: boolean }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/delete/`, {}, "DELETE"),
 
   instructorStudents: (courseId: string) => fetchAPI<{ results: InstructorStudent[]; count: number }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/students/`),
 

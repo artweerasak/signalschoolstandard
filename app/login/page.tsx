@@ -30,8 +30,7 @@ function LoginPageInner() {
   const [loading, setLoading] = useState(false)
 
   function handleUsernameChange(value: string) {
-    const digits = value.replace(/\D/g, "").slice(0, 13)
-    setUsername(digits)
+    setUsername(value)
     if (errors.username) setErrors((e) => ({ ...e, username: undefined }))
   }
 
@@ -45,8 +44,8 @@ function LoginPageInner() {
     setApiError("")
 
     const newErrors: typeof errors = {}
-    if (!validateNationalId(username)) {
-      newErrors.username = "เลขบัตรประชาชน 13 หลักไม่ถูกต้อง"
+    if (!username.trim()) {
+      newErrors.username = "กรุณากรอกเลขบัตรประชาชน หรือ ชื่อผู้ใช้"
     }
     if (!password) {
       newErrors.password = "กรุณากรอกรหัสผ่าน"
@@ -117,8 +116,7 @@ function LoginPageInner() {
             </label>
             <input
               type="text"
-              inputMode="numeric"
-              placeholder="เลขบัตรประชาชน 13 หลัก"
+              placeholder="เลขบัตรประชาชน 13 หลัก หรือ ชื่อผู้ใช้"
               value={username}
               onChange={(e) => handleUsernameChange(e.target.value)}
               className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition

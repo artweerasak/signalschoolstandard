@@ -3,7 +3,7 @@
  * หน้าสมัครสมาชิกด้วยตัวเอง → PendingRegistration (รอ Admin อนุมัติ)
  */
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { api } from "@/lib/api"
@@ -25,6 +25,56 @@ const ARMY_REGION_CHOICES = [
   ["4", "ทัพภาคที่ 4"],
 ]
 
+const MONTHS_TH = [
+  "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+  "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม",
+]
+
+/** วันที่แบบ พ.ศ. — คืนค่า YYYY-MM-DD (ค.ศ.) ให้ API */
+function BuddhistDateInput({ value, onChange, hasError }: {
+  value: string; onChange: (v: string) => void; hasError?: boolean
+}) {
+  function parse(v: string) {
+    if (!v) return { day: 0, month: 0, beYear: 0 }
+    const p = v.split("-").map(Number)
+    return { day: p[2]||0, month: p[1]||0, beYear: p[0] ? p[0]+543 : 0 }
+  }
+  const [sel, setSel] = useState(() => parse(value))
+  useEffect(() => { setSel(parse(value)) }, [value])
+
+  function emit(d: number, m: number, be: number) {
+    setSel({ day: d, month: m, beYear: be })
+    if (d && m && be >= 2400) {
+      const ce = be - 543
+      onChange(String(ce).padStart(4,"0")+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0"))
+    } else {
+      onChange("")
+    }
+  }
+
+  const { day, month, beYear } = sel
+  const base = "border rounded-lg px-2 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white"
+  const err  = hasError ? "border-red-400" : "border-gray-300"
+  return (
+    <div className="grid grid-cols-3 gap-1">
+      <select value={day || ""} onChange={e => emit(Number(e.target.value), month, beYear)}
+        className={`${base} ${err}`}>
+        <option value="">วัน</option>
+        {Array.from({length:31},(_,i)=>i+1).map(d => <option key={d} value={d}>{d}</option>)}
+      </select>
+      <select value={month || ""} onChange={e => emit(day, Number(e.target.value), beYear)}
+        className={`${base} ${err}`}>
+        <option value="">เดือน</option>
+        {MONTHS_TH.map((name,i) => <option key={i+1} value={i+1}>{name}</option>)}
+      </select>
+      <input type="number" value={beYear || ""} placeholder="ปี พ.ศ."
+        min={2400} max={2620}
+        onChange={e => emit(day, month, Number(e.target.value))}
+        className={`${base} ${err} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
+    </div>
+  )
+
+}
 function validateNationalId(id: string): boolean {
   if (!/^\d{13}$/.test(id)) return false
   let sum = 0
@@ -38,7 +88,7 @@ export default function RegisterPage() {
     national_id: "", military_id: "", birth_date: "",
     phone_number: "", email: "",
   })
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors]   = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [apiError, setApiError] = useState("")
@@ -130,9 +180,11 @@ export default function RegisterPage() {
               {errors.rank && <p className="text-red-500 text-xs mt-1">{errors.rank}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">วันเกิด <span className="text-red-500">*</span></label>
-              <input type="date" value={form.birth_date} onChange={e => update("birth_date", e.target.value)}
-                className={inputCls("birth_date")} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                วันเกิด <span className="text-red-500">*</span>
+                <span className="text-gray-400 font-normal ml-1">(พ.ศ.)</span>
+              </label>
+              <BuddhistDateInput value={form.birth_date} onChange={v => update("birth_date", v)} hasError={!!errors.birth_date} />
               {errors.birth_date && <p className="text-red-500 text-xs mt-1">{errors.birth_date}</p>}
             </div>
           </div>

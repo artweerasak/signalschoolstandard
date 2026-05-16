@@ -9,6 +9,8 @@ export default function InstructorCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   useEffect(() => {
     api.instructorCourses()
@@ -16,6 +18,19 @@ export default function InstructorCoursesPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  const handleDelete = async (courseId: string) => {
+    setDeleting(courseId)
+    try {
+      await api.deleteInstructorCourse(courseId)
+      setCourses((prev) => prev.filter((c) => c.id !== courseId))
+      setConfirmDelete(null)
+    } catch (err: any) {
+      alert("ลบ course ไม่สำเร็จ: " + err.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -92,10 +107,44 @@ export default function InstructorCoursesPage() {
                   >
                     แก้ไข
                   </a>
+                  <button
+                    onClick={() => setConfirmDelete(course.id)}
+                    className="px-3 py-2 border border-red-300 rounded-lg text-xs text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    ลบ
+                  </button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-bold text-red-600 mb-2">⚠️ ยืนยันการลบ course</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              {courses.find((c) => c.id === confirmDelete)?.name}
+            </p>
+            <p className="text-xs text-gray-400 mb-5">
+              การลบจะลบเนื้อหา การลงทะเบียน และคะแนนทั้งหมดอย่างถาวร
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleDelete(confirmDelete)}
+                disabled={!!deleting}
+                className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "กำลังลบ..." : "ยืนยันลบ"}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
