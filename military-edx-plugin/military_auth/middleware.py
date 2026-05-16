@@ -108,3 +108,35 @@ class AuditLogMiddleware:
             )
         except Exception as exc:
             log.error("AuditLogMiddleware: failed to write log — %s", exc)
+
+
+# ── Username → Email Login Resolver ───────────────────────────────────────────
+
+class UsernameLoginMiddleware:
+    LOGIN_AJAX_URL = "/login_ajax"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.method == "POST" and request.path.startswith(self.LOGIN_AJAX_URL):
+            request = self._resolve_username_to_email(request)
+        return self.get_response(request)
+
+    @staticmethod
+    def _resolve_username_to_email(request):
+        """If POST email has no @, look up by username and inject real email."""
+        try:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            submitted = request.POST.get("email", "").strip()
+            if submitted and "@" not in submitted:
+                user = User.objects.filter(username=submitted).first()
+                if user and user.email:
+                    mutable = request.POST.copy()
+                    mutable["email"] = user.email
+                    request.POST = mutable
+                    log.debug("UsernameLoginMiddleware: resolved %s -> %s", submitted, user.email)
+        except Exception as exc:
+            log.error("UsernameLoginMiddleware error: %s", exc)
+        return request
