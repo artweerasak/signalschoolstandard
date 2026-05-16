@@ -65,9 +65,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ระบบการเรียนการสอนออนไลน์ · กรมการทหารสื่อสาร
           </h1>
           {user && (
-            <span className="text-sm text-gray-500">
-              {user.rank ? `${user.rank} ` : ""}{user.full_name}
-            </span>
+            <div className="flex items-center gap-3">
+              <a
+                href={process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio-signalstandard.rta.mi.th"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 bg-[#4A1A6B] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#7B3FA0] transition-colors"
+              >
+                <span>🏫</span> Open edX Studio
+              </a>
+              <span className="text-sm text-gray-500">
+                {user.rank ? `${user.rank} ` : ""}{user.full_name}
+              </span>
+            </div>
           )}
         </header>
         {/* Main content */}
