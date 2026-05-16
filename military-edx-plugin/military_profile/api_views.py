@@ -628,127 +628,6 @@ def api_admin_registration_action(request, registration_id: int):
 
 
 # ============================================================================
-# Admin: Course Management APIs
-# ============================================================================
-
-@require_GET
-@_require_admin
-def api_admin_courses(request):
-    """
-    GET /military/api/v1/admin/courses/
-    รายการ course ทั้งหมดพร้อม instructor ที่ assign และจำนวน enrollment
-    """
-    try:
-        from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
-        from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
-
-        overviews = CourseOverview.objects.all().order_by("display_name")
-
-        # ดึง instructor roles ทั้งหมดมา group ตาม course_id
-        roles = CourseAccessRole.objects.filter(
-            role__in=["instructor", "staff"]
-        ).select_related("user")
-
-        roles_map: dict = {}
-        for r in roles:
-            cid = str(r.course_id)
-            if cid not in roles_map:
-                roles_map[cid] = []
-            roles_map[cid].append({
-                "user_id": r.user_id,
-                "username": r.user.username,
-                "full_name": getattr(getattr(r.user, "military_profile", None), "full_name_th", None) or r.user.get_full_name() or r.user.username,
-            })
-
-        results = []
-        for ov in overviews:
-            cid = str(ov.id)
-            enrollment_count = CourseEnrollment.objects.filter(course_id=ov.id, is_active=True).count()
-            results.append({
-                "id": cid,
-                "name": ov.display_name or cid,
-                "short_description": getattr(ov, "short_description", "") or "",
-                "effort": getattr(ov, "effort", "") or "",
-                "enrollment_count": enrollment_count,
-                "instructors": roles_map.get(cid, []),
-            })
-
-        return JsonResponse({"results": results, "count": len(results)})
-
-    except Exception as exc:
-        return JsonResponse({"error": str(exc), "results": [], "count": 0}, status=200)
-
-
-@require_http_methods(["POST"])
-@_require_admin
-def api_admin_course_assign_instructor(request, course_id: str):
-    """
-    POST /military/api/v1/admin/courses/<course_id>/assign-instructor/
-    body: { user_id, action: "add"|"remove" }
-    เพิ่ม/ลบ instructor ออกจาก CourseAccessRole
-    """
-    try:
-        import json as _json
-        from common.djangoapps.student.models import CourseAccessRole
-        from opaque_keys.edx.keys import CourseKey
-
-        data = _json.loads(request.body)
-        user_id = data.get("user_id")
-        action = data.get("action", "add")
-
-        if not user_id:
-            return JsonResponse({"error": "user_id required"}, status=400)
-
-        target_user = User.objects.get(id=user_id)
-        course_key = CourseKey.from_string(course_id)
-
-        if action == "add":
-            CourseAccessRole.objects.get_or_create(
-                user=target_user,
-                course_id=course_key,
-                role="instructor",
-            )
-            return JsonResponse({"success": True, "action": "added", "username": target_user.username})
-        elif action == "remove":
-            CourseAccessRole.objects.filter(
-                user=target_user,
-                course_id=course_key,
-                role__in=["instructor", "staff"],
-            ).delete()
-            return JsonResponse({"success": True, "action": "removed", "username": target_user.username})
-        else:
-            return JsonResponse({"error": "action must be add or remove"}, status=400)
-
-    except User.DoesNotExist:
-        return JsonResponse({"error": "ไม่พบผู้ใช้"}, status=404)
-    except Exception as exc:
-        return JsonResponse({"error": str(exc)}, status=500)
-
-
-@require_http_methods(["DELETE"])
-@_require_admin
-def api_admin_delete_course(request, course_id: str):
-    """
-    DELETE /military/api/v1/admin/courses/<course_id>/delete/
-    ลบ course ออกจากระบบ (admin เท่านั้น)
-    """
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["python", "manage.py", "cms", "delete_course", course_id, "--commit"],
-            cwd="/openedx/edx-platform",
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            return JsonResponse({"error": result.stderr or "ลบ course ไม่สำเร็จ"}, status=500)
-        return JsonResponse({"success": True, "deleted": course_id})
-    except Exception as exc:
-        return JsonResponse({"error": str(exc)}, status=500)
-
-
-# ============================================================================
 # Instructor: Course / Student / Grade APIs
 # ============================================================================
 
@@ -1159,3 +1038,106 @@ def api_my_certificate_detail(request, cert_id):
         'unit':        unit,
         'sub_unit':    sub_unit,
     })
+
+
+# --- Admin Course Management ---
+
+@csrf_exempt
+def api_admin_courses(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+        from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
+        from django.contrib.auth import get_user_model
+        from military_profile.models import MilitaryUserProfile
+        User = get_user_model()
+        courses = CourseOverview.objects.all()
+        result = []
+        for course in courses:
+            instructors = CourseAccessRole.objects.filter(
+                course_id=course.id, role__in=["instructor", "staff"]
+            ).select_related("user")
+            instructor_list = []
+            for role in instructors:
+                try:
+                    profile = MilitaryUserProfile.objects.get(user=role.user)
+                    name = profile.full_name_th or role.user.username
+                except Exception:
+                    name = role.user.username
+                instructor_list.append({
+                    "user_id": role.user.id,
+                    "username": role.user.username,
+                    "full_name": name,
+                    "role": role.role,
+                })
+            enrollment_count = CourseEnrollment.objects.filter(
+                course_id=course.id, is_active=True
+            ).count()
+            result.append({
+                "course_id": str(course.id),
+                "display_name": course.display_name or str(course.id),
+                "start": course.start.isoformat() if course.start else None,
+                "end": course.end.isoformat() if course.end else None,
+                "enrollment_count": enrollment_count,
+                "instructors": instructor_list,
+            })
+        return JsonResponse({"results": result, "count": len(result)})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_admin_course_assign_instructor(request, course_id: str):
+    if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        import json
+        from opaque_keys.edx.keys import CourseKey
+        from common.djangoapps.student.models import CourseAccessRole
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        data = json.loads(request.body)
+        action = data.get("action", "add")
+        user_id = data.get("user_id")
+        if not user_id:
+            return JsonResponse({"error": "user_id required"}, status=400)
+        user = User.objects.get(id=user_id)
+        course_key = CourseKey.from_string(course_id)
+        if action == "add":
+            CourseAccessRole.objects.get_or_create(
+                user=user, course_id=course_key, role="instructor"
+            )
+            msg = "Assigned " + user.username + " as instructor"
+        else:
+            CourseAccessRole.objects.filter(
+                user=user, course_id=course_key, role__in=["instructor", "staff"]
+            ).delete()
+            msg = "Removed " + user.username + " from course"
+        return JsonResponse({"success": True, "message": msg})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def api_admin_delete_course(request, course_id: str):
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if not (request.user.is_authenticated and request.user.is_superuser):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        import subprocess
+        safe_id = course_id.replace(";", "").replace("&", "")
+        result = subprocess.run(
+            ["python", "manage.py", "delete_course", safe_id, "--commit"],
+            cwd="/openedx/edx-platform",
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            return JsonResponse({"success": True})
+        else:
+            return JsonResponse({"error": result.stderr or result.stdout}, status=500)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)

@@ -16,7 +16,6 @@ from .api_views import (
     api_admin_registrations,
     api_admin_registration_action,
     api_admin_reset_password,
-    # Admin — Courses Management
     api_admin_courses,
     api_admin_course_assign_instructor,
     api_admin_delete_course,
@@ -61,11 +60,9 @@ urlpatterns = [
 
     # Admin — Password Reset
     path("api/v1/admin/users/<int:user_id>/reset-password/", api_admin_reset_password, name="api_admin_reset_password"),
-
-    # Admin — Courses Management
-    path("api/v1/admin/courses/",                                        api_admin_courses,                   name="api_admin_courses"),
-    path("api/v1/admin/courses/<str:course_id>/assign-instructor/",      api_admin_course_assign_instructor,  name="api_admin_course_assign_instructor"),
-    path("api/v1/admin/courses/<str:course_id>/delete/",                 api_admin_delete_course,             name="api_admin_delete_course"),
+    path("api/v1/admin/courses/", api_admin_courses, name="api_admin_courses"),
+    path("api/v1/admin/courses/<path:course_id>/assign-instructor/", api_admin_course_assign_instructor, name="api_admin_course_assign_instructor"),
+    path("api/v1/admin/courses/<path:course_id>/delete/", api_admin_delete_course, name="api_admin_delete_course"),
 
     # Password Change (self)
     path("api/v1/change-password/", api_change_password, name="api_change_password"),
