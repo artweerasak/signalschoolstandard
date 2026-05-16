@@ -636,22 +636,36 @@ def api_admin_registration_action(request, registration_id: int):
 def api_instructor_courses(request):
     """
     GET /military/api/v1/instructor/courses/
-    รายการ course ที่ผู้ใช้เป็น instructor
-    โดยดึงจาก Open edX CourseInstructorRole (ผ่าน student API)
+    รายการ course ที่ผู้ใช้เป็น instructor/staff เฉพาะ course นั้น
+    ดึงจาก CourseAccessRole โดยตรง เพื่อไม่ให้ global-staff เห็นทุก course
     """
-    # ใช้ Open edX built-in API
-    import urllib.request as urlreq
-    lms_url = "http://localhost:8000"  # internal LMS URL
-    api_url = f"{lms_url}/api/courses/v1/courses/?username={request.user.username}&role=staff"
-
     try:
-        headers = {"Cookie": request.META.get("HTTP_COOKIE", "")}
-        req = urlreq.Request(api_url, headers=headers)
-        with urlreq.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-        return JsonResponse(data)
+        from common.djangoapps.student.models import CourseAccessRole
+        from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+
+        # เฉพาะ course ที่ user ถูก assign role instructor หรือ staff
+        course_ids = list(
+            CourseAccessRole.objects.filter(
+                user=request.user,
+                role__in=["instructor", "staff"],
+            ).values_list("course_id", flat=True)
+        )
+
+        overviews = CourseOverview.objects.filter(id__in=course_ids)
+
+        results = []
+        for ov in overviews:
+            results.append({
+                "id": str(ov.id),
+                "name": ov.display_name or str(ov.id),
+                "short_description": getattr(ov, "short_description", "") or "",
+                "effort": getattr(ov, "effort", "") or "",
+                "enrollment_count": 0,  # จะ populate ทีหลังถ้าต้องการ
+            })
+
+        return JsonResponse({"results": results, "count": len(results)})
+
     except Exception as exc:
-        # Fallback: ส่งแค่ error message (ใช้ mock ใน frontend)
         return JsonResponse({"error": str(exc), "results": [], "count": 0}, status=200)
 
 
