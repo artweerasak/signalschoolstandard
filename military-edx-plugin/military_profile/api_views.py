@@ -669,6 +669,51 @@ def api_instructor_courses(request):
         return JsonResponse({"error": str(exc), "results": [], "count": 0}, status=200)
 
 
+@require_http_methods(["DELETE"])
+@_require_instructor
+def api_instructor_delete_course(request, course_id: str):
+    """
+    DELETE /military/api/v1/instructor/courses/<course_id>/delete/
+    ลบ course — อนุญาตเฉพาะผู้ที่เป็น instructor/staff ของ course นั้น หรือ admin
+    """
+    try:
+        from common.djangoapps.student.models import CourseAccessRole
+        from opaque_keys.edx.keys import CourseKey
+
+        course_key = CourseKey.from_string(course_id)
+
+        profile = getattr(request.user, "military_profile", None)
+        is_admin = request.user.is_staff or (profile and profile.role == "admin")
+
+        # ถ้าไม่ใช่ admin ต้องตรวจสอบว่ามี role ใน course นี้จริง
+        if not is_admin:
+            has_role = CourseAccessRole.objects.filter(
+                user=request.user,
+                course_id=course_key,
+                role__in=["instructor", "staff"],
+            ).exists()
+            if not has_role:
+                return JsonResponse({"error": "คุณไม่มีสิทธิ์ลบ course นี้"}, status=403)
+
+        # รัน delete_course management command
+        import subprocess
+        result = subprocess.run(
+            ["python", "manage.py", "cms", "delete_course", course_id, "--commit"],
+            cwd="/openedx/edx-platform",
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode != 0:
+            return JsonResponse({"error": result.stderr or "ลบ course ไม่สำเร็จ"}, status=500)
+
+        return JsonResponse({"success": True, "deleted": course_id})
+
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
 @require_GET
 @_require_instructor
 def api_instructor_course_students(request, course_id: str):

@@ -20,6 +20,7 @@ from .api_views import (
     api_register,
     # Instructor
     api_instructor_courses,
+    api_instructor_delete_course,
     api_instructor_course_students,
     api_instructor_course_grades,
     # Courses proxy
@@ -65,8 +66,9 @@ urlpatterns = [
     path("api/v1/enroll/", api_enroll_course, name="api_enroll_course"),
 
     # Instructor
-    path("api/v1/instructor/courses/",                              api_instructor_courses,         name="api_instructor_courses"),
-    path("api/v1/instructor/courses/<str:course_id>/students/",    api_instructor_course_students, name="api_instructor_course_students"),
-    path("api/v1/instructor/courses/<str:course_id>/grades/",      api_instructor_course_grades,   name="api_instructor_course_grades"),
+    path("api/v1/instructor/courses/",                                   api_instructor_courses,         name="api_instructor_courses"),
+    path("api/v1/instructor/courses/<str:course_id>/delete/",            api_instructor_delete_course,   name="api_instructor_delete_course"),
+    path("api/v1/instructor/courses/<str:course_id>/students/",          api_instructor_course_students, name="api_instructor_course_students"),
+    path("api/v1/instructor/courses/<str:course_id>/grades/",            api_instructor_course_grades,   name="api_instructor_course_grades"),
 ]
 
