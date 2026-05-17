@@ -1077,8 +1077,8 @@ def api_admin_courses(request):
                 course_id=course.id, is_active=True
             ).count()
             result.append({
-                "id": str(course.id),
-                "name": course.display_name or str(course.id),
+                "course_id": str(course.id),
+                "display_name": course.display_name or str(course.id),
                 "start": course.start.isoformat() if course.start else None,
                 "end": course.end.isoformat() if course.end else None,
                 "enrollment_count": enrollment_count,
@@ -1108,27 +1108,8 @@ def api_admin_course_assign_instructor(request, course_id: str):
         course_key = CourseKey.from_string(course_id)
         if action == "add":
             CourseAccessRole.objects.get_or_create(
-                user=user, course_id=course_key, role="instructor",
-                defaults={"org": course_key.org}
+                user=user, course_id=course_key, role="instructor"
             )
-            # Also update org if record already exists with empty org
-            CourseAccessRole.objects.filter(
-                user=user, course_id=course_key, role="instructor", org=""
-            ).update(org=course_key.org)
-            # Grant Studio (CourseCreator) access so instructor can edit in Studio
-            from datetime import datetime as _dt
-            now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            from django.db import connection as _conn
-            with _conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE course_creators_coursecreator SET state='granted', state_changed=%s WHERE user_id=%s",
-                    [now, user.id]
-                )
-                if cur.rowcount == 0:
-                    cur.execute(
-                        "INSERT INTO course_creators_coursecreator (user_id, state, note, state_changed, all_organizations) VALUES (%s, 'granted', '', %s, 0)",
-                        [user.id, now]
-                    )
             msg = "Assigned " + user.username + " as instructor"
         else:
             CourseAccessRole.objects.filter(
