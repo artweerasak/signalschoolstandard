@@ -66,7 +66,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </h1>
           {user && (
             <div className="flex items-center gap-3">
-             
               <span className="text-sm text-gray-500">
                 {user.rank ? `${user.rank} ` : ""}{user.full_name}
               </span>
