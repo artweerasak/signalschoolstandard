@@ -695,19 +695,15 @@ def api_instructor_delete_course(request, course_id: str):
             if not has_role:
                 return JsonResponse({"error": "คุณไม่มีสิทธิ์ลบ course นี้"}, status=403)
 
-        # รัน delete_course management command
-        import subprocess
-        result = subprocess.run(
-            ["python", "manage.py", "cms", "delete_course", course_id, "--commit"],
-            cwd="/openedx/edx-platform",
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        # ลบ course via modulestore API
+        from xmodule.modulestore.django import modulestore
+        from xmodule.modulestore import ModuleStoreEnum
 
-        if result.returncode != 0:
-            return JsonResponse({"error": result.stderr or "ลบ course ไม่สำเร็จ"}, status=500)
+        store = modulestore()
+        if not store.get_course(course_key):
+            return JsonResponse({"error": "ไม่พบ course"}, status=404)
 
+        store.delete_course(course_key, ModuleStoreEnum.UserID.mgmt_command)
         return JsonResponse({"success": True, "deleted": course_id})
 
     except Exception as exc:
@@ -1077,8 +1073,8 @@ def api_admin_courses(request):
                 course_id=course.id, is_active=True
             ).count()
             result.append({
-                "course_id": str(course.id),
-                "display_name": course.display_name or str(course.id),
+                "id": str(course.id),
+                "name": course.display_name or str(course.id),
                 "start": course.start.isoformat() if course.start else None,
                 "end": course.end.isoformat() if course.end else None,
                 "enrollment_count": enrollment_count,
@@ -1108,8 +1104,27 @@ def api_admin_course_assign_instructor(request, course_id: str):
         course_key = CourseKey.from_string(course_id)
         if action == "add":
             CourseAccessRole.objects.get_or_create(
-                user=user, course_id=course_key, role="instructor"
+                user=user, course_id=course_key, role="instructor",
+                defaults={"org": course_key.org}
             )
+            # Also update org if record already exists with empty org
+            CourseAccessRole.objects.filter(
+                user=user, course_id=course_key, role="instructor", org=""
+            ).update(org=course_key.org)
+            # Grant Studio (CourseCreator) access so instructor can edit in Studio
+            from datetime import datetime as _dt
+            now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            from django.db import connection as _conn
+            with _conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE course_creators_coursecreator SET state='granted', state_changed=%s WHERE user_id=%s",
+                    [now, user.id]
+                )
+                if cur.rowcount == 0:
+                    cur.execute(
+                        "INSERT INTO course_creators_coursecreator (user_id, state, note, state_changed, all_organizations) VALUES (%s, 'granted', '', %s, 0)",
+                        [user.id, now]
+                    )
             msg = "Assigned " + user.username + " as instructor"
         else:
             CourseAccessRole.objects.filter(
@@ -1128,16 +1143,22 @@ def api_admin_delete_course(request, course_id: str):
     if not (request.user.is_authenticated and request.user.is_superuser):
         return JsonResponse({"error": "Forbidden"}, status=403)
     try:
-        import subprocess
-        safe_id = course_id.replace(";", "").replace("&", "")
-        result = subprocess.run(
-            ["python", "manage.py", "delete_course", safe_id, "--commit"],
-            cwd="/openedx/edx-platform",
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0:
-            return JsonResponse({"success": True})
-        else:
-            return JsonResponse({"error": result.stderr or result.stdout}, status=500)
+        from opaque_keys.edx.keys import CourseKey
+        from xmodule.modulestore.django import modulestore
+        from xmodule.modulestore import ModuleStoreEnum
+
+        course_key = CourseKey.from_string(course_id)
+        store = modulestore()
+
+        # ตรวจว่า course มีอยู่จริง
+        course = store.get_course(course_key)
+        if not course:
+            return JsonResponse({"error": "ไม่พบ course"}, status=404)
+
+        # ลบ course via modulestore API
+        store.delete_course(course_key, ModuleStoreEnum.UserID.mgmt_command)
+
+        return JsonResponse({"success": True, "deleted": course_id})
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
