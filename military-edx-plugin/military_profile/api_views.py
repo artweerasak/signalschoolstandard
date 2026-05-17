@@ -1077,8 +1077,8 @@ def api_admin_courses(request):
                 course_id=course.id, is_active=True
             ).count()
             result.append({
-                "course_id": str(course.id),
-                "display_name": course.display_name or str(course.id),
+                "id": str(course.id),
+                "name": course.display_name or str(course.id),
                 "start": course.start.isoformat() if course.start else None,
                 "end": course.end.isoformat() if course.end else None,
                 "enrollment_count": enrollment_count,
