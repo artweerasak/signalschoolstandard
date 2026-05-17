@@ -1,0 +1,251 @@
+# Global configuration
+{
+
+    
+    
+}
+
+# proxy directive snippet (with logging) to be used as follows:
+#
+#     import proxy "containername:port"
+(proxy) {
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                common_log delete
+                request>headers delete
+                resp_headers delete
+                tls delete
+            }
+        }
+    }
+
+    # This will compress requests that matches the default criteria set by Caddy.
+    # see https://caddyserver.com/docs/caddyfile/directives/encode
+    # for information about the defaults; i.e. how/when this will be applied.
+    encode gzip
+
+    reverse_proxy {args.0} {
+        header_up X-Forwarded-Port 443
+    }
+
+    
+}
+
+signalstandard.rta.mi.th{$default_site_port} {
+    @favicon_matcher {
+        path_regexp ^/favicon.ico$
+    }
+    rewrite @favicon_matcher /theming/asset/images/favicon.ico
+
+    # Limit profile image upload size
+    handle_path /api/profile_images/*/*/upload {
+        request_body {
+            max_size 1MB
+        }
+    }
+
+    # Route LMS API paths directly to LMS container (bypasses Next.js proxy)
+    handle /military/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /login_ajax {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /csrf/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /logout {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    # JWT token refresh (ใช้โดย MFE และ frontend)
+    handle /login_refresh {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    # LMS API endpoints ที่ MFE ใช้
+    handle /api/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /user_api/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /theming/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    # OAuth2/SSO flow สำหรับ Studio (cms-sso)
+    handle /oauth2/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /auth/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    # MFE paths — proxy to mfe:8002 (same domain = cookies work!)
+    handle /authoring* {
+        reverse_proxy mfe:8002
+    }
+    handle /learner-dashboard* {
+        reverse_proxy mfe:8002
+    }
+    handle /learning* {
+        reverse_proxy mfe:8002
+    }
+    handle /account* {
+        reverse_proxy mfe:8002
+    }
+    handle /profile* {
+        reverse_proxy mfe:8002
+    }
+    handle /gradebook* {
+        reverse_proxy mfe:8002
+    }
+    handle /discussions* {
+        reverse_proxy mfe:8002
+    }
+    handle /course-authoring* {
+        reverse_proxy mfe:8002
+    }
+
+    # LMS Static files (Django admin CSS/JS)
+    handle /static/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+    # Course pages and xblocks → LMS
+    handle /courses/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /xblock/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /asset-v1:* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+        # Course Preview (Studio → LMS)
+    handle /preview/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+        # Django Admin → LMS
+    handle /admin {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /admin/* {
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+    # All other traffic → Next.js frontend
+    handle {
+        reverse_proxy 172.18.0.1:3000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+}
+
+studio-signalstandard.rta.mi.th{$default_site_port} {
+    tls /data/certs/signalstandard.crt /data/certs/signalstandard.key
+    @favicon_matcher {
+        path_regexp ^/favicon.ico$
+    }
+    rewrite @favicon_matcher /theming/asset/images/favicon.ico
+
+    import proxy "cms:8000"
+
+    
+
+    handle_path /* {
+        request_body {
+            max_size 2GB
+        }
+    }
+}
+
+
+meilisearch-signalstandard.rta.mi.th{$default_site_port} {
+    tls /data/certs/signalstandard.crt /data/certs/signalstandard.key
+    import proxy "meilisearch:7700"
+}
+
+
+apps-signalstandard.rta.mi.th{$default_site_port} {
+    tls /data/certs/signalstandard.crt /data/certs/signalstandard.key
+    redir / https://signalstandard.rta.mi.th
+
+    # Proxy /login_refresh to LMS + rewrite cookie domain สำหรับ MFE JWT auth
+    handle /login_refresh {
+        reverse_proxy lms:8000 {
+            header_up Host signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+            header_down Set-Cookie "Domain=signalstandard.rta.mi.th" "Domain=apps-signalstandard.rta.mi.th"
+        }
+    }
+    # LMS APIs ที่ MFE ต้องใช้
+    handle /api/* {
+        reverse_proxy lms:8000 {
+            header_up Host signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+    request_body {
+        max_size 2MB
+    }
+    import proxy "mfe:8002"
+    
+}
