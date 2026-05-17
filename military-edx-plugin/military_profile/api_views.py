@@ -1108,8 +1108,13 @@ def api_admin_course_assign_instructor(request, course_id: str):
         course_key = CourseKey.from_string(course_id)
         if action == "add":
             CourseAccessRole.objects.get_or_create(
-                user=user, course_id=course_key, role="instructor"
+                user=user, course_id=course_key, role="instructor",
+                defaults={"org": course_key.org}
             )
+            # Also update org if record already exists with empty org
+            CourseAccessRole.objects.filter(
+                user=user, course_id=course_key, role="instructor", org=""
+            ).update(org=course_key.org)
             # Grant Studio (CourseCreator) access so instructor can edit in Studio
             from datetime import datetime as _dt
             now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
