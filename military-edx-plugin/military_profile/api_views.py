@@ -1110,6 +1110,20 @@ def api_admin_course_assign_instructor(request, course_id: str):
             CourseAccessRole.objects.get_or_create(
                 user=user, course_id=course_key, role="instructor"
             )
+            # Grant Studio (CourseCreator) access so instructor can edit in Studio
+            from datetime import datetime as _dt
+            now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            from django.db import connection as _conn
+            with _conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE course_creators_coursecreator SET state='granted', state_changed=%s WHERE user_id=%s",
+                    [now, user.id]
+                )
+                if cur.rowcount == 0:
+                    cur.execute(
+                        "INSERT INTO course_creators_coursecreator (user_id, state, note, state_changed, all_organizations) VALUES (%s, 'granted', '', %s, 0)",
+                        [user.id, now]
+                    )
             msg = "Assigned " + user.username + " as instructor"
         else:
             CourseAccessRole.objects.filter(
