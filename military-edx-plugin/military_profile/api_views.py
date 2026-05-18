@@ -1398,7 +1398,7 @@ def api_import_execute(request):
                 import_errors.append("ข้อ {}: {}".format(idx, str(ex)))
 
         try:
-            lib_api.publish_changes(library_key)
+            lib_api.publish_changes(library_key, user_id=request.user.id)
         except Exception:
             pass
 
