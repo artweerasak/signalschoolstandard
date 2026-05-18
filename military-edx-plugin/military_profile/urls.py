@@ -82,6 +82,7 @@ urlpatterns = [
     # Import Questions from Word
     path("api/v1/import/libraries/", api_import_list_libraries, name="api_import_list_libraries"),
     path("api/v1/import/parse/", api_import_parse, name="api_import_parse"),
-    path("api/v1/import/execute/", api_import_execute, api_delete_library, name="api_import_execute, api_delete_library"),
+    path("api/v1/import/execute/", api_import_execute, name="api_import_execute"),
+    path("api/v1/import/libraries/<path:library_key_str>/delete/", api_delete_library, name="api_delete_library"),
 ]
 
