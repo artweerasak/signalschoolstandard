@@ -16,7 +16,7 @@ const adminNavItems = [
   { href: "/dashboard/certificates", label: "แจ้งเตือนใบประกาศ", icon: "🔔" },
   { href: "/dashboard/course-requirements", label: "กำหนดหลักสูตร", icon: "⚙️" },
   { href: "/dashboard/courses", label: "จัดการหลักสูตร", icon: "📚" },
-  { href: "/dashboard/import-questions", label: "นำเข้าข้อสอบ", icon: "📥" },
+  { href: "/instructor/import-questions", label: "นำเข้าข้อสอบ", icon: "📥" },
 ]
 
 // เมนูใบประกาศ/โปรไฟล์ส่วนตัวสำหรับ admin และ instructor (กำลังพลที่ต้องถูกตรวจสอบด้วย)
@@ -28,6 +28,7 @@ const adminPersonalItems = [
 
 const instructorNavItems = [
   { href: "/instructor", label: "หลักสูตรของฉัน", icon: "📚" },
+  { href: "/instructor/import-questions", label: "นำเข้าข้อสอบ", icon: "📥" },
 ]
 
 const instructorPersonalItems = [
