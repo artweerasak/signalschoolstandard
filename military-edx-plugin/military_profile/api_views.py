@@ -1162,3 +1162,193 @@ def api_admin_delete_course(request, course_id: str):
     except Exception as e:
         import traceback
         return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+# ============================================================
+# Import Questions from Word/Docx API
+# ============================================================
+
+def _parse_docx_questions(file_bytes):
+    import io, re
+    from docx import Document
+
+    doc = Document(io.BytesIO(file_bytes))
+    questions = []
+    errors = []
+    CHOICE_MAP = {"ก": "A", "ข": "B", "ค": "C", "ง": "D", "จ": "E"}
+
+    def normalize_letter(s):
+        s = s.strip().upper()
+        return CHOICE_MAP.get(s, s)
+
+    current = None
+    line_num = 0
+
+    def flush(q, ln):
+        if not q:
+            return None
+        if not q.get("question"):
+            errors.append(f"บรรทัด {ln}: ไม่พบคำถาม")
+            return None
+        if len(q.get("choices", [])) < 2:
+            errors.append(f"บรรทัด {ln}: '{q['question'][:30]}' มีตัวเลือกน้อยเกินไป ({len(q.get('choices',[]))} ตัวเลือก)")
+            return None
+        if not q.get("answer"):
+            errors.append(f"บรรทัด {ln}: '{q['question'][:30]}' ไม่มีเฉลย")
+            return None
+        return q
+
+    for para in doc.paragraphs:
+        line_num += 1
+        line = para.text.strip()
+        if not line:
+            if current:
+                q = flush(current, line_num)
+                if q:
+                    questions.append(q)
+                current = None
+            continue
+
+        choice_match = re.match(r"^([กขคงจABCDE])[.)]\s+(.*)", line, re.IGNORECASE)
+        answer_match = re.match(r"^(?:เฉลย|ตอบ|คำตอบ|answer)[:\s]+([กขคงABCDE])", line, re.IGNORECASE)
+        new_q_match = re.match(r"^(?:ข้อ\s*\d+[.\s]*|(?:\d+)[.)]\s*)(.*)", line)
+
+        if answer_match:
+            if current:
+                current["answer"] = normalize_letter(answer_match.group(1))
+        elif choice_match:
+            letter = normalize_letter(choice_match.group(1))
+            text = choice_match.group(2).strip()
+            if current is None:
+                current = {"question": "", "choices": [], "answer": ""}
+            current["choices"].append({"letter": letter, "text": text})
+        elif new_q_match:
+            if current:
+                q = flush(current, line_num)
+                if q:
+                    questions.append(q)
+            q_text = new_q_match.group(1).strip() or line
+            current = {"question": q_text, "choices": [], "answer": ""}
+        else:
+            if current is None:
+                current = {"question": line, "choices": [], "answer": ""}
+            elif not current.get("question"):
+                current["question"] = line
+            elif not current.get("choices"):
+                current["question"] += " " + line
+
+    if current:
+        q = flush(current, line_num)
+        if q:
+            questions.append(q)
+
+    return questions, errors
+
+
+def _question_to_olx(q, idx):
+    import xml.sax.saxutils as saxutils
+    esc = saxutils.escape
+    choices_xml = ""
+    for c in q["choices"]:
+        correct = "true" if c["letter"] == q["answer"] else "false"
+        choices_xml += '        <choice correct="{}">{}</choice>\n'.format(correct, esc(c["text"]))
+    return '<problem display_name="{}">\n  <multiplechoiceresponse>\n    <label>{}</label>\n    <choicegroup type="MultipleChoice" shuffle="true">\n{}    </choicegroup>\n  </multiplechoiceresponse>\n</problem>'.format(
+        esc(q["question"][:80]), esc(q["question"]), choices_xml
+    )
+
+
+@require_http_methods(["GET"])
+def api_import_list_libraries(request):
+    if not (request.user.is_authenticated and request.user.is_superuser):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        from openedx.core.djangoapps.content_libraries import api as lib_api
+        libs = lib_api.get_libraries_for_user(request.user)
+        result = [
+            {
+                "key": str(l.library_key),
+                "title": l.learning_package.title,
+                "org": l.org.short_name if hasattr(l.org, "short_name") else str(l.org),
+            }
+            for l in libs
+        ]
+        return JsonResponse({"libraries": result})
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["POST"])
+def api_import_parse(request):
+    if not (request.user.is_authenticated and request.user.is_superuser):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        if "file" not in request.FILES:
+            return JsonResponse({"error": "ไม่พบไฟล์"}, status=400)
+        f = request.FILES["file"]
+        if not f.name.lower().endswith(".docx"):
+            return JsonResponse({"error": "รองรับเฉพาะไฟล์ .docx"}, status=400)
+        file_bytes = f.read()
+        questions, errors = _parse_docx_questions(file_bytes)
+        return JsonResponse({
+            "total": len(questions),
+            "questions": questions[:20],
+            "errors": errors[:20],
+        })
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["POST"])
+def api_import_execute(request):
+    if not (request.user.is_authenticated and request.user.is_superuser):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        import uuid
+        from openedx.core.djangoapps.content_libraries import api as lib_api
+        from opaque_keys.edx.locator import LibraryLocatorV2
+
+        library_key_str = request.POST.get("library_key", "")
+        if not library_key_str:
+            return JsonResponse({"error": "กรุณาระบุ library_key"}, status=400)
+        if "file" not in request.FILES:
+            return JsonResponse({"error": "ไม่พบไฟล์"}, status=400)
+
+        f = request.FILES["file"]
+        file_bytes = f.read()
+        questions, parse_errors = _parse_docx_questions(file_bytes)
+
+        if not questions:
+            return JsonResponse({"error": "ไม่พบข้อสอบในไฟล์", "parse_errors": parse_errors}, status=400)
+
+        library_key = LibraryLocatorV2.from_string(library_key_str)
+        imported = 0
+        import_errors = []
+
+        for idx, q in enumerate(questions, 1):
+            try:
+                def_id = "q-{}".format(__import__("uuid").uuid4().hex[:12])
+                block = lib_api.create_library_block(
+                    library_key, "problem", def_id, user_id=request.user.id
+                )
+                olx = _question_to_olx(q, idx)
+                lib_api.set_library_block_olx(block.usage_key, olx)
+                imported += 1
+            except Exception as ex:
+                import_errors.append("ข้อ {}: {}".format(idx, str(ex)))
+
+        try:
+            lib_api.publish_changes(library_key)
+        except Exception:
+            pass
+
+        return JsonResponse({
+            "success": True,
+            "imported": imported,
+            "total": len(questions),
+            "parse_errors": parse_errors,
+            "import_errors": import_errors,
+        })
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)

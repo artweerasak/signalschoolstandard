@@ -31,6 +31,9 @@ from .api_views import (
     api_enroll_course,
     # Password
     api_change_password,
+    api_import_list_libraries,
+    api_import_parse,
+    api_import_execute,
 )
 
 app_name = "military_profile"
@@ -76,5 +79,9 @@ urlpatterns = [
     path("api/v1/instructor/courses/<str:course_id>/delete/",            api_instructor_delete_course,   name="api_instructor_delete_course"),
     path("api/v1/instructor/courses/<str:course_id>/students/",          api_instructor_course_students, name="api_instructor_course_students"),
     path("api/v1/instructor/courses/<str:course_id>/grades/",            api_instructor_course_grades,   name="api_instructor_course_grades"),
+    # Import Questions from Word
+    path("api/v1/import/libraries/", api_import_list_libraries, name="api_import_list_libraries"),
+    path("api/v1/import/parse/", api_import_parse, name="api_import_parse"),
+    path("api/v1/import/execute/", api_import_execute, name="api_import_execute"),
 ]
 
