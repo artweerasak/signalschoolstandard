@@ -1280,13 +1280,21 @@ def _parse_docx_questions(file_bytes):
 def _question_to_olx(q, idx):
     import xml.sax.saxutils as saxutils
     esc = saxutils.escape
+    # quoteattr handles attribute escaping including < > " & inside attribute values
+    display_name = saxutils.quoteattr(q["question"][:80])
     choices_xml = ""
-    for c in q["choices"]:
-        correct = "true" if c["letter"] == q["answer"] else "false"
-        choices_xml += '        <choice correct="{}">{}</choice>\n'.format(correct, esc(c["text"]))
-    return '<problem display_name="{}">\n  <multiplechoiceresponse>\n    <label>{}</label>\n    <choicegroup type="MultipleChoice" shuffle="true">\n{}    </choicegroup>\n  </multiplechoiceresponse>\n</problem>'.format(
-        esc(q["question"][:80]), esc(q["question"]), choices_xml
-    )
+    for ch in q["choices"]:
+        correct = "true" if ch["letter"] == q["answer"] else "false"
+        choices_xml += '        <choice correct="{}">{}</choice>\n'.format(correct, esc(ch["text"]))
+    return (
+        '<problem display_name={}>\n'
+        '  <multiplechoiceresponse>\n'
+        '    <label>{}\n</label>\n'
+        '    <choicegroup type="MultipleChoice" shuffle="true">\n'
+        '{}    </choicegroup>\n'
+        '  </multiplechoiceresponse>\n'
+        '</problem>'
+    ).format(display_name, esc(q["question"]), choices_xml)
 
 
 @require_http_methods(["GET"])
