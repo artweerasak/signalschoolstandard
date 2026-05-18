@@ -1271,16 +1271,35 @@ def api_import_list_libraries(request):
     if not _is_admin_or_instructor(request.user):
         return JsonResponse({"error": "Forbidden"}, status=403)
     try:
-        from openedx.core.djangoapps.content_libraries import api as lib_api
-        libs = lib_api.get_libraries_for_user(request.user)
-        result = [
-            {
-                "key": str(l.library_key),
-                "title": l.learning_package.title,
-                "org": l.org.short_name if hasattr(l.org, "short_name") else str(l.org),
-            }
-            for l in libs
-        ]
+        from openedx.core.djangoapps.content_libraries.models import ContentLibrary, ContentLibraryPermission
+        from opaque_keys.edx.locator import LibraryLocatorV2
+        user = request.user
+
+        if user.is_staff or user.is_superuser:
+            # admin sees all libraries
+            libs = ContentLibrary.objects.all().select_related("learning_package", "org")
+            result = [
+                {
+                    "key": str(LibraryLocatorV2(org=l.org.short_name, slug=l.slug)),
+                    "title": l.learning_package.title,
+                    "org": l.org.short_name,
+                }
+                for l in libs
+            ]
+        else:
+            # instructor sees only libraries where they have permission
+            perms = ContentLibraryPermission.objects.filter(user=user).select_related(
+                "library__learning_package", "library__org"
+            )
+            result = [
+                {
+                    "key": str(LibraryLocatorV2(org=p.library.org.short_name, slug=p.library.slug)),
+                    "title": p.library.learning_package.title,
+                    "org": p.library.org.short_name,
+                    "access_level": p.access_level,
+                }
+                for p in perms
+            ]
         return JsonResponse({"libraries": result})
     except Exception as e:
         import traceback
