@@ -283,17 +283,22 @@ export default function ImportQuestionsPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
             <p className="font-semibold text-blue-800 mb-2">📋 รูปแบบข้อสอบใน Word</p>
             <pre className="text-blue-700 whitespace-pre-wrap font-mono text-xs leading-relaxed">
-{`ข้อ 1 อาวุธประจำกายของทหารสื่อสารคืออะไร
-ก. ปืนเล็กยาว
-ข. ปืนพก
-ค. ระเบิดมือ
-ง. มีดปลายปืน
-เฉลย ข
+{`คีย์ลัดที่ใช้ ค้นหา ในเอกสารคือ?
+A) Ctrl+H
+B) Ctrl+G
+C) Ctrl+F
+D) Ctrl+R
+ANSWER C
 
-ข้อ 2 ...`}
+ถ้าต้องการทำให้ตัวอักษรหนา ควรกดปุ่มใด?
+ก. Ctrl+I
+ข. Ctrl+B
+ค. Ctrl+U
+ง. Ctrl+S
+เฉลย ข`}
             </pre>
             <p className="text-blue-600 mt-2 text-xs">
-              รองรับ: ก/A ข/B ค/C ง/D • เฉลย/ตอบ/ANSWER • มี/ไม่มีเลขข้อนำก็ได้
+              รองรับ: ก./A) ข./B) ค./C) ง./D) • เฉลย/ตอบ/ANSWER • มี/ไม่มีเลขข้อก็ได้ • คั่นด้วยบรรทัดว่างระหว่างข้อ
             </p>
           </div>
 
