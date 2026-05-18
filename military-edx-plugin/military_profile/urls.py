@@ -33,7 +33,7 @@ from .api_views import (
     api_change_password,
     api_import_list_libraries,
     api_import_parse,
-    api_import_execute,
+    api_import_execute, api_delete_library,
 )
 
 app_name = "military_profile"
@@ -82,6 +82,6 @@ urlpatterns = [
     # Import Questions from Word
     path("api/v1/import/libraries/", api_import_list_libraries, name="api_import_list_libraries"),
     path("api/v1/import/parse/", api_import_parse, name="api_import_parse"),
-    path("api/v1/import/execute/", api_import_execute, name="api_import_execute"),
+    path("api/v1/import/execute/", api_import_execute, api_delete_library, name="api_import_execute, api_delete_library"),
 ]
 

@@ -1163,6 +1163,16 @@ def api_admin_delete_course(request, course_id: str):
         import traceback
         return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
 
+
+
+def _is_admin_or_instructor(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    from common.djangoapps.student.models import CourseAccessRole
+    return CourseAccessRole.objects.filter(user=user, role__in=["instructor", "staff"]).exists()
+
 # ============================================================
 # Import Questions from Word/Docx API
 # ============================================================
@@ -1258,7 +1268,7 @@ def _question_to_olx(q, idx):
 
 @require_http_methods(["GET"])
 def api_import_list_libraries(request):
-    if not (request.user.is_authenticated and request.user.is_superuser):
+    if not _is_admin_or_instructor(request.user):
         return JsonResponse({"error": "Forbidden"}, status=403)
     try:
         from openedx.core.djangoapps.content_libraries import api as lib_api
@@ -1279,7 +1289,7 @@ def api_import_list_libraries(request):
 
 @require_http_methods(["POST"])
 def api_import_parse(request):
-    if not (request.user.is_authenticated and request.user.is_superuser):
+    if not _is_admin_or_instructor(request.user):
         return JsonResponse({"error": "Forbidden"}, status=403)
     try:
         if "file" not in request.FILES:
@@ -1301,7 +1311,7 @@ def api_import_parse(request):
 
 @require_http_methods(["POST"])
 def api_import_execute(request):
-    if not (request.user.is_authenticated and request.user.is_superuser):
+    if not _is_admin_or_instructor(request.user):
         return JsonResponse({"error": "Forbidden"}, status=403)
     try:
         import uuid
@@ -1349,6 +1359,21 @@ def api_import_execute(request):
             "parse_errors": parse_errors,
             "import_errors": import_errors,
         })
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["DELETE"])
+def api_delete_library(request, library_key_str):
+    if not (request.user.is_authenticated and request.user.is_superuser):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        from openedx.core.djangoapps.content_libraries import api as lib_api
+        from opaque_keys.edx.locator import LibraryLocatorV2
+        library_key = LibraryLocatorV2.from_string(library_key_str)
+        lib_api.delete_library(library_key)
+        return JsonResponse({"success": True, "deleted": library_key_str})
     except Exception as e:
         import traceback
         return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
