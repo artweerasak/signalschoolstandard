@@ -1207,9 +1207,25 @@ def _parse_docx_questions(file_bytes):
             return None
         return q
 
+    def is_complete(q):
+        return q and q.get("question") and len(q.get("choices", [])) >= 2 and q.get("answer")
+
+    all_lines = []
     for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            all_lines.append("")
+        else:
+            # handle paragraph with embedded newlines (all in one paragraph)
+            for subline in text.split("\n"):
+                sl = subline.strip()
+                if sl:
+                    all_lines.append(sl)
+                else:
+                    all_lines.append("")
+
+    for line in all_lines:
         line_num += 1
-        line = para.text.strip()
         if not line:
             if current:
                 q = flush(current, line_num)
@@ -1239,12 +1255,19 @@ def _parse_docx_questions(file_bytes):
             q_text = new_q_match.group(1).strip() or line
             current = {"question": q_text, "choices": [], "answer": ""}
         else:
+            # plain question line (no ข้อ prefix)
             if current is None:
                 current = {"question": line, "choices": [], "answer": ""}
             elif not current.get("question"):
                 current["question"] = line
             elif not current.get("choices"):
                 current["question"] += " " + line
+            elif is_complete(current):
+                # previous question is complete, this line starts a new question
+                q = flush(current, line_num)
+                if q:
+                    questions.append(q)
+                current = {"question": line, "choices": [], "answer": ""}
 
     if current:
         q = flush(current, line_num)
