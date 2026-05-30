@@ -48,6 +48,23 @@ signalstandard.rta.mi.th{$default_site_port} {
     }
 
     # Route LMS API paths directly to LMS container (bypasses Next.js proxy)
+    # Serve uploaded media videos (no body size limit for upload)
+    handle /military/videos/upload/ {
+        request_body {
+            max_size 10GB
+        }
+        reverse_proxy lms:8000 {
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+    # Stream videos from nginx-videos container
+    handle /media/videos/* {
+        uri strip_prefix /media/videos
+        reverse_proxy nginx-videos:80
+    }
+
     handle /military/* {
         reverse_proxy lms:8000 {
             header_up X-Forwarded-Port 443
@@ -232,6 +249,42 @@ apps-signalstandard.rta.mi.th{$default_site_port} {
             header_up X-Forwarded-Port 443
             header_up X-Forwarded-Proto https
             header_down Set-Cookie "Domain=signalstandard.rta.mi.th" "Domain=apps-signalstandard.rta.mi.th"
+        }
+    }
+    # CMS (Studio) APIs ที่ authoring MFE เรียกผ่าน apps- domain
+    handle /api/contentstore/* {
+        reverse_proxy cms:8000 {
+            header_up Host studio-signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /api/course_index/* {
+        reverse_proxy cms:8000 {
+            header_up Host studio-signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /api/component_types/* {
+        reverse_proxy cms:8000 {
+            header_up Host studio-signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /api/libraries/* {
+        reverse_proxy cms:8000 {
+            header_up Host studio-signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle /xblock/* {
+        reverse_proxy cms:8000 {
+            header_up Host studio-signalstandard.rta.mi.th
+            header_up X-Forwarded-Port 443
+            header_up X-Forwarded-Proto https
         }
     }
     # LMS APIs ที่ MFE ต้องใช้

@@ -64,6 +64,15 @@ MIDDLEWARE += [
 ]
 
 MILITARY_ENCRYPTION_KEY = "{{ MILITARY_ENCRYPTION_KEY }}"
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_DOMAIN = ".rta.mi.th"
+CSRF_COOKIE_DOMAIN = ".rta.mi.th"
+# SHARED_COOKIE_DOMAIN drives JWT cookie domain (set by derive_settings() from SESSION_COOKIE_DOMAIN
+# in lms/envs/production.py BEFORE tutor/production.py overrides SESSION_COOKIE_DOMAIN, so we must
+# also override SHARED_COOKIE_DOMAIN explicitly here)
+SHARED_COOKIE_DOMAIN = ".rta.mi.th"
 MILITARY_HR_EMAILS = {{ MILITARY_HR_EMAILS | tojson }}
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = {{ LOGIN_RATE_LIMIT_MAX_ATTEMPTS }}
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = {{ LOGIN_RATE_LIMIT_WINDOW_SECONDS }}
@@ -104,12 +113,24 @@ LANGUAGE_DICT = dict(ALL_LANGUAGES)
 CSRF_TRUSTED_ORIGINS = [
     "https://signalstandard.rta.mi.th",
     "https://www.signalstandard.rta.mi.th",
+    "https://apps-signalstandard.rta.mi.th",
+    "https://studio-signalstandard.rta.mi.th",
+    "https://meilisearch-signalstandard.rta.mi.th",
 ]
 CORS_ORIGIN_WHITELIST = [
     "https://signalstandard.rta.mi.th",
     "https://www.signalstandard.rta.mi.th",
+    "https://apps-signalstandard.rta.mi.th",
+    "https://studio-signalstandard.rta.mi.th",
+    "https://meilisearch-signalstandard.rta.mi.th",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# Video storage settings
+MILITARY_VIDEO_DIR = "/openedx/media/videos"
+MILITARY_VIDEO_BASE_URL = "/media/videos"
+DATA_UPLOAD_MAX_MEMORY_SIZE = None
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 from celery.schedules import crontab
 CELERYBEAT_SCHEDULE.update({
@@ -135,8 +156,16 @@ INSTALLED_APPS += [
     "military_profile",
 ]
 MILITARY_ENCRYPTION_KEY = "{{ MILITARY_ENCRYPTION_KEY }}"
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_DOMAIN = ".rta.mi.th"
+CSRF_COOKIE_DOMAIN = ".rta.mi.th"
+SHARED_COOKIE_DOMAIN = ".rta.mi.th"
+MEILISEARCH_PUBLIC_URL = "https://meilisearch-signalstandard.rta.mi.th"
 """,
     ),
+
 
     # URL patch ถูกแทนที่ด้วย ROOT_URLCONF = "military_custom_urls" ใน settings
     # (lms-urls patch ต้องการ image rebuild จึงไม่ใช้)
@@ -192,5 +221,180 @@ hooks.Filters.CLI_DO_INIT_TASKS.add_items([
         "lms",
         "python manage.py migrate --run-syncdb --no-input && "
         "python manage.py seed_demo_data",
+    ),
+    (
+        "cms",
+        "python3 /mnt/military-edx-plugin/patch_cms_asset_handler.py",
+    ),
+])
+
+########################################################################
+# MILITARY_PATCH: Meilisearch domain fix                              #
+# Use meilisearch-signalstandard.rta.mi.th (dash) — same DNS level   #
+# as studio-signalstandard and apps-signalstandard                    #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    (
+        'openedx-lms-production-settings',
+        '''
+# ── Fix Meilisearch public URL (DNS level constraint — use dash not dot) ──
+MEILISEARCH_PUBLIC_URL = "https://meilisearch-signalstandard.rta.mi.th"
+''',
+    ),
+])
+
+########################################################################
+# MILITARY_PATCH: Caddy wildcard TLS cert configuration               #
+# Use DigiCert wildcard cert *.rta.mi.th stored in /data/certs/       #
+# Certificate valid until 2026-11-15                                  #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    # Add TLS snippet using wildcard cert to Caddyfile global section
+    (
+        "caddyfile-global",
+        """
+# ── Wildcard TLS snippet *.rta.mi.th (DigiCert, expires 2026-11-15) ─
+# The cert file is manually placed at /data/caddy/certs/signalstandard.crt
+""",
+    ),
+    # Inject LMS-site routing: explicit path handlers so catch-all goes to Next.js
+    # NOTE: Template must have {{ patch("caddyfile-lms") }} BEFORE import proxy "lms:8000"
+    (
+        "caddyfile-lms",
+        """
+# ── LMS core API paths ─────────────────────────────────────────────────────
+handle /military/videos/upload/ {
+    import proxy "lms:8000"
+}
+handle /login_refresh {
+    import proxy "lms:8000"
+}
+handle /login_ajax {
+    import proxy "lms:8000"
+}
+handle /military/* {
+    import proxy "lms:8000"
+}
+handle /user_api/* {
+    import proxy "lms:8000"
+}
+handle /asset-v1:* {
+    import proxy "lms:8000"
+}
+handle /theming/* {
+    import proxy "lms:8000"
+}
+handle /courses/* {
+    import proxy "lms:8000"
+}
+handle /preview/* {
+    import proxy "lms:8000"
+}
+handle /oauth2/* {
+    import proxy "lms:8000"
+}
+handle /static/* {
+    import proxy "lms:8000"
+}
+handle /xblock/* {
+    import proxy "lms:8000"
+}
+handle /admin/* {
+    import proxy "lms:8000"
+}
+handle /csrf/* {
+    import proxy "lms:8000"
+}
+handle /logout {
+    import proxy "lms:8000"
+}
+handle /auth/* {
+    import proxy "lms:8000"
+}
+handle /api/* {
+    import proxy "lms:8000"
+}
+handle /admin {
+    import proxy "lms:8000"
+}
+
+# ── MFE paths (embedded in main domain) ───────────────────────────────────
+handle /learner-dashboard* {
+    import proxy "mfe:8002"
+}
+handle /course-authoring* {
+    import proxy "mfe:8002"
+}
+handle /discussions* {
+    import proxy "mfe:8002"
+}
+handle /authoring* {
+    import proxy "mfe:8002"
+}
+handle /gradebook* {
+    import proxy "mfe:8002"
+}
+handle /learning* {
+    import proxy "mfe:8002"
+}
+handle /account* {
+    import proxy "mfe:8002"
+}
+handle /profile* {
+    import proxy "mfe:8002"
+}
+
+# ── Video files ────────────────────────────────────────────────────────────
+handle /media/videos/* {
+    import proxy "nginx-videos:80"
+}
+
+# ── Catch-all → Military Next.js frontend ─────────────────────────────────
+handle {
+    encode gzip
+    reverse_proxy 172.18.0.1:3000 {
+        header_up X-Forwarded-Port 443
+    }
+}
+
+tls /data/certs/signalstandard.crt /data/certs/signalstandard.key
+""",
+    ),
+    # Inject tls directive into CMS (Studio) site block
+    (
+        "caddyfile-cms",
+        "tls /data/certs/signalstandard.crt /data/certs/signalstandard.key",
+    ),
+])
+
+########################################################################
+# MILITARY_PATCH: Meilisearch Caddy block                             #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    (
+        "caddyfile",
+        """
+meilisearch-signalstandard.rta.mi.th {
+    tls /data/certs/signalstandard.crt /data/certs/signalstandard.key
+    import proxy "meilisearch:7700"
+}
+""",
+    ),
+])
+########################################################################
+# MILITARY_PATCH: MFE config - Meilisearch public URL                 #
+# MEILISEARCH_PUBLIC_URL was missing from MFE_CONFIG causing           #
+# learner-dashboard MFE to crash with 'An unexpected error occurred'  #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    (
+        'openedx-lms-production-settings',
+        '''
+# Expose Meilisearch settings to all MFEs
+MFE_CONFIG["MEILISEARCH_PUBLIC_URL"] = MEILISEARCH_PUBLIC_URL
+MFE_CONFIG["MEILISEARCH_INDEX_PREFIX"] = MEILISEARCH_INDEX_PREFIX
+MFE_CONFIG["MEILISEARCH_API_KEY"] = MEILISEARCH_API_KEY
+MFE_CONFIG["ENABLE_HOME_PAGE_COURSE_API_V2"] = False
+''',
     ),
 ])

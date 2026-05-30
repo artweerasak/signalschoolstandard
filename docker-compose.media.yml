@@ -1,0 +1,14 @@
+services:
+  nginx-videos:
+    image: nginx:alpine
+    restart: always
+    volumes:
+      - /home/adminrta/.local/share/tutor/data/openedx-media/videos:/usr/share/nginx/html:ro
+    networks:
+      tutor_local_default:
+        aliases:
+          - nginx-videos
+
+networks:
+  tutor_local_default:
+    external: true

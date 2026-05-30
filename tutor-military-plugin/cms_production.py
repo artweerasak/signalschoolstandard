@@ -41,7 +41,7 @@ DJANGO_REDIS_IGNORE_EXCEPTIONS = True
 # Meilisearch connection parameters
 MEILISEARCH_ENABLED = True
 MEILISEARCH_URL = "http://meilisearch:7700"
-MEILISEARCH_PUBLIC_URL = "https://meilisearch.signalstandard.rta.mi.th"
+MEILISEARCH_PUBLIC_URL = "https://meilisearch-signalstandard.rta.mi.th"
 MEILISEARCH_INDEX_PREFIX = "tutor_"
 MEILISEARCH_API_KEY = "501ae5f727bc4b3df28a6d93176da6042679f790bd8b26f839fdc2247caf8e34"
 MEILISEARCH_MASTER_KEY = "PXnvL0u3gKQy7aXS975b1YpI"
