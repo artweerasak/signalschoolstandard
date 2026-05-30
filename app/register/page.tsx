@@ -1,6 +1,7 @@
 /**
  * app/register/page.tsx
  * หน้าสมัครสมาชิกด้วยตัวเอง → PendingRegistration (รอ Admin อนุมัติ)
+ * รองรับ: ทหาร (ชาย/หญิง), ลูกจ้างประจำ, พนักงานราชการ
  */
 "use client"
 import { useState, useEffect } from "react"
@@ -73,8 +74,8 @@ function BuddhistDateInput({ value, onChange, hasError }: {
         className={`${base} ${err} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
     </div>
   )
-
 }
+
 function validateNationalId(id: string): boolean {
   if (!/^\d{13}$/.test(id)) return false
   let sum = 0
@@ -84,7 +85,12 @@ function validateNationalId(id: string): boolean {
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
-    full_name_th: "", rank: "", unit: "", sub_unit: "", army_region: "",
+    full_name_th: "",
+    personnel_type: "military",   // military | civilian | government
+    gender: "M",                  // M | F
+    civilian_prefix: "",          // นาย | นาง | นางสาว
+    rank: "",
+    unit: "", sub_unit: "", army_region: "",
     national_id: "", military_id: "", birth_date: "",
     phone_number: "", email: "",
   })
@@ -92,6 +98,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [apiError, setApiError] = useState("")
+
+  const isMilitary = form.personnel_type === "military"
 
   function update(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -103,11 +111,13 @@ export default function RegisterPage() {
     e.preventDefault()
     const newErrors: Record<string, string> = {}
     if (!form.full_name_th.trim()) newErrors.full_name_th = "กรุณากรอกชื่อ-นามสกุล"
-    if (!form.rank)                newErrors.rank          = "กรุณาเลือกชั้นยศ"
+    if (isMilitary && !form.rank)  newErrors.rank          = "กรุณาเลือกชั้นยศ"
+    if (!isMilitary && !form.civilian_prefix) newErrors.civilian_prefix = "กรุณาเลือกคำนำหน้า"
     if (!form.unit.trim())         newErrors.unit          = "กรุณากรอกหน่วยต้นสังกัด"
     if (!form.birth_date)          newErrors.birth_date    = "กรุณากรอกวันเกิด"
     if (!validateNationalId(form.national_id)) newErrors.national_id = "เลขบัตรประชาชน 13 หลักไม่ถูกต้อง"
-    if (!/^\d{10}$/.test(form.military_id))    newErrors.military_id = "เลขประจำตัวทหาร 10 หลักไม่ถูกต้อง"
+    if (isMilitary && !/^\d{10}$/.test(form.military_id))
+      newErrors.military_id = "เลขประจำตัวทหาร 10 หลักไม่ถูกต้อง"
 
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return }
 
@@ -158,6 +168,35 @@ export default function RegisterPage() {
             <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{apiError}</div>
           )}
 
+          {/* ประเภทบุคลากร */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ประเภทบุคลากร <span className="text-red-500">*</span></label>
+            <div className="flex gap-3">
+              {[
+                ["military", "👮 ทหาร"],
+                ["civilian", "👷 ลูกจ้างประจำ"],
+                ["government", "🏛️ พนักงานราชการ"],
+              ].map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    update("personnel_type", val)
+                    // reset fields ที่ขึ้นกับประเภท
+                    update("rank", "")
+                    update("civilian_prefix", "")
+                    update("gender", "M")
+                  }}
+                  className={`flex-1 py-2 px-2 rounded-lg text-xs font-medium border-2 transition-all ${
+                    form.personnel_type === val
+                      ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
+                      : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-400"
+                  }`}
+                >{label}</button>
+              ))}
+            </div>
+          </div>
+
           {/* ชื่อ */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล (ภาษาไทย) <span className="text-red-500">*</span></label>
@@ -166,27 +205,66 @@ export default function RegisterPage() {
             {errors.full_name_th && <p className="text-red-500 text-xs mt-1">{errors.full_name_th}</p>}
           </div>
 
-          {/* ยศ + วันเกิด */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* ทหาร: ยศ + เพศ */}
+          {isMilitary && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ชั้นยศ <span className="text-red-500">*</span></label>
+                <select value={form.rank} onChange={e => update("rank", e.target.value)}
+                  className={`${inputCls("rank")} bg-white`}>
+                  <option value="">เลือกยศ</option>
+                  {RANK_CHOICES.map(([code, label]) => (
+                    <option key={code} value={code}>{label}</option>
+                  ))}
+                </select>
+                {errors.rank && <p className="text-red-500 text-xs mt-1">{errors.rank}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">เพศ <span className="text-red-500">*</span></label>
+                <div className="flex gap-3 mt-1">
+                  {[["M", "♂ ชาย"], ["F", "♀ หญิง"]].map(([val, label]) => (
+                    <button key={val} type="button"
+                      onClick={() => update("gender", val)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                        form.gender === val
+                          ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
+                          : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-400"
+                      }`}
+                    >{label}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* พลเรือน: คำนำหน้า */}
+          {!isMilitary && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">ชั้นยศ <span className="text-red-500">*</span></label>
-              <select value={form.rank} onChange={e => update("rank", e.target.value)}
-                className={`${inputCls("rank")} bg-white`}>
-                <option value="">เลือกยศ</option>
-                {RANK_CHOICES.map(([code, label]) => (
-                  <option key={code} value={code}>{label}</option>
+              <label className="block text-sm font-medium text-gray-700 mb-1">คำนำหน้า <span className="text-red-500">*</span></label>
+              <div className="flex gap-3">
+                {[["นาย", "นาย"], ["นาง", "นาง"], ["นางสาว", "นางสาว"]].map(([val, label]) => (
+                  <button key={val} type="button"
+                    onClick={() => { update("civilian_prefix", val); update("gender", val === "นาย" ? "M" : "F"); }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                      form.civilian_prefix === val
+                        ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
+                        : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-400"
+                    }`}
+                  >{label}</button>
                 ))}
-              </select>
-              {errors.rank && <p className="text-red-500 text-xs mt-1">{errors.rank}</p>}
+              </div>
+              {errors.civilian_prefix && <p className="text-red-500 text-xs mt-1">{errors.civilian_prefix}</p>}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                วันเกิด <span className="text-red-500">*</span>
-                <span className="text-gray-400 font-normal ml-1">(พ.ศ.)</span>
-              </label>
-              <BuddhistDateInput value={form.birth_date} onChange={v => update("birth_date", v)} hasError={!!errors.birth_date} />
-              {errors.birth_date && <p className="text-red-500 text-xs mt-1">{errors.birth_date}</p>}
-            </div>
+          )}
+
+          {/* วันเกิด */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              วันเกิด <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-1">(พ.ศ.)</span>
+            </label>
+            <BuddhistDateInput value={form.birth_date} onChange={v => update("birth_date", v)} hasError={!!errors.birth_date} />
+            {errors.birth_date && <p className="text-red-500 text-xs mt-1">{errors.birth_date}</p>}
           </div>
 
           {/* ทัพภาค */}
@@ -221,20 +299,22 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
             <input type="text" value={form.national_id}
               onChange={e => update("national_id", e.target.value.replace(/\D/g, "").slice(0, 13))}
-              placeholder="1 3456 78901 23 4" maxLength={13}
+              placeholder="13 หลัก" maxLength={13}
               className={`${inputCls("national_id")} font-mono`} />
             {errors.national_id && <p className="text-red-500 text-xs mt-1">{errors.national_id}</p>}
           </div>
 
-          {/* เลขทหาร */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">เลขประจำตัวทหาร <span className="text-red-500">*</span></label>
-            <input type="text" value={form.military_id}
-              onChange={e => update("military_id", e.target.value.replace(/\D/g, "").slice(0, 10))}
-              placeholder="10 หลัก" maxLength={10}
-              className={`${inputCls("military_id")} font-mono`} />
-            {errors.military_id && <p className="text-red-500 text-xs mt-1">{errors.military_id}</p>}
-          </div>
+          {/* เลขทหาร (เฉพาะทหาร) */}
+          {isMilitary && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">เลขประจำตัวทหาร <span className="text-red-500">*</span></label>
+              <input type="text" value={form.military_id}
+                onChange={e => update("military_id", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="10 หลัก" maxLength={10}
+                className={`${inputCls("military_id")} font-mono`} />
+              {errors.military_id && <p className="text-red-500 text-xs mt-1">{errors.military_id}</p>}
+            </div>
+          )}
 
           {/* เบอร์โทร + อีเมล */}
           <div className="grid grid-cols-2 gap-4">
@@ -253,8 +333,8 @@ export default function RegisterPage() {
           </div>
 
           <button type="submit" disabled={loading}
-            className="w-full bg-[#4A1A6B] text-white font-semibold py-3 rounded-lg hover:bg-[#7B3FA0] transition-colors disabled:opacity-60 disabled:cursor-not-allowed mt-2">
-            {loading ? "กำลังส่งคำขอ..." : "ส่งคำขอสมัครสมาชิก"}
+            className="w-full py-3 bg-[#4A1A6B] hover:bg-[#7B3FA0] text-white font-semibold rounded-xl transition-colors disabled:opacity-60 mt-2">
+            {loading ? "⏳ กำลังส่งคำขอ..." : "📋 ส่งคำขอสมัครสมาชิก"}
           </button>
 
           <p className="text-center text-sm text-gray-500">

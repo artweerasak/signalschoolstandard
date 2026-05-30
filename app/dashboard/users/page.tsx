@@ -37,6 +37,7 @@ type FormData = {
   birth_date: string; service_start_date: string;
   username: string; password: string; role: string;
   national_id: string; military_id: string;
+  personnel_type: string; gender: string; civilian_prefix: string;
 }
 
 const emptyForm: FormData = {
@@ -45,6 +46,7 @@ const emptyForm: FormData = {
   birth_date: "", service_start_date: "",
   username: "", password: "", role: "student",
   national_id: "", military_id: "",
+  personnel_type: "military", gender: "M", civilian_prefix: "",
 }
 
 
@@ -159,6 +161,9 @@ export default function UsersPage() {
       birth_date: u.birth_date, service_start_date: u.service_start_date,
       username: u.username, password: "", role: u.role,
       national_id: "", military_id: "",
+      personnel_type: (u as any).personnel_type ?? "military",
+      gender: (u as any).gender ?? "M",
+      civilian_prefix: (u as any).civilian_prefix ?? "",
     })
     setError("")
     setShowModal(true)
@@ -385,28 +390,74 @@ export default function UsersPage() {
                 <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
               )}
 
+              {/* ประเภทบุคลากร */}
+              <Field label="ประเภทบุคลากร" required>
+                <div className="flex gap-2">
+                  {([["military","👮 ทหาร"],["civilian","👷 ลูกจ้าง"],["government","🏛️ พนักงานราชการ"]] as [string,string][]).map(([val, label]) => (
+                    <button key={val} type="button"
+                      onClick={() => setForm(f => ({...f, personnel_type: val, rank: "", civilian_prefix: "", gender: "M"}))}
+                      className={`flex-1 py-1.5 px-1 rounded-lg text-xs font-medium border-2 transition-all ${
+                        form.personnel_type === val
+                          ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
+                          : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400"
+                      }`}>{label}</button>
+                  ))}
+                </div>
+              </Field>
+
               <Field label="ชื่อ-นามสกุล" required>
                 <input type="text" value={form.full_name_th} onChange={e => setForm(f => ({...f, full_name_th: e.target.value}))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
               </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="ชั้นยศ" required>
-                  <select value={form.rank} onChange={e => setForm(f => ({...f, rank: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
-                    <option value="">เลือกยศ</option>
-                    {RANK_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-                  </select>
+              {/* ทหาร: ยศ + เพศ | พลเรือน: คำนำหน้า */}
+              {form.personnel_type === "military" ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="ชั้นยศ" required>
+                    <select value={form.rank} onChange={e => setForm(f => ({...f, rank: e.target.value}))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                      <option value="">เลือกยศ</option>
+                      {RANK_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="เพศ" required>
+                    <div className="flex gap-2 mt-0.5">
+                      {([["M","♂ ชาย"],["F","♀ หญิง"]] as [string,string][]).map(([val, label]) => (
+                        <button key={val} type="button"
+                          onClick={() => setForm(f => ({...f, gender: val}))}
+                          className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                            form.gender === val
+                              ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
+                              : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400"
+                          }`}>{label}</button>
+                      ))}
+                    </div>
+                  </Field>
+                </div>
+              ) : (
+                <Field label="คำนำหน้า" required>
+                  <div className="flex gap-2">
+                    {([["นาย","นาย"],["นาง","นาง"],["นางสาว","นางสาว"]] as [string,string][]).map(([val, label]) => (
+                      <button key={val} type="button"
+                        onClick={() => setForm(f => ({...f, civilian_prefix: val, gender: val === "นาย" ? "M" : "F"}))}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                          form.civilian_prefix === val
+                            ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
+                            : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400"
+                        }`}>{label}</button>
+                    ))}
+                  </div>
                 </Field>
-                <Field label="บทบาท">
-                  <select value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
-                    <option value="student">กำลังพล</option>
-                    <option value="instructor">ครูอาจารย์</option>
-                    <option value="admin">ผู้ดูแลระบบ</option>
-                  </select>
-                </Field>
-              </div>
+              )}
+
+              <Field label="บทบาท">
+                <select value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                  <option value="student">กำลังพล</option>
+                  <option value="instructor">ครูอาจารย์</option>
+                  <option value="admin">ผู้ดูแลระบบ</option>
+                </select>
+              </Field>
 
               <Field label="หน่วยต้นสังกัด" required>
                 <input type="text" value={form.unit} onChange={e => setForm(f => ({...f, unit: e.target.value}))}
@@ -488,9 +539,9 @@ export default function UsersPage() {
                         maxLength={13} placeholder="13 หลัก"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                     </Field>
-                    <Field label="เลขทหาร" required>
+                    <Field label={form.personnel_type === "military" ? "เลขทหาร" : "เลขประจำตัว (ถ้ามี)"}>
                       <input type="text" value={form.military_id} onChange={e => setForm(f => ({...f, military_id: e.target.value.replace(/\D/g,"").slice(0,10)}))}
-                        maxLength={10} placeholder="10 หลัก"
+                        maxLength={10} placeholder={form.personnel_type === "military" ? "10 หลัก" : "ไม่บังคับ"}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                     </Field>
                   </div>

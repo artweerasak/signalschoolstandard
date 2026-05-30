@@ -1,12 +1,11 @@
 /**
  * app/dashboard/reports/personnel/page.tsx
  * รายชื่อกำลังพลที่ผ่าน / ยังไม่ผ่านมาตรฐาน
- * รองรับ drill-down จากหน้า reports
  */
 "use client"
 
 import { useEffect, useState, Suspense } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { api, NotPassedPersonnel } from "@/lib/api"
 
 const ARMY_REGION_OPTIONS = [
@@ -22,6 +21,8 @@ const RANK_CLASS_OPTIONS = [
   { value: "nco", label: "นายทหารประทวน" },
   { value: "officer", label: "นายทหารสัญญาบัตร" },
   { value: "pvt", label: "พลทหาร" },
+  { value: "civilian", label: "ลูกจ้างประจำ" },
+  { value: "government", label: "พนักงานราชการ" },
 ]
 
 const RANK_OPTIONS = [
@@ -49,9 +50,7 @@ const RANK_OPTIONS = [
 
 function PersonnelContent() {
   const searchParams = useSearchParams()
-  const router = useRouter()
 
-  // Status toggle: passed | not_passed
   const [status, setStatus] = useState<"passed" | "not_passed">(
     searchParams.get("status") === "passed" ? "passed" : "not_passed"
   )
@@ -71,6 +70,7 @@ function PersonnelContent() {
 
   const load = (p = page) => {
     setLoading(true)
+    setError("")
     const params: Record<string, string> = {
       passed: status === "passed" ? "true" : "false",
       page: String(p),
@@ -83,22 +83,16 @@ function PersonnelContent() {
     if (searchText.trim()) params.search = searchText.trim()
 
     api.complianceNotPassed(params)
-      .then((r) => {
+      .then((r: any) => {
         setData(r.results)
-        setTotalCount((r as any).total_count ?? r.count)
-        setTotalPages((r as any).total_pages ?? 1)
+        setTotalCount(r.total_count ?? r.count ?? 0)
+        setTotalPages(r.total_pages ?? 1)
       })
       .catch(() => setError("ไม่สามารถโหลดข้อมูลได้"))
       .finally(() => setLoading(false))
   }
 
-  // Reset page to 1 whenever filters change
-  useEffect(() => {
-    setPage(1)
-    load(1)
-  }, [status, regionFilter, rankClassFilter, rankFilter, unitFilter, searchText]) // eslint-disable-line
-
-  // Load when page changes (but not on filter change — handled above)
+  useEffect(() => { setPage(1); load(1) }, [status, regionFilter, rankClassFilter, rankFilter, unitFilter, searchText]) // eslint-disable-line
   useEffect(() => { load() }, [page]) // eslint-disable-line
 
   const isPassedMode = status === "passed"
@@ -299,16 +293,8 @@ function PersonnelContent() {
               แสดง {(page - 1) * perPage + 1}–{Math.min(page * perPage, totalCount)} จาก {totalCount.toLocaleString()} รายการ
             </span>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => changePage(1)}
-                disabled={page === 1}
-                className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-              >«</button>
-              <button
-                onClick={() => changePage(page - 1)}
-                disabled={page === 1}
-                className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-              >‹</button>
+              <button onClick={() => changePage(1)} disabled={page === 1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
+              <button onClick={() => changePage(page - 1)} disabled={page === 1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
               {renderPageNumbers().map((p, i) =>
                 p === "..." ? (
                   <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-400">…</span>
@@ -317,23 +303,13 @@ function PersonnelContent() {
                     key={p}
                     onClick={() => changePage(p as number)}
                     className={`px-2.5 py-1 text-xs border rounded transition-colors ${
-                      page === p
-                        ? "border-[#4A1A6B] bg-[#4A1A6B] text-white"
-                        : "border-gray-200 hover:bg-gray-50"
+                      page === p ? "border-[#4A1A6B] bg-[#4A1A6B] text-white" : "border-gray-200 hover:bg-gray-50"
                     }`}
                   >{p}</button>
                 )
               )}
-              <button
-                onClick={() => changePage(page + 1)}
-                disabled={page === totalPages}
-                className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-              >›</button>
-              <button
-                onClick={() => changePage(totalPages)}
-                disabled={page === totalPages}
-                className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-              >»</button>
+              <button onClick={() => changePage(page + 1)} disabled={page === totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
+              <button onClick={() => changePage(totalPages)} disabled={page === totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
             </div>
           </div>
         )}

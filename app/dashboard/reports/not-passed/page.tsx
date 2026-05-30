@@ -20,6 +20,8 @@ const RANK_CLASS_OPTIONS = [
   { value: "nco", label: "นายทหารประทวน" },
   { value: "officer", label: "นายทหารสัญญาบัตร" },
   { value: "pvt", label: "พลทหาร" },
+  { value: "civilian", label: "ลูกจ้างประจำ" },
+  { value: "government", label: "พนักงานราชการ" },
 ]
 
 export default function NotPassedPage() {
