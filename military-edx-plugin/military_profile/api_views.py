@@ -132,11 +132,24 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
         "service_start_date": ssd.isoformat() if hasattr(ssd, "isoformat") else str(ssd),
         "birth_date": bd.isoformat() if hasattr(bd, "isoformat") else str(bd),
         "created_at": profile.created_at.isoformat(),
+        "gender": profile.gender,
+        "gender_display": profile.get_gender_display(),
+        "personnel_type": profile.personnel_type,
+        "personnel_type_display": profile.get_personnel_type_display(),
+        "civilian_prefix": profile.civilian_prefix,
+        "display_prefix": profile.display_prefix,
+        "display_full_name": profile.display_full_name,
     }
 
 
 @require_GET
 @_require_login
+
+
+def _derive_gender_from_prefix(prefix: str) -> str:
+    """นาย→M, นาง/นางสาว→F (สำหรับพลเรือน/พนักงานราชการ)"""
+    return "M" if prefix == "นาย" else "F"
+
 def api_me(request):
     """
     GET /military/api/v1/me/
@@ -293,8 +306,11 @@ def api_admin_create_user(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    required = ["national_id", "military_id", "full_name_th", "rank", "unit",
-                "service_start_date", "birth_date", "username"]
+    personnel_type = body.get("personnel_type", "military")
+    required_fields = ["national_id", "full_name_th", "unit", "service_start_date", "birth_date", "username"]
+    if personnel_type == "military":
+        required_fields.append("rank")
+    required = required_fields
     for field in required:
         if not body.get(field):
             return JsonResponse({"error": f"Missing field: {field}"}, status=400)
@@ -333,6 +349,13 @@ def api_admin_create_user(request):
             contact_email=body.get("contact_email", ""),
             phone_number=body.get("phone_number", ""),
             army_region=body.get("army_region", ""),
+            gender=(
+                _derive_gender_from_prefix(body.get("civilian_prefix", ""))
+                if personnel_type != "military"
+                else body.get("gender", "M")
+            ),
+            personnel_type=personnel_type,
+            civilian_prefix=body.get("civilian_prefix", ""),
         )
 
         _ensure_edx_user_profile(user, body["full_name_th"])
@@ -364,9 +387,13 @@ def api_admin_update_user(request, user_id: int):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     # อัปเดต profile fields
-    for field in ("full_name_th", "rank", "unit", "sub_unit", "contact_email", "phone_number", "army_region"):
+    for field in ("full_name_th", "rank", "unit", "sub_unit", "contact_email", "phone_number", "army_region", "gender", "personnel_type", "civilian_prefix"):
         if field in body:
             setattr(profile, field, body[field])
+    # Auto-derive gender from civilian_prefix for non-military
+    new_personnel_type = body.get("personnel_type", profile.personnel_type)
+    if new_personnel_type != "military" and "civilian_prefix" in body:
+        profile.gender = _derive_gender_from_prefix(body["civilian_prefix"])
     for date_field in ("service_start_date", "birth_date"):
         if date_field in body:
             setattr(profile, date_field, _parse_date(body[date_field]))
@@ -1416,14 +1443,1127 @@ def api_import_execute(request):
 
 @require_http_methods(["DELETE"])
 def api_delete_library(request, library_key_str):
-    if not (request.user.is_authenticated and request.user.is_superuser):
+    if not (request.user.is_authenticated and _is_admin_or_instructor(request.user)):
         return JsonResponse({"error": "Forbidden"}, status=403)
     try:
         from openedx.core.djangoapps.content_libraries import api as lib_api
+        from openedx.core.djangoapps.content_libraries.models import ContentLibrary, ContentLibraryPermission
         from opaque_keys.edx.locator import LibraryLocatorV2
         library_key = LibraryLocatorV2.from_string(library_key_str)
+
+        # Superuser/staff can delete any library
+        if not (request.user.is_staff or request.user.is_superuser):
+            lib_obj = ContentLibrary.objects.filter(
+                org__short_name=library_key.org, slug=library_key.slug
+            ).first()
+            if not lib_obj:
+                return JsonResponse({"error": "Library not found"}, status=404)
+            # Only allow instructors with admin access to this library
+            has_admin = ContentLibraryPermission.objects.filter(
+                library=lib_obj, user=request.user, access_level="admin"
+            ).exists()
+            if not has_admin:
+                return JsonResponse({"error": "คุณไม่มีสิทธิ์ลบ Library นี้ (ต้องมีสิทธิ์ระดับ admin)"}, status=403)
+
+        # Delete EntityListRow records first (FK RESTRICT blocks cascade)
+        try:
+            from openedx_learning.apps.authoring.publishing.models import EntityListRow, PublishableEntity
+            from openedx.core.djangoapps.content_libraries.models import ContentLibrary as _CL
+            _lib_obj2 = _CL.objects.get_by_key(library_key)
+            _pkg2 = _lib_obj2.learning_package
+            field_name = "id"
+            _eids = list(PublishableEntity.objects.filter(learning_package=_pkg2).values_list(field_name, flat=True))
+            EntityListRow.objects.filter(entity_id__in=_eids).delete()
+        except Exception:
+            pass
+
+        # Nullify contentstore_componentlink.upstream_block_id before deleting library components.
+        # The model declares on_delete=SET_NULL but lib_api bypasses Django ORM cascade,
+        # so MySQL's FK constraint blocks the delete without this step.
+        # Use raw SQL because cms.djangoapps.contentstore is not in LMS INSTALLED_APPS.
+        try:
+            from openedx_learning.apps.authoring.components.models import Component
+            from openedx.core.djangoapps.content_libraries.models import ContentLibrary as _CL2
+            _lib_obj3 = _CL2.objects.get_by_key(library_key)
+            _pkg3 = _lib_obj3.learning_package
+            _component_ids = list(Component.objects.filter(learning_package=_pkg3).values_list("pk", flat=True))
+            if _component_ids:
+                with connection.cursor() as _cursor:
+                    _fmt = ",".join(["%s"] * len(_component_ids))
+                    _cursor.execute(
+                        f"UPDATE contentstore_componentlink SET upstream_block_id = NULL WHERE upstream_block_id IN ({_fmt})",
+                        _component_ids,
+                    )
+        except Exception:
+            pass
+
         lib_api.delete_library(library_key)
         return JsonResponse({"success": True, "deleted": library_key_str})
     except Exception as e:
         import traceback
         return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+# ──────────────────────────────────────────────
+# Library Blocks Management
+# ──────────────────────────────────────────────
+
+@require_http_methods(["GET"])
+def api_list_library_blocks(request, library_key_str):
+    """List all blocks in a library with display name and usage key."""
+    if not _is_admin_or_instructor(request.user):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        from openedx.core.djangoapps.content_libraries.api.blocks import (
+            get_library_components, get_library_block
+        )
+        from opaque_keys.edx.locator import LibraryLocatorV2, LibraryUsageLocatorV2
+        from openedx.core.djangoapps.content_libraries.models import ContentLibrary, ContentLibraryPermission
+
+        library_key = LibraryLocatorV2.from_string(library_key_str)
+
+        # Permission check for non-admins
+        if not (request.user.is_staff or request.user.is_superuser):
+            lib_obj = ContentLibrary.objects.filter(
+                org__short_name=library_key.org,
+                slug=library_key.slug
+            ).first()
+            if not lib_obj:
+                return JsonResponse({"error": "Library not found"}, status=404)
+            has_perm = ContentLibraryPermission.objects.filter(
+                user=request.user, library=lib_obj
+            ).exists()
+            if not has_perm:
+                return JsonResponse({"error": "Forbidden"}, status=403)
+
+        comps = get_library_components(library_key)
+        blocks = []
+        for c in comps:
+            # Build usage key from component key: xblock.v1:TYPE:LOCAL_KEY
+            parts = c.key.split(":")
+            if len(parts) >= 3:
+                block_type = parts[-2]
+                local_key = parts[-1]
+                usage_key_str = "lb:{}:{}:{}:{}".format(
+                    library_key.org, library_key.slug, block_type, local_key
+                )
+                try:
+                    usage_key = LibraryUsageLocatorV2.from_string(usage_key_str)
+                    meta = get_library_block(usage_key)
+                    display_name = meta.display_name or local_key
+                except Exception:
+                    display_name = local_key
+
+                blocks.append({
+                    "usage_key": usage_key_str,
+                    "display_name": display_name,
+                    "block_type": block_type,
+                    "local_key": local_key,
+                })
+
+        return JsonResponse({"blocks": blocks, "total": len(blocks)})
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["POST"])
+def api_bulk_delete_blocks(request):
+    """Delete multiple library blocks by usage_key."""
+    if not _is_admin_or_instructor(request.user):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    try:
+        import json as json_mod
+        from openedx.core.djangoapps.content_libraries import api as lib_api
+        from openedx.core.djangoapps.content_libraries.models import ContentLibrary, ContentLibraryPermission
+        from opaque_keys.edx.locator import LibraryUsageLocatorV2, LibraryLocatorV2
+
+        data = json_mod.loads(request.body)
+        usage_keys = data.get("usage_keys", [])
+
+        if not usage_keys:
+            return JsonResponse({"error": "ไม่มี block_key ที่ส่งมา"}, status=400)
+
+        if len(usage_keys) > 200:
+            return JsonResponse({"error": "ลบได้ครั้งละไม่เกิน 200 ข้อ"}, status=400)
+
+        # Permission check: ensure user has access to the library
+        first_key = LibraryUsageLocatorV2.from_string(usage_keys[0])
+        library_key = first_key.lib_key
+
+        if not (request.user.is_staff or request.user.is_superuser):
+            lib_obj = ContentLibrary.objects.filter(
+                org__short_name=library_key.org, slug=library_key.slug
+            ).first()
+            if not lib_obj:
+                return JsonResponse({"error": "Library not found"}, status=404)
+            has_perm = ContentLibraryPermission.objects.filter(
+                user=request.user, library=lib_obj
+            ).exists()
+            if not has_perm:
+                return JsonResponse({"error": "Forbidden"}, status=403)
+
+        deleted = 0
+        errors = []
+        for key_str in usage_keys:
+            try:
+                usage_key = LibraryUsageLocatorV2.from_string(key_str)
+                lib_api.delete_library_block(usage_key)
+                deleted += 1
+            except Exception as ex:
+                errors.append({"key": key_str, "error": str(ex)})
+
+        # Publish changes after deletion
+        try:
+            lib_api.publish_changes(library_key, user_id=request.user.id)
+        except Exception:
+            pass
+
+        return JsonResponse({
+            "success": True,
+            "deleted": deleted,
+            "errors": errors,
+        })
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+
+# ──────────────────────────────────────────────
+# Bulk Import Users from Excel
+# ──────────────────────────────────────────────
+
+def _parse_excel_users(file_bytes):
+    """
+    Parse Excel file and return list of user dicts.
+    Expected columns (row 1 = header):
+    username | full_name_th | rank | national_id | military_id |
+    unit | sub_unit | birth_date | service_start_date | role | army_region | contact_email | phone_number
+    """
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return [], ["ไฟล์ว่างเปล่า"]
+
+    header = [str(c).strip().lower() if c else "" for c in rows[0]]
+
+    ALIASES = {
+        "username": ["username", "ชื่อผู้ใช้", "user"],
+        "full_name_th": ["full_name_th", "ชื่อ-นามสกุล", "ชื่อเต็ม", "full_name"],
+        "rank": ["rank", "ยศ", "ชั้นยศ"],
+        "national_id": ["national_id", "เลขบัตรประชาชน", "หมายเลขประจำตัวประชาชน"],
+        "military_id": ["military_id", "เลขประจำตัวทหาร", "รหัสทหาร"],
+        "unit": ["unit", "หน่วย", "หน่วยงาน"],
+        "sub_unit": ["sub_unit", "หน่วยรอง"],
+        "birth_date": ["birth_date", "วันเกิด", "วันเดือนปีเกิด"],
+        "service_start_date": ["service_start_date", "วันเข้ารับราชการ", "วันบรรจุ"],
+        "role": ["role", "บทบาท", "ตำแหน่ง"],
+        "army_region": ["army_region", "ภาค"],
+        "contact_email": ["contact_email", "email", "อีเมล"],
+        "phone_number": ["phone_number", "เบอร์โทร", "โทร"],
+        "password": ["password", "รหัสผ่าน"],
+        "gender": ["gender", "เพศ"],
+        "personnel_type": ["personnel_type", "ประเภทบุคลากร", "ประเภท"],
+        "civilian_prefix": ["civilian_prefix", "คำนำหน้า"],
+    }
+
+    col_index = {}
+    for field, aliases in ALIASES.items():
+        for alias in aliases:
+            if alias in header:
+                col_index[field] = header.index(alias)
+                break
+
+    required = ["username", "full_name_th", "national_id", "unit", "birth_date", "service_start_date"]
+    missing = [f for f in required if f not in col_index]
+    if missing:
+        return [], [f"ไม่พบคอลัมน์ที่จำเป็น: {', '.join(missing)}"]
+
+    users = []
+    errors = []
+    for row_num, row in enumerate(rows[1:], start=2):
+        if all(v is None or str(v).strip() == "" for v in row):
+            continue  # skip empty rows
+        def get(field):
+            idx = col_index.get(field)
+            if idx is None:
+                return ""
+            val = row[idx] if idx < len(row) else None
+            return str(val).strip() if val is not None else ""
+
+        username = get("username")
+        full_name = get("full_name_th")
+        national_id = get("national_id")
+        military_id = get("military_id")
+
+        if not username:
+            errors.append(f"แถว {row_num}: ไม่มี username")
+            continue
+        if not full_name:
+            errors.append(f"แถว {row_num}: ไม่มีชื่อ-นามสกุล (username={username})")
+            continue
+        if not national_id:
+            errors.append(f"แถว {row_num}: ไม่มีเลขบัตรประชาชน (username={username})")
+            continue
+
+        users.append({
+            "username": username,
+            "full_name_th": full_name,
+            "rank": get("rank") or "PVT",
+            "national_id": national_id,
+            "military_id": military_id or national_id,
+            "unit": get("unit"),
+            "sub_unit": get("sub_unit"),
+            "birth_date": get("birth_date"),
+            "service_start_date": get("service_start_date"),
+            "role": get("role") or "student",
+            "army_region": get("army_region"),
+            "contact_email": get("contact_email"),
+            "phone_number": get("phone_number"),
+            "password": get("password") or "",
+            "personnel_type": get("personnel_type") or "military",
+            "civilian_prefix": get("civilian_prefix") or "",
+            "gender": (
+                _derive_gender_from_prefix(get("civilian_prefix") or "นาย")
+                if (get("personnel_type") or "military") != "military"
+                else (get("gender") or "M")
+            ),
+            "_row": row_num,
+        })
+
+    return users, errors
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_admin_bulk_import_template(request):
+    """GET /military/api/v1/admin/users/bulk-import/template/ — download Excel template"""
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from django.http import HttpResponse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "นำเข้าผู้ใช้"
+
+    headers = [
+        "username", "full_name_th", "rank", "national_id", "military_id",
+        "unit", "sub_unit", "birth_date", "service_start_date",
+        "role", "army_region", "contact_email", "phone_number", "password",
+        "gender", "personnel_type", "civilian_prefix",
+    ]
+    notes = [
+        "ชื่อผู้ใช้ (ภาษาอังกฤษ/ตัวเลข)*", "ชื่อ-นามสกุล*", "ยศ (เช่น CPT, MAJ) - ทหารเท่านั้น",
+        "เลขบัตรประชาชน 13 หลัก*", "เลขประจำตัวทหาร 10 หลัก - ทหารเท่านั้น",
+        "หน่วยงาน*", "หน่วยรอง", "วันเกิด (DD/MM/YYYY)*", "วันเข้ารับราชการ (DD/MM/YYYY)*",
+        "บทบาท: student/instructor", "ภาค (เช่น 1,2,3,4)", "อีเมล", "เบอร์โทร",
+        "รหัสผ่าน (ว่าง=ใช้ military_id/national_id)",
+        "เพศ: M=ชาย F=หญิง (ทหาร) - พลเรือนใช้คำนำหน้าแทน",
+        "ประเภท: military=ทหาร / civilian=ลูกจ้าง / government=พนักงานราชการ",
+        "คำนำหน้า (พลเรือน): นาย / นาง / นางสาว",
+    ]
+    sample_military = [
+        "artsgt001", "วีระศักดิ์ มัจฉา", "SGT2", "1234567890123", "1234567890",
+        "กรมทหารสื่อสาร", "กองพัน 1", "15/03/2000", "01/04/2020",
+        "student", "1", "art@example.com", "0812345678", "",
+        "M", "military", "",
+    ]
+    sample_civilian = [
+        "civ001", "สมศรี ใจดี", "", "9876543210123", "",
+        "กรมทหารสื่อสาร", "", "20/05/1990", "01/06/2018",
+        "student", "", "ssc@example.com", "0898765432", "",
+        "", "civilian", "นาง",
+    ]
+    sample = sample_military  # แถวตัวอย่างหลัก
+
+    # Header row style
+    header_fill = PatternFill("solid", fgColor="4A1A6B")
+    header_font = Font(bold=True, color="FFFFFF")
+    note_fill = PatternFill("solid", fgColor="F3E8FF")
+    note_font = Font(italic=True, color="6B21A8", size=9)
+
+    ws.append(headers)
+    ws.append(notes)
+    ws.append(sample_military)
+    ws.append(sample_civilian)
+
+    for col_num, cell in enumerate(ws[1], start=1):
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[cell.column_letter].width = max(len(headers[col_num-1]) * 2, 18)
+
+    for cell in ws[2]:
+        cell.fill = note_fill
+        cell.font = note_font
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    response = HttpResponse(
+        buf.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="template_bulk_users.xlsx"'
+    return response
+
+
+@require_http_methods(["POST"])
+@_require_admin
+def api_admin_bulk_import_users(request):
+    """POST /military/api/v1/admin/users/bulk-import/ — import users from Excel"""
+    if "file" not in request.FILES:
+        return JsonResponse({"error": "ไม่พบไฟล์"}, status=400)
+
+    f = request.FILES["file"]
+    if not f.name.lower().endswith((".xlsx", ".xls")):
+        return JsonResponse({"error": "รองรับเฉพาะไฟล์ .xlsx หรือ .xls"}, status=400)
+
+    file_bytes = f.read()
+    users, parse_errors = _parse_excel_users(file_bytes)
+
+    if parse_errors and not users:
+        return JsonResponse({"error": parse_errors[0], "parse_errors": parse_errors}, status=400)
+
+    # dry_run mode: just parse and return preview
+    dry_run = request.POST.get("dry_run", "false").lower() == "true"
+    if dry_run:
+        return JsonResponse({
+            "dry_run": True,
+            "total": len(users),
+            "preview": users[:10],
+            "parse_errors": parse_errors,
+        })
+
+    # Actual import
+    created = []
+    skipped = []
+    errors = list(parse_errors)
+
+    for u in users:
+        row = u.pop("_row", "?")
+        username = u["username"]
+        national_id = u["national_id"]
+        military_id = u["military_id"]
+
+        if User.objects.filter(username=username).exists():
+            skipped.append({"username": username, "reason": "username ซ้ำ"})
+            continue
+        if User.objects.filter(email=national_id).exists():
+            skipped.append({"username": username, "reason": "เลขบัตรประชาชนซ้ำ"})
+            continue
+
+        try:
+            password = u.get("password") or military_id
+            user = User.objects.create_user(
+                username=username,
+                email=national_id,
+                password=password,
+                first_name=u["full_name_th"],
+            )
+            user.is_active = True
+            user.is_staff = u.get("role") == "admin"
+            user.save()
+
+            profile = MilitaryUserProfile.objects.create(
+                user=user,
+                national_id_encrypted=encrypt_field(national_id),
+                military_id_encrypted=encrypt_field(military_id),
+                full_name_th=u["full_name_th"],
+                rank=u["rank"],
+                unit=u["unit"],
+                sub_unit=u.get("sub_unit", ""),
+                service_start_date=_parse_date(u["service_start_date"]),
+                birth_date=_parse_date(u["birth_date"]),
+                role=u.get("role", "student"),
+                contact_email=u.get("contact_email", ""),
+                phone_number=u.get("phone_number", ""),
+                army_region=u.get("army_region", ""),
+            )
+            _ensure_edx_user_profile(user, u["full_name_th"])
+            if profile.role == "instructor":
+                _grant_course_creator(user)
+
+            created.append(username)
+        except Exception as ex:
+            errors.append(f"แถว {row} ({username}): {str(ex)}")
+
+    return JsonResponse({
+        "success": True,
+        "created": len(created),
+        "skipped": len(skipped),
+        "skipped_list": skipped,
+        "errors": errors,
+        "total": len(users),
+    })
+
+# ─────────────────────────────────────────────────────────────
+# API: ระบบอนุมัติใบประกาศ Batch
+# ─────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@_require_admin
+def api_cert_batches(request):
+    """
+    GET  /military/api/v1/cert/batches/          — list batches (admin)
+    POST /military/api/v1/cert/batches/          — create batch (admin)
+    """
+
+    from military_profile.models import CertificateApprovalBatch
+
+    if request.method == 'GET':
+        batches = CertificateApprovalBatch.objects.all().order_by('-approve_date')
+        data = []
+        for b in batches:
+            pending_count  = b.pending_approvals.filter(status='pending').count()
+            approved_count = b.pending_approvals.filter(status='approved').count()
+            data.append({
+                'id': b.id,
+                'name': b.name,
+                'course_id': b.course_id,
+                'course_name': b.course_name,
+                'enrollment_start': str(b.enrollment_start),
+                'enrollment_end': str(b.enrollment_end),
+                'approve_date': str(b.approve_date),
+                'status': b.status,
+                'note': b.note,
+                'pending_count': pending_count,
+                'approved_count': approved_count,
+                'created_at': b.created_at.strftime('%Y-%m-%d'),
+            })
+        return JsonResponse({'batches': data})
+
+    elif request.method == 'POST':
+        try:
+            body = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        required = ['name', 'course_id', 'enrollment_start', 'enrollment_end', 'approve_date']
+        for f in required:
+            if not body.get(f):
+                return JsonResponse({'error': f'Missing field: {f}'}, status=400)
+
+        # get course name
+        course_name = body.get('course_name', '')
+        if not course_name:
+            try:
+                from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+                from opaque_keys.edx.keys import CourseKey
+                ck = CourseKey.from_string(body['course_id'])
+                co = CourseOverview.objects.get(id=ck)
+                course_name = co.display_name
+            except Exception:
+                course_name = body['course_id']
+
+        batch = CertificateApprovalBatch.objects.create(
+            name=body['name'],
+            course_id=body['course_id'],
+            course_name=course_name,
+            enrollment_start=body['enrollment_start'],
+            enrollment_end=body['enrollment_end'],
+            approve_date=body['approve_date'],
+            note=body.get('note', ''),
+            created_by=request.user,
+        )
+        return JsonResponse({'id': batch.id, 'message': 'สร้างรอบสำเร็จ'})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST", "DELETE"])
+@_require_admin
+def api_cert_batch_detail(request, batch_id):
+    """
+    GET    /military/api/v1/cert/batches/<id>/  — รายชื่อรออนุมัติ
+    POST   /military/api/v1/cert/batches/<id>/  — อนุมัติทั้งหมด
+    DELETE /military/api/v1/cert/batches/<id>/  — ลบรอบ
+    """
+
+    from military_profile.models import CertificateApprovalBatch, CertificatePendingApproval
+
+    try:
+        batch = CertificateApprovalBatch.objects.get(id=batch_id)
+    except CertificateApprovalBatch.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if request.method == 'GET':
+        pendings = batch.pending_approvals.select_related('user').order_by('user__last_name')
+        data = []
+        for p in pendings:
+            profile = getattr(p.user, 'militaryuserprofile', None)
+            data.append({
+                'id': p.id,
+                'username': p.user.username,
+                'full_name': p.user.get_full_name() or p.user.username,
+                'rank': profile.rank if profile else '',
+                'unit': profile.unit if profile else '',
+                'passed_at': p.passed_at.strftime('%Y-%m-%d %H:%M'),
+                'score': p.score,
+                'status': p.status,
+                'cert_uuid': p.cert_uuid,
+            })
+        return JsonResponse({
+            'batch': {
+                'id': batch.id,
+                'name': batch.name,
+                'course_id': batch.course_id,
+                'course_name': batch.course_name,
+                'approve_date': str(batch.approve_date),
+                'enrollment_end': str(batch.enrollment_end),
+                'status': batch.status,
+            },
+            'pending': data,
+            'counts': {
+                'pending': batch.pending_approvals.filter(status='pending').count(),
+                'approved': batch.pending_approvals.filter(status='approved').count(),
+                'total': batch.pending_approvals.count(),
+            }
+        })
+
+    elif request.method == 'POST':
+        # Batch approve — generate certificates for all pending
+        import django.utils.timezone as tz
+        from datetime import datetime
+
+        pendings = batch.pending_approvals.filter(status='pending').select_related('user')
+        approved_count = 0
+        errors = []
+
+        for p in pendings:
+            try:
+                from lms.djangoapps.certificates.api import generate_certificate_task
+                from opaque_keys.edx.keys import CourseKey
+                ck = CourseKey.from_string(batch.course_id)
+                generate_certificate_task(p.user, ck)
+                p.status = 'approved'
+                p.save()
+                approved_count += 1
+            except Exception as e:
+                errors.append({'user': p.user.username, 'error': str(e)})
+
+        batch.status = 'approved'
+        batch.approved_by = request.user
+        batch.approved_at = tz.now()
+        batch.save()
+
+        return JsonResponse({
+            'message': f'อนุมัติสำเร็จ {approved_count} คน',
+            'approved': approved_count,
+            'errors': errors,
+        })
+
+    elif request.method == 'DELETE':
+        batch.delete()
+        return JsonResponse({'message': 'ลบรอบสำเร็จ'})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@_require_admin
+def api_cert_scan_passed(request):
+    """
+    POST /military/api/v1/cert/scan-passed/
+    สแกนหาผู้ที่ผ่านแล้วใน course นั้น แล้วเพิ่มเข้า batch อัตโนมัติ
+    body: { batch_id: int }
+    """
+
+    from military_profile.models import CertificateApprovalBatch, CertificatePendingApproval
+
+    try:
+        body = json.loads(request.body)
+        batch = CertificateApprovalBatch.objects.get(id=body['batch_id'])
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    from opaque_keys.edx.keys import CourseKey
+    from lms.djangoapps.grades.api import CourseGradeFactory
+    from common.djangoapps.student.models import CourseEnrollment
+    import django.utils.timezone as tz
+
+    try:
+        ck = CourseKey.from_string(batch.course_id)
+    except Exception as e:
+        return JsonResponse({'error': f'Invalid course_id: {e}'}, status=400)
+
+    enrollments = CourseEnrollment.objects.filter(course_id=ck, is_active=True).select_related('user')
+    added = 0
+    skipped = 0
+
+    for enrollment in enrollments:
+        user = enrollment.user
+        # Skip if already in batch
+        if CertificatePendingApproval.objects.filter(batch=batch, user=user).exists():
+            skipped += 1
+            continue
+        try:
+            grade = CourseGradeFactory().read(user, course_key=ck)
+            if grade.passed:
+                CertificatePendingApproval.objects.create(
+                    batch=batch,
+                    user=user,
+                    passed_at=tz.now(),
+                    score=round(grade.percent * 100, 1),
+                    status='pending',
+                )
+                added += 1
+        except Exception:
+            continue
+
+    return JsonResponse({'added': added, 'skipped': skipped, 'message': f'เพิ่ม {added} คน'})
+
+
+@csrf_exempt
+@require_GET
+@_require_login
+def api_cert_student_status(request):
+    """
+    GET /military/api/v1/cert/my-status/
+    นักเรียนดูสถานะการรออนุมัติใบประกาศของตัวเอง
+    """
+
+    from military_profile.models import CertificateApprovalBatch, CertificatePendingApproval
+    from datetime import date
+
+    pendings = CertificatePendingApproval.objects.filter(
+        user=request.user
+    ).select_related('batch').order_by('-batch__approve_date')
+
+    result = []
+    today = date.today()
+    for p in pendings:
+        b = p.batch
+        days_left = (b.enrollment_end - today).days
+        result.append({
+            'batch_id': b.id,
+            'batch_name': b.name,
+            'course_id': b.course_id,
+            'course_name': b.course_name,
+            'approve_date': str(b.approve_date),
+            'enrollment_end': str(b.enrollment_end),
+            'days_left_to_end': days_left,
+            'batch_status': b.status,
+            'my_status': p.status,
+            'score': p.score,
+            'cert_uuid': p.cert_uuid,
+            'passed_at': p.passed_at.strftime('%Y-%m-%d'),
+        })
+
+    # Also find open batches for courses the user is enrolled in but hasn't passed
+    from common.djangoapps.student.models import CourseEnrollment
+    from lms.djangoapps.grades.api import CourseGradeFactory
+    from opaque_keys.edx.keys import CourseKey
+
+    open_batches = CertificateApprovalBatch.objects.filter(status='open')
+    not_passed = []
+    enrolled_courses = set(
+        CourseEnrollment.objects.filter(user=request.user, is_active=True).values_list('course_id', flat=True)
+    )
+
+    for b in open_batches:
+        # Check if enrolled & not already in pending list
+        course_ids_in_result = {r['course_id'] for r in result}
+        if b.course_id in enrolled_courses and b.course_id not in course_ids_in_result:
+            days_left = (b.enrollment_end - today).days
+            try:
+                ck = CourseKey.from_string(b.course_id)
+                grade = CourseGradeFactory().read(request.user, course_key=ck)
+                passed = grade.passed
+                score  = round(grade.percent * 100, 1)
+            except Exception:
+                passed = False
+                score  = None
+            not_passed.append({
+                'batch_id': b.id,
+                'batch_name': b.name,
+                'course_id': b.course_id,
+                'course_name': b.course_name,
+                'approve_date': str(b.approve_date),
+                'enrollment_end': str(b.enrollment_end),
+                'days_left_to_end': days_left,
+                'batch_status': b.status,
+                'my_status': 'passed_waiting_scan' if passed else 'not_passed',
+                'score': score,
+                'cert_uuid': '',
+                'passed_at': None,
+            })
+
+    return JsonResponse({'certificates': result + not_passed})
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Video Management API
+# ─────────────────────────────────────────────────────────────────────
+import os as _os
+import re as _re
+import uuid as _uuid_mod
+from django.conf import settings as _djsettings
+
+
+def _get_video_dir():
+    return getattr(_djsettings, 'MILITARY_VIDEO_DIR', '/opt/media/videos')
+
+
+def _get_video_base_url():
+    return getattr(_djsettings, 'MILITARY_VIDEO_BASE_URL', '/media/videos')
+
+
+@_require_instructor
+def api_video_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        video_dir = _get_video_dir()
+        _os.makedirs(video_dir, exist_ok=True)
+        files = []
+        for fname in sorted(_os.listdir(video_dir)):
+            fpath = _os.path.join(video_dir, fname)
+            if _os.path.isfile(fpath):
+                stat = _os.stat(fpath)
+                files.append({
+                    'name': fname,
+                    'size': stat.st_size,
+                    'url': f"{_get_video_base_url()}/{fname}",
+                    'modified': stat.st_mtime,
+                })
+        return JsonResponse({'files': files})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@_require_instructor
+def api_video_upload(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if 'file' not in request.FILES:
+        return JsonResponse({'error': 'No file provided'}, status=400)
+    uploaded_file = request.FILES['file']
+    original_name = uploaded_file.name
+    safe_name = _re.sub(r'[^\w\-_.]', '_', original_name)
+    if not safe_name or safe_name == '.':
+        safe_name = f"video_{_uuid_mod.uuid4().hex}"
+    video_dir = _get_video_dir()
+    _os.makedirs(video_dir, exist_ok=True)
+    file_path = _os.path.join(video_dir, safe_name)
+    base, ext = _os.path.splitext(safe_name)
+    counter = 1
+    while _os.path.exists(file_path):
+        safe_name = f"{base}_{counter}{ext}"
+        file_path = _os.path.join(video_dir, safe_name)
+        counter += 1
+    try:
+        with open(file_path, 'wb+') as dest:
+            for chunk in uploaded_file.chunks(chunk_size=8 * 1024 * 1024):
+                dest.write(chunk)
+        return JsonResponse({
+            'success': True,
+            'filename': safe_name,
+            'url': f"{_get_video_base_url()}/{safe_name}",
+            'size': _os.path.getsize(file_path),
+        })
+    except Exception as e:
+        if _os.path.exists(file_path):
+            _os.remove(file_path)
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@_require_instructor
+def api_video_delete(request, filename):
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    safe_name = _os.path.basename(filename)
+    file_path = _os.path.join(_get_video_dir(), safe_name)
+    if not _os.path.exists(file_path):
+        return JsonResponse({'error': 'File not found'}, status=404)
+    try:
+        _os.remove(file_path)
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Reports — Compliance (มาตรฐานกำลังพล)
+# ─────────────────────────────────────────────────────────────────────
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_overview(request):
+    """GET /military/api/v1/reports/compliance/overview/"""
+    from .compliance import bulk_compliance_stats
+    from .models import MilitaryUserProfile
+    qs = MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user")
+    stats = bulk_compliance_stats(qs)
+    return JsonResponse(stats)
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_by_region(request):
+    """GET /military/api/v1/reports/compliance/by-region/"""
+    from .compliance import bulk_compliance_stats
+    from .models import MilitaryUserProfile, ARMY_REGION_CHOICES
+    results = []
+    region_map = {v: label for v, label in ARMY_REGION_CHOICES if v}
+    regions = (MilitaryUserProfile.objects
+               .filter(user__is_active=True)
+               .values_list("army_region", flat=True)
+               .distinct())
+    for region in regions:
+        qs = MilitaryUserProfile.objects.filter(user__is_active=True, army_region=region).select_related("user")
+        stats = bulk_compliance_stats(qs)
+        results.append({
+            "label": region_map.get(region, region or "ไม่ระบุ"),
+            "key": region,
+            **stats,
+        })
+    results.sort(key=lambda x: x["total"], reverse=True)
+    return JsonResponse(results, safe=False)
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_by_rank_class(request):
+    """GET /military/api/v1/reports/compliance/by-rank-class/"""
+    from .compliance import bulk_compliance_stats
+    from .models import MilitaryUserProfile, RANK_CLASS_CHOICES
+    rank_class_map = dict(RANK_CLASS_CHOICES)
+    results = []
+    # Iterate over known rank classes
+    for rc_code, rc_label in RANK_CLASS_CHOICES:
+        if rc_code == "all":
+            continue
+        # Filter by computed rank_class property — need to do per-profile check
+        all_profiles = MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user")
+        matching = [p for p in all_profiles if p.rank_class == rc_code]
+        if not matching:
+            continue
+        # Build stats manually since bulk_compliance_stats needs a queryset
+        from .compliance import get_compliance_status
+        total = len(matching)
+        passed = 0
+        not_passed = 0
+        for p in matching:
+            result = get_compliance_status(p.user)
+            if result["status"] in ("passed", "no_requirements"):
+                passed += 1
+            else:
+                not_passed += 1
+        results.append({
+            "label": rc_label,
+            "key": rc_code,
+            "total": total,
+            "passed": passed,
+            "not_passed": not_passed,
+            "percent_passed": round(passed / total * 100, 1) if total > 0 else 0.0,
+            "percent_not_passed": round(not_passed / total * 100, 1) if total > 0 else 0.0,
+        })
+    results.sort(key=lambda x: x["total"], reverse=True)
+    return JsonResponse(results, safe=False)
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_by_rank(request):
+    """GET /military/api/v1/reports/compliance/by-rank/"""
+    from .compliance import get_compliance_status
+    from .models import MilitaryUserProfile, RANK_CHOICES, CIVILIAN_PREFIX_CHOICES
+    # Group by display rank/prefix
+    groups = {}
+    for profile in MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user"):
+        if profile.personnel_type == "military":
+            key = profile.rank or "ไม่ระบุ"
+            label = dict(RANK_CHOICES).get(key, key)
+        else:
+            key = profile.civilian_prefix or "ไม่ระบุ"
+            label = key
+        if key not in groups:
+            groups[key] = {"label": label, "key": key, "total": 0, "passed": 0, "not_passed": 0}
+        groups[key]["total"] += 1
+        result = get_compliance_status(profile.user)
+        if result["status"] in ("passed", "no_requirements"):
+            groups[key]["passed"] += 1
+        else:
+            groups[key]["not_passed"] += 1
+    results = list(groups.values())
+    for r in results:
+        t = r["total"]
+        r["percent_passed"] = round(r["passed"] / t * 100, 1) if t > 0 else 0.0
+        r["percent_not_passed"] = round(r["not_passed"] / t * 100, 1) if t > 0 else 0.0
+    results.sort(key=lambda x: x["total"], reverse=True)
+    return JsonResponse(results, safe=False)
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_by_unit(request):
+    """GET /military/api/v1/reports/compliance/by-unit/?unit=xxx"""
+    from .compliance import get_compliance_status
+    from .models import MilitaryUserProfile
+    filter_unit = request.GET.get("unit", "")
+    qs = MilitaryUserProfile.objects.filter(user__is_active=True)
+    if filter_unit:
+        qs = qs.filter(unit__icontains=filter_unit)
+    groups = {}
+    for profile in qs.select_related("user"):
+        key = profile.unit or "ไม่ระบุ"
+        if key not in groups:
+            groups[key] = {"label": key, "key": key, "total": 0, "passed": 0, "not_passed": 0}
+        groups[key]["total"] += 1
+        result = get_compliance_status(profile.user)
+        if result["status"] in ("passed", "no_requirements"):
+            groups[key]["passed"] += 1
+        else:
+            groups[key]["not_passed"] += 1
+    results = list(groups.values())
+    for r in results:
+        t = r["total"]
+        r["percent_passed"] = round(r["passed"] / t * 100, 1) if t > 0 else 0.0
+        r["percent_not_passed"] = round(r["not_passed"] / t * 100, 1) if t > 0 else 0.0
+    results.sort(key=lambda x: x["total"], reverse=True)
+    return JsonResponse(results, safe=False)
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_not_passed(request):
+    """GET /military/api/v1/reports/compliance/not-passed/
+    Params: passed=true|false, rank_class, rank, army_region, unit, search, page, per_page
+    """
+    from .compliance import get_compliance_status
+    from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES
+    from django.db.models import Q
+
+    want_passed = request.GET.get("passed", "false").lower() == "true"
+    filter_rank_class = request.GET.get("rank_class", "")
+    filter_rank = request.GET.get("rank", "")
+    filter_unit = request.GET.get("unit", "")
+    filter_region = request.GET.get("army_region", "")
+    search_text = request.GET.get("search", "").strip()
+    page = max(1, int(request.GET.get("page", 1)))
+    per_page = min(100, max(1, int(request.GET.get("per_page", 20))))
+
+    rank_display_map = dict(RANK_CHOICES)
+    region_display_map = dict(ARMY_REGION_CHOICES)
+
+    qs = MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user")
+    if filter_unit:
+        qs = qs.filter(unit__icontains=filter_unit)
+    if filter_region:
+        qs = qs.filter(army_region=filter_region)
+    if filter_rank:
+        qs = qs.filter(rank=filter_rank)
+    if search_text:
+        qs = qs.filter(
+            Q(user__first_name__icontains=search_text) |
+            Q(user__last_name__icontains=search_text) |
+            Q(user__username__icontains=search_text)
+        )
+
+    result_list = []
+    for profile in qs:
+        if filter_rank_class and profile.rank_class != filter_rank_class:
+            continue
+        comp = get_compliance_status(profile.user)
+        is_passed = comp["status"] in ("passed", "no_requirements")
+        if want_passed != is_passed:
+            continue
+
+        rank_code = profile.rank or profile.civilian_prefix or ""
+        rank_display = rank_display_map.get(rank_code, rank_code)
+        region_display = region_display_map.get(profile.army_region or "", profile.army_region or "ไม่ระบุ")
+
+        entry = {
+            "user_id": profile.user_id,
+            "username": profile.user.username,
+            "full_name": profile.display_name,
+            "rank": rank_code,
+            "rank_display": rank_display,
+            "rank_class": profile.rank_class,
+            "rank_class_display": profile.rank_class_display,
+            "unit": profile.unit or "",
+            "sub_unit": profile.sub_unit or "",
+            "army_region": profile.army_region or "",
+            "army_region_display": region_display,
+            "contact_email": profile.contact_email or "",
+            "phone_number": profile.phone_number or "",
+            "missing_courses": [m["course_name"] for m in comp["missing"]],
+            "expired_courses": [e["course_name"] for e in comp["expired"]],
+            "passed_courses": [p["course_name"] for p in comp["passed"]],
+        }
+        result_list.append(entry)
+
+    total_count = len(result_list)
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    start = (page - 1) * per_page
+    return JsonResponse({
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "count": total_count,
+        "results": result_list[start:start + per_page],
+    })
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_certificates_expiring(request):
+    """GET /military/api/v1/reports/certificates/expiring/?days=30"""
+    from certificate_expiry.models import UserCertificateExpiry
+    from .models import MilitaryUserProfile
+    days = int(request.GET.get("days", 30))
+    from django.utils import timezone
+    import datetime
+    cutoff = timezone.now().date() + datetime.timedelta(days=days)
+    certs = (UserCertificateExpiry.objects
+             .filter(status__in=("active", "renewed"), expiry_date__lte=cutoff)
+             .select_related("user")
+             .order_by("expiry_date"))
+    results = []
+    for cert in certs:
+        profile = getattr(cert.user, "military_profile", None)
+        results.append({
+            "user_id": cert.user_id,
+            "full_name": profile.display_name if profile else cert.user.get_full_name(),
+            "rank": (profile.rank or profile.civilian_prefix) if profile else "",
+            "unit": profile.unit if profile else "",
+            "course_id": cert.course_id,
+            "course_name": cert.course_name,
+            "expiry_date": cert.expiry_date.isoformat(),
+            "days_left": cert.days_until_expiry,
+        })
+    return JsonResponse({"count": len(results), "results": results})
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_certificates_expired(request):
+    """GET /military/api/v1/reports/certificates/expired/"""
+    from certificate_expiry.models import UserCertificateExpiry
+    from .models import MilitaryUserProfile
+    certs = (UserCertificateExpiry.objects
+             .filter(status="expired")
+             .select_related("user")
+             .order_by("-expiry_date"))
+    results = []
+    for cert in certs:
+        profile = getattr(cert.user, "military_profile", None)
+        results.append({
+            "user_id": cert.user_id,
+            "full_name": profile.display_name if profile else cert.user.get_full_name(),
+            "rank": (profile.rank or profile.civilian_prefix) if profile else "",
+            "unit": profile.unit if profile else "",
+            "course_id": cert.course_id,
+            "course_name": cert.course_name,
+            "expiry_date": cert.expiry_date.isoformat(),
+        })
+    return JsonResponse({"count": len(results), "results": results})
+
