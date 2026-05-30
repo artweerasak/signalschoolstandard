@@ -33,7 +33,28 @@ from .api_views import (
     api_change_password,
     api_import_list_libraries,
     api_import_parse,
-    api_import_execute, api_delete_library,
+    api_import_execute,
+    api_delete_library,
+    api_list_library_blocks,
+    api_bulk_delete_blocks,
+    api_cert_batches,
+    api_cert_batch_detail,
+    api_cert_scan_passed,
+    api_cert_student_status,
+    api_admin_bulk_import_users,
+    api_admin_bulk_import_template,
+    api_video_list,
+    api_video_upload,
+    api_video_delete,
+    # Reports
+    api_reports_compliance_overview,
+    api_reports_compliance_by_region,
+    api_reports_compliance_by_rank_class,
+    api_reports_compliance_by_rank,
+    api_reports_compliance_by_unit,
+    api_reports_compliance_not_passed,
+    api_reports_certificates_expiring,
+    api_reports_certificates_expired,
 )
 
 app_name = "military_profile"
@@ -63,6 +84,8 @@ urlpatterns = [
 
     # Admin — Password Reset
     path("api/v1/admin/users/<int:user_id>/reset-password/", api_admin_reset_password, name="api_admin_reset_password"),
+    path("api/v1/admin/users/bulk-import/", api_admin_bulk_import_users, name="api_admin_bulk_import_users"),
+    path("api/v1/admin/users/bulk-import/template/", api_admin_bulk_import_template, name="api_admin_bulk_import_template"),
     path("api/v1/admin/courses/", api_admin_courses, name="api_admin_courses"),
     path("api/v1/admin/courses/<path:course_id>/assign-instructor/", api_admin_course_assign_instructor, name="api_admin_course_assign_instructor"),
     path("api/v1/admin/courses/<path:course_id>/delete/", api_admin_delete_course, name="api_admin_delete_course"),
@@ -84,5 +107,25 @@ urlpatterns = [
     path("api/v1/import/parse/", api_import_parse, name="api_import_parse"),
     path("api/v1/import/execute/", api_import_execute, name="api_import_execute"),
     path("api/v1/import/libraries/<path:library_key_str>/delete/", api_delete_library, name="api_delete_library"),
+    path("api/v1/import/libraries/<path:library_key_str>/blocks/", api_list_library_blocks, name="api_list_library_blocks"),
+    path("api/v1/import/blocks/bulk-delete/", api_bulk_delete_blocks, name="api_bulk_delete_blocks"),
+    # Certificate Approval Batch
+    path("api/v1/cert/batches/", api_cert_batches, name="api_cert_batches"),
+    path("api/v1/cert/batches/<int:batch_id>/", api_cert_batch_detail, name="api_cert_batch_detail"),
+    path("api/v1/cert/scan-passed/", api_cert_scan_passed, name="api_cert_scan_passed"),
+    path("api/v1/cert/my-status/", api_cert_student_status, name="api_cert_student_status"),
+    # Video Management
+    path("api/v1/videos/", api_video_list, name="api_video_list"),
+    path("api/v1/videos/upload/", api_video_upload, name="api_video_upload"),
+    path("api/v1/videos/<str:filename>/", api_video_delete, name="api_video_delete"),
+    # Reports — Compliance
+    path("api/v1/reports/compliance/overview/",      api_reports_compliance_overview,     name="api_reports_compliance_overview"),
+    path("api/v1/reports/compliance/by-region/",      api_reports_compliance_by_region,    name="api_reports_compliance_by_region"),
+    path("api/v1/reports/compliance/by-rank-class/",  api_reports_compliance_by_rank_class, name="api_reports_compliance_by_rank_class"),
+    path("api/v1/reports/compliance/by-rank/",        api_reports_compliance_by_rank,      name="api_reports_compliance_by_rank"),
+    path("api/v1/reports/compliance/by-unit/",        api_reports_compliance_by_unit,      name="api_reports_compliance_by_unit"),
+    path("api/v1/reports/compliance/not-passed/",     api_reports_compliance_not_passed,   name="api_reports_compliance_not_passed"),
+    path("api/v1/reports/certificates/expiring/",     api_reports_certificates_expiring,   name="api_reports_certificates_expiring"),
+    path("api/v1/reports/certificates/expired/",      api_reports_certificates_expired,    name="api_reports_certificates_expired"),
 ]
 

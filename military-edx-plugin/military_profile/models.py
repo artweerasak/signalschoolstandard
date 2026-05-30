@@ -94,10 +94,12 @@ NCO_RANKS = {"CPL", "SGT3", "SGT2", "SSGT", "MSGT", "CSGT", "WO1", "WO2", "WO3"}
 OFFICER_RANKS = {"2LT", "1LT", "CPT", "MAJ", "LTCOL", "COL", "BGEN", "MGEN", "GEN"}
 
 RANK_CLASS_CHOICES = [
-    ("nco",     "นายทหารประทวน"),
-    ("officer", "นายทหารสัญญาบัตร"),
-    ("pvt",     "พลทหาร"),
-    ("all",     "ทุกระดับ"),
+    ("nco",        "นายทหารประทวน"),
+    ("officer",    "นายทหารสัญญาบัตร"),
+    ("pvt",        "พลทหาร"),
+    ("civilian",   "ลูกจ้างประจำ"),
+    ("government", "พนักงานราชการ"),
+    ("all",        "ทุกระดับ"),
 ]
 
 ARMY_REGION_CHOICES = [
@@ -107,6 +109,31 @@ ARMY_REGION_CHOICES = [
     ("3",   "กองทัพภาคที่ 3"),
     ("4",   "กองทัพภาคที่ 4"),
 ]
+
+PERSONNEL_TYPE_CHOICES = [
+    ("military",    "ทหาร"),
+    ("civilian",    "ลูกจ้างประจำ"),
+    ("government",  "พนักงานราชการ"),
+]
+
+GENDER_CHOICES = [
+    ("M", "ชาย"),
+    ("F", "หญิง"),
+]
+
+CIVILIAN_PREFIX_CHOICES = [
+    ("นาย",     "นาย"),
+    ("นาง",     "นาง"),
+    ("นางสาว",  "นางสาว"),
+]
+
+# ยศทหารที่มีคำลงท้าย หญิง เมื่อเพศ = F
+FEMALE_RANK_SUFFIX_RANKS = {
+    "CPL", "SGT3", "SGT2", "SSGT", "MSGT", "CSGT",
+    "WO1", "WO2", "WO3",
+    "2LT", "1LT", "CPT", "MAJ", "LTCOL", "COL",
+    "BGEN", "MGEN", "GEN",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +168,33 @@ class MilitaryUserProfile(models.Model):
 
     # Plain profile fields
     full_name_th = models.CharField(max_length=255, verbose_name="ชื่อ-นามสกุล (ภาษาไทย)")
-    rank = models.CharField(max_length=10, choices=RANK_CHOICES, verbose_name="ชั้นยศ")
+    # ประเภทบุคลากร
+    personnel_type = models.CharField(
+        max_length=20,
+        choices=PERSONNEL_TYPE_CHOICES,
+        default="military",
+        verbose_name="ประเภทบุคลากร",
+        db_index=True,
+    )
+
+    # เพศ
+    gender = models.CharField(
+        max_length=1,
+        choices=GENDER_CHOICES,
+        default="M",
+        verbose_name="เพศ",
+    )
+
+    # คำนำหน้า (สำหรับลูกจ้างประจำ / พนักงานราชการ ที่ไม่มียศ)
+    civilian_prefix = models.CharField(
+        max_length=10,
+        choices=CIVILIAN_PREFIX_CHOICES,
+        blank=True,
+        default="",
+        verbose_name="คำนำหน้า",
+    )
+
+    rank = models.CharField(max_length=10, choices=RANK_CHOICES, blank=True, default="", verbose_name="ชั้นยศ")
     unit = models.CharField(max_length=255, verbose_name="หน่วยต้นสังกัด")
     sub_unit = models.CharField(max_length=255, blank=True, default="", verbose_name="หน่วยรอง")
     service_start_date = models.DateField(verbose_name="วันเริ่มรับราชการ")
@@ -197,11 +250,42 @@ class MilitaryUserProfile(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.get_rank_display()} {self.full_name_th}"
+        return f"{self.display_prefix} {self.full_name_th}".strip()
+
+    @property
+    def display_rank_name(self) -> str:
+        """ชื่อยศที่แสดงผล — เพิ่มคำลงท้าย 'หญิง' ถ้าเป็นทหารหญิง"""
+        if not self.rank:
+            return ""
+        rank_label = dict(RANK_CHOICES).get(self.rank, self.rank)
+        if self.gender == "F" and self.rank in FEMALE_RANK_SUFFIX_RANKS:
+            return rank_label + "หญิง"
+        return rank_label
+
+    @property
+    def display_prefix(self) -> str:
+        """คำนำหน้าสำหรับแสดงผล — ยศสำหรับทหาร, คำนำหน้าสำหรับพลเรือน"""
+        if self.personnel_type == "military":
+            return self.display_rank_name
+        return self.civilian_prefix
+
+    @property
+    def display_full_name(self) -> str:
+        """ชื่อเต็มพร้อมคำนำหน้า เช่น 'ร้อยตรีหญิง สมหญิง ใจดี'"""
+        prefix = self.display_prefix
+        if prefix:
+            return f"{prefix} {self.full_name_th}"
+        return self.full_name_th
 
     @property
     def rank_class(self) -> str:
-        """ระดับชั้น: 'nco' | 'officer' | 'pvt'"""
+        """ระดับชั้น: 'nco' | 'officer' | 'pvt' | 'civilian' | 'government'"""
+        # พลเรือน/ลูกจ้าง ใช้ personnel_type เป็น rank_class
+        if self.personnel_type == "civilian":
+            return "civilian"
+        if self.personnel_type == "government":
+            return "government"
+        # ทหาร → ใช้ยศ
         if self.rank in NCO_RANKS:
             return "nco"
         if self.rank in OFFICER_RANKS:
@@ -210,7 +294,13 @@ class MilitaryUserProfile(models.Model):
 
     @property
     def rank_class_display(self) -> str:
-        mapping = {"nco": "นายทหารประทวน", "officer": "นายทหารสัญญาบัตร", "pvt": "พลทหาร"}
+        mapping = {
+            "nco":        "นายทหารประทวน",
+            "officer":    "นายทหารสัญญาบัตร",
+            "pvt":        "พลทหาร",
+            "civilian":   "ลูกจ้างประจำ",
+            "government": "พนักงานราชการ",
+        }
         return mapping.get(self.rank_class, "-")
 
     # ------------------------------------------------------------------
@@ -333,3 +423,85 @@ class CourseRequirement(models.Model):
 
     def __str__(self):
         return f"{self.get_rank_class_display()} → {self.course_name}"
+
+
+# ─────────────────────────────────────────────────────────────
+# ระบบอนุมัติใบประกาศแบบ Batch
+# ─────────────────────────────────────────────────────────────
+
+class CertificateApprovalBatch(models.Model):
+    """รอบการอนุมัติใบประกาศ — admin สร้างรอบ กำหนดวันอนุมัติ"""
+
+    STATUS_OPEN     = 'open'
+    STATUS_APPROVED = 'approved'
+    STATUS_CLOSED   = 'closed'
+    STATUS_CHOICES  = [
+        (STATUS_OPEN,     'รับสมัคร / รอผล'),
+        (STATUS_APPROVED, 'อนุมัติแล้ว'),
+        (STATUS_CLOSED,   'ปิดรอบ'),
+    ]
+
+    name = models.CharField(max_length=200, verbose_name='ชื่อรอบ')
+    course_id = models.CharField(max_length=255, db_index=True, verbose_name='Course ID')
+    course_name = models.CharField(max_length=500, blank=True, verbose_name='ชื่อหลักสูตร')
+    enrollment_start = models.DateField(verbose_name='เปิดรับเรียน')
+    enrollment_end   = models.DateField(verbose_name='ปิดรับเรียน / สอบ')
+    approve_date     = models.DateField(verbose_name='วันที่อนุมัติใบประกาศ')
+    status           = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
+    note             = models.TextField(blank=True, verbose_name='หมายเหตุ')
+    created_by       = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='cert_batches_created', verbose_name='สร้างโดย'
+    )
+    approved_by      = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='cert_batches_approved', verbose_name='อนุมัติโดย'
+    )
+    approved_at      = models.DateTimeField(null=True, blank=True, verbose_name='เวลาที่อนุมัติ')
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = 'รอบการอนุมัติใบประกาศ'
+        verbose_name_plural = 'รอบการอนุมัติใบประกาศ'
+        ordering            = ['-approve_date']
+
+    def __str__(self):
+        return f'{self.name} ({self.approve_date})'
+
+
+class CertificatePendingApproval(models.Model):
+    """ผู้เรียนที่ผ่านแล้ว รอ admin อนุมัติในรอบนั้น"""
+
+    STATUS_PENDING  = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES  = [
+        (STATUS_PENDING,  'รออนุมัติ'),
+        (STATUS_APPROVED, 'อนุมัติแล้ว'),
+        (STATUS_REJECTED, 'ไม่ผ่าน / ปฏิเสธ'),
+    ]
+
+    batch  = models.ForeignKey(
+        CertificateApprovalBatch, on_delete=models.CASCADE,
+        related_name='pending_approvals', verbose_name='รอบ'
+    )
+    user   = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='cert_pending_approvals', verbose_name='ผู้เรียน'
+    )
+    passed_at  = models.DateTimeField(verbose_name='วันที่ผ่าน')
+    score      = models.FloatField(null=True, blank=True, verbose_name='คะแนน (%)')
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    cert_uuid  = models.CharField(max_length=50, blank=True, verbose_name='UUID ใบประกาศ')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together     = ('batch', 'user')
+        verbose_name        = 'ผู้รออนุมัติใบประกาศ'
+        verbose_name_plural = 'ผู้รออนุมัติใบประกาศ'
+        ordering            = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user.username} → {self.batch.name} [{self.status}]'
