@@ -2565,6 +2565,7 @@ def api_video_subjects(request):
     """
     GET  /military/api/v1/videos/subjects/   → list subjects ของ user ปัจจุบัน
     POST /military/api/v1/videos/subjects/   → สร้าง subject ใหม่ (body: {name})
+    PATCH /military/api/v1/videos/subjects/  → แก้ชื่อ subject (body: {old_name, new_name})
     DELETE /military/api/v1/videos/subjects/ → ลบ subject (body: {name})
     """
     user_dir = _os.path.join(_get_video_dir(), request.user.username)
@@ -2591,6 +2592,31 @@ def api_video_subjects(request):
         sub_dir = _os.path.join(user_dir, safe)
         _os.makedirs(sub_dir, exist_ok=True)
         return JsonResponse({'success': True, 'name': safe})
+
+    if request.method == 'PATCH':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        old_name = _os.path.basename(data.get('old_name', '').strip())
+        new_raw = data.get('new_name', '').strip()
+        new_name = _re.sub(r'[^\w\-ก-๙ ]', '_', new_raw).strip()
+        if not old_name or not new_name:
+            return JsonResponse({'error': 'ระบุ old_name และ new_name'}, status=400)
+
+        old_dir = _os.path.join(user_dir, old_name)
+        new_dir = _os.path.join(user_dir, new_name)
+        if not _os.path.isdir(old_dir):
+            return JsonResponse({'error': f'ไม่พบหมวดหมู่ "{old_name}"'}, status=404)
+        if old_name == new_name:
+            return JsonResponse({'success': True, 'name': new_name})
+        if _os.path.isdir(new_dir):
+            return JsonResponse({'error': f'มีหมวดหมู่ "{new_name}" อยู่แล้ว'}, status=409)
+
+        # rename directory → ไฟล์วิดีโอทั้งหมดข้างในย้ายตามอัตโนมัติ
+        # (URL จะเปลี่ยนเป็น /media/videos/{user}/{new_name}/... )
+        _os.rename(old_dir, new_dir)
+        return JsonResponse({'success': True, 'name': new_name})
 
     if request.method == 'DELETE':
         try:
