@@ -272,7 +272,8 @@ hooks.Filters.ENV_PATCHES.add_items([
     (
         "caddyfile-lms",
         """
-# ── Video upload (ไม่จำกัด body size + timeout นาน) ──────────────────────
+# ── Video upload (body size ใหญ่ — timeout จัดการที่ uWSGI) ──────────────
+# ใช้ plain reverse_proxy (ไม่ import proxy snippet ที่มี log) เพื่อให้ valid ใน handle
 handle /military/api/v1/videos/upload/ {
     request_body {
         max_size 10GB
@@ -280,93 +281,167 @@ handle /military/api/v1/videos/upload/ {
     reverse_proxy lms:8000 {
         header_up X-Forwarded-Port 443
         header_up X-Forwarded-Proto https
-        transport http {
-            response_header_timeout 0s
-            read_buffer_size 4MB
-        }
     }
 }
 handle /login_refresh {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /login_ajax {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /military/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /user_api/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /asset-v1:* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /theming/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /courses/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /preview/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /oauth2/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /static/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /xblock/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /admin/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /csrf/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /logout {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /auth/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /api/* {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /admin {
-    import proxy "lms:8000"
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 
 # ── MFE paths (embedded in main domain) ───────────────────────────────────
 handle /learner-dashboard* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /course-authoring* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /discussions* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /authoring* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /gradebook* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /learning* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /account* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 handle /profile* {
-    import proxy "mfe:8002"
+    reverse_proxy mfe:8002 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 
 # ── Video files ────────────────────────────────────────────────────────────
 handle /media/videos/* {
-    import proxy "nginx-videos:80"
+    reverse_proxy nginx-videos:80 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
 }
 
 # ── Catch-all → Military Next.js frontend ─────────────────────────────────
@@ -450,19 +525,19 @@ hooks.Filters.CONFIG_DEFAULTS.add_items([
 
 ########################################################################
 # MILITARY_PATCH: uWSGI performance + video upload tuning             #
-# - harakiri=300: ไม่ timeout ระหว่าง upload ไฟล์ใหญ่                #
-# - max-requests=1000: recycle workers ป้องกัน memory leak            #
-# - listen=256: รับ queue connection มากขึ้น                          #
-# - ไม่ใช้ post-buffering และ socket-timeout (ทำให้ upload fail)      #
+# Root cause: [uwsgi-body-read] Timeout — uWSGI body buffer timeout   #
+# Fix: http-timeout + socket-timeout = 3600s สำหรับ upload ไฟล์ใหญ่  #
 ########################################################################
 hooks.Filters.ENV_PATCHES.add_items([
     (
         "uwsgi-config",
         """
-harakiri = 300
+harakiri = 3600
 max-requests = 1000
-listen = 256
+listen = 512
 buffer-size = 32768
+http-timeout = 3600
+socket-timeout = 3600
 """,
     ),
 ])
