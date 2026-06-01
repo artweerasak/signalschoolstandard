@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { api, MyProfile, MyCertificate } from "@/lib/api"
+import { api, MyProfile, MyCertificate, Course } from "@/lib/api"
 
 function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | null }) {
   if (status === "expired") return (
@@ -26,11 +26,16 @@ function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | 
 export default function MyHomePage() {
   const [profile, setProfile] = useState<MyProfile | null>(null)
   const [certs, setCerts] = useState<MyCertificate[]>([])
+  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([api.myProfile(), api.myCertificates()])
-      .then(([p, c]) => { setProfile(p); setCerts(c.results) })
+    Promise.all([api.myProfile(), api.myCertificates(), api.courses()])
+      .then(([p, c, courses]) => {
+        setProfile(p)
+        setCerts(c.results)
+        setEnrolledCourses(courses.results.filter(c => c.is_enrolled))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -104,6 +109,53 @@ export default function MyHomePage() {
             <p className="text-3xl font-bold text-red-500">{expiredCount}</p>
             <p className="text-xs text-gray-500 mt-1">หมดอายุแล้ว</p>
           </div>
+        </div>
+      </div>
+
+      {/* ความคืบหน้าการเรียน */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+          <h3 className="font-semibold text-[#4A1A6B]">📖 หลักสูตรที่ลงทะเบียนไว้</h3>
+          <Link href="/my/courses" className="text-xs text-[#7B3FA0] hover:underline">ค้นหาหลักสูตร →</Link>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {loading ? (
+            [...Array(2)].map((_, i) => (
+              <div key={i} className="px-5 py-4">
+                <div className="h-4 w-48 bg-gray-100 rounded animate-pulse mb-2" />
+                <div className="h-2 w-full bg-gray-100 rounded animate-pulse" />
+              </div>
+            ))
+          ) : enrolledCourses.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-gray-400 text-sm">ยังไม่ได้ลงทะเบียนหลักสูตรใด</p>
+              <Link href="/my/courses" className="text-[#4A1A6B] text-sm underline mt-2 inline-block">
+                ค้นหาหลักสูตร →
+              </Link>
+            </div>
+          ) : (
+            enrolledCourses.slice(0, 5).map(c => {
+              const cert = certs.find(ct => ct.course_id === c.id)
+              const isPassed = cert && cert.status !== "expired"
+              return (
+                <div key={c.id} className="px-5 py-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-sm font-medium text-gray-800 truncate flex-1 mr-3">{c.name}</p>
+                    {isPassed ? (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full shrink-0">ผ่านแล้ว ✓</span>
+                    ) : (
+                      <a href={`https://signalstandard.rta.mi.th/courses/${c.id}/courseware`}
+                        target="_blank" rel="noreferrer"
+                        className="text-xs text-[#4A1A6B] hover:underline shrink-0">เรียนต่อ →</a>
+                    )}
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div className={`h-1.5 rounded-full transition-all ${isPassed ? "bg-green-500 w-full" : "bg-[#7B3FA0] w-1/3"}`} />
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       </div>
 

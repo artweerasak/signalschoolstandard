@@ -199,10 +199,11 @@ export default function MyCertificatesPage() {
                           ต่ออายุ
                         </button>
                       )}
-                      <Link href={`/certificate/${cert.id}`}
+                      <a href={`/military/api/v1/my/certificates/${cert.id}/download/`}
+                        target="_blank" rel="noreferrer"
                         className="text-xs bg-[#15376D] hover:bg-[#0f2650] text-white px-3 py-1.5 rounded-lg flex items-center gap-1">
-                        📥 ดาวน์โหลด
-                      </Link>
+                        📥 ดาวน์โหลด PDF
+                      </a>
                     </div>
                   </div>
                 </div>

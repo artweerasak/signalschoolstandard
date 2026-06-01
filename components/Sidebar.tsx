@@ -28,12 +28,10 @@ const adminNavGroups: NavGroup[] = [
     ],
   },
   {
-    groupLabel: "หลักสูตร & ข้อสอบ",
+    groupLabel: "หลักสูตร",
     items: [
       { href: "/dashboard/courses", label: "จัดการหลักสูตร", icon: "🎓" },
-      { href: "/dashboard/course-requirements", label: "กำหนดหลักสูตร", icon: "⚙️" },
-      { href: "/dashboard/import-questions", label: "นำเข้าข้อสอบ", icon: "📥" },
-      { href: "/dashboard/library-manage", label: "จัดการคลังข้อสอบ", icon: "🗂️" },
+      { href: "/dashboard/course-requirements", label: "กำหนดมาตรฐาน", icon: "⚙️" },
     ],
   },
   {
@@ -47,6 +45,13 @@ const adminNavGroups: NavGroup[] = [
     groupLabel: "รายงาน",
     items: [
       { href: "/dashboard/reports", label: "รายงานมาตรฐาน", icon: "📈" },
+    ],
+  },
+  {
+    groupLabel: "ระบบ",
+    items: [
+      { href: "/dashboard/system-health", label: "สถานะระบบ", icon: "🖥️" },
+      { href: "/dashboard/audit-log", label: "Audit Log", icon: "📋" },
     ],
   },
 ]

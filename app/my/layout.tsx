@@ -11,6 +11,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { api, CurrentUser } from "@/lib/api"
+import NotificationBell from "@/components/NotificationBell"
 
 const studentNavItems = [
   { href: "/my",              label: "หน้าหลัก",         icon: "🏠" },
@@ -128,19 +129,37 @@ export default function MyLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[#f5f3f7]">
-      <LearnerSidebar user={user} />
+      <div className="hidden md:block"><LearnerSidebar user={user} /></div>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <h1 className="text-[#4A1A6B] font-bold text-base">
-            ระบบการเรียนการสอนออนไลน์ · กรมการทหารสื่อสาร
+        <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-4 flex items-center justify-between">
+          <h1 className="text-[#4A1A6B] font-bold text-sm md:text-base truncate">
+            ระบบ eLearning · กรมการทหารสื่อสาร
           </h1>
           {user && (
-            <span className="text-sm text-gray-500">
-              {user.rank ? `${user.rank} ` : ""}{user.full_name}
-            </span>
+            <div className="flex items-center gap-3">
+              <NotificationBell />
+              <span className="text-sm text-gray-500">
+                {user.rank ? `${user.rank} ` : ""}{user.full_name}
+              </span>
+            </div>
           )}
         </header>
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-4 md:p-6 overflow-auto pb-20 md:pb-6">{children}</main>
+        {/* Mobile bottom navigation */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#2D0F42] border-t border-[#4A1A6B] flex z-40">
+          {[
+            { href: "/my", icon: "🏠", label: "หลัก" },
+            { href: "/my/courses", icon: "📚", label: "หลักสูตร" },
+            { href: "/my/certificates", icon: "📜", label: "ใบประกาศ" },
+            { href: "/my/profile", icon: "👤", label: "โปรไฟล์" },
+          ].map(item => (
+            <Link key={item.href} href={item.href}
+              className="flex-1 flex flex-col items-center py-2 text-purple-300 hover:text-white transition-colors">
+              <span className="text-lg">{item.icon}</span>
+              <span className="text-xs mt-0.5">{item.label}</span>
+            </Link>
+          ))}
+        </nav>
       </div>
     </div>
   )

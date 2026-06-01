@@ -192,7 +192,18 @@ function LoginPageInner() {
             </Link>
           </p>
           <p className="text-xs text-gray-400">
-            หากลืมรหัสผ่าน กรุณาติดต่อผู้ดูแลระบบเพื่อรีเซ็ต
+            หากลืมรหัสผ่าน{" "}
+            <Link href="/reset-password" className="text-[#4A1A6B] hover:underline">
+              ขอรีเซ็ตรหัสผ่าน
+            </Link>
+            {" "}หรือติดต่อผู้ดูแลระบบ
+          </p>
+          {/* PDPA Notice */}
+          <p className="text-xs text-gray-400 border-t border-gray-100 pt-2 leading-relaxed">
+            ระบบนี้จัดเก็บข้อมูลส่วนบุคคลเพื่อการเรียนการสอนภายในองค์กรตาม{" "}
+            <Link href="/privacy" className="underline hover:text-[#4A1A6B]">
+              นโยบายความเป็นส่วนตัว (PDPA)
+            </Link>
           </p>
           <p className="text-xs text-gray-400">
             © {new Date().getFullYear()} กรมการทหารสื่อสาร · กรมทหารสื่อสาร

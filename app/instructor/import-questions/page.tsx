@@ -34,6 +34,7 @@ export default function ImportQuestionsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [librariesLoaded, setLibrariesLoaded] = useState(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [importResult, setImportResult] = useState<any>(null);
   const [error, setError] = useState("");
@@ -63,6 +64,8 @@ export default function ImportQuestionsPage() {
       }
     } catch {
       setError("ไม่สามารถโหลดรายชื่อ Library ได้");
+    } finally {
+      setLibrariesLoaded(true);
     }
   }
 
@@ -190,8 +193,21 @@ export default function ImportQuestionsPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               เลือกคลังข้อสอบ (Library) ปลายทาง
             </label>
-            {libraries.length === 0 ? (
+            {!librariesLoaded ? (
               <p className="text-sm text-gray-400">กำลังโหลด...</p>
+            ) : libraries.length === 0 ? (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+                <p className="font-semibold text-yellow-800 mb-1">⚠️ ยังไม่มีคลังข้อสอบ</p>
+                <p className="text-yellow-700 mb-2">กรุณาสร้าง Library ใน Studio ก่อน แล้วกลับมาใช้งานหน้านี้</p>
+                <a
+                  href="https://studio-signalstandard.rta.mi.th/library/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block px-3 py-1.5 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700"
+                >
+                  ไปสร้าง Library ที่ Studio →
+                </a>
+              </div>
             ) : (
               <div className="flex gap-2 items-start">
                 <select
