@@ -136,8 +136,11 @@ CORS_ALLOW_CREDENTIALS = True
 # Video storage settings
 MILITARY_VIDEO_DIR = "/openedx/media/videos"
 MILITARY_VIDEO_BASE_URL = "/media/videos"
-DATA_UPLOAD_MAX_MEMORY_SIZE = None
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = None        # ไม่จำกัด — จัดการโดย Caddy
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB temp buffer
+FILE_UPLOAD_HANDLERS = [
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",  # เขียน disk ทันที ไม่ค้าง RAM
+]
 
 from celery.schedules import crontab
 CELERYBEAT_SCHEDULE.update({
@@ -269,9 +272,19 @@ hooks.Filters.ENV_PATCHES.add_items([
     (
         "caddyfile-lms",
         """
-# ── LMS core API paths ─────────────────────────────────────────────────────
-handle /military/videos/upload/ {
-    import proxy "lms:8000"
+# ── Video upload (ไม่จำกัด body size + timeout นาน) ──────────────────────
+handle /military/api/v1/videos/upload/ {
+    request_body {
+        max_size 10GB
+    }
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+        transport http {
+            response_header_timeout 0s
+            read_buffer_size 4MB
+        }
+    }
 }
 handle /login_refresh {
     import proxy "lms:8000"
@@ -433,4 +446,23 @@ XBLOCK_SETTINGS.setdefault("military-pdf-viewer", {})
 hooks.Filters.CONFIG_DEFAULTS.add_items([
     ("OPENEDX_LMS_UWSGI_WORKERS", 6),
     ("OPENEDX_CMS_UWSGI_WORKERS", 6),
+])
+
+########################################################################
+# MILITARY_PATCH: uWSGI performance + video upload tuning             #
+# - harakiri=300: ไม่ timeout ระหว่าง upload ไฟล์ใหญ่                #
+# - max-requests=1000: recycle workers ป้องกัน memory leak            #
+# - listen=256: รับ queue connection มากขึ้น                          #
+# - ไม่ใช้ post-buffering และ socket-timeout (ทำให้ upload fail)      #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    (
+        "uwsgi-config",
+        """
+harakiri = 300
+max-requests = 1000
+listen = 256
+buffer-size = 32768
+""",
+    ),
 ])
