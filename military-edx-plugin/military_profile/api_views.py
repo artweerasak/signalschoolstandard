@@ -2677,15 +2677,18 @@ def api_video_upload(request):
     if 'file' not in request.FILES:
         return JsonResponse({'error': 'No file provided'}, status=400)
 
-    course_slug = _re.sub(r'[^\w\-]', '_', request.POST.get('course_slug', '').strip())
+    course_slug = request.POST.get('course_slug', '').strip()
     if not course_slug:
         return JsonResponse({'error': 'กรุณาระบุ course_slug'}, status=400)
 
+    # ตรวจว่า subject นี้มีอยู่จริงแล้วเท่านั้น — ห้ามสร้างใหม่อัตโนมัติ
+    user_dir = _os.path.join(_get_video_dir(), request.user.username)
+    dest_dir = _os.path.join(user_dir, course_slug)
+    if not _os.path.isdir(dest_dir):
+        return JsonResponse({'error': f'ไม่พบหมวดหมู่ "{course_slug}" กรุณาสร้างก่อนอัปโหลด'}, status=400)
+
     uploaded_file = request.FILES['file']
     safe_name = _re.sub(r'[^\w\-_.]', '_', uploaded_file.name) or f"video_{_uuid_mod.uuid4().hex}"
-
-    dest_dir = _os.path.join(_get_video_dir(), request.user.username, course_slug)
-    _os.makedirs(dest_dir, exist_ok=True)
 
     file_path = _os.path.join(dest_dir, safe_name)
     base, ext = _os.path.splitext(safe_name)
