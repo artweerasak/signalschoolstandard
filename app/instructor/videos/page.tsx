@@ -122,15 +122,12 @@ export default function VideosPage() {
     }));
     setUploadQueue(q => [...q, ...items]);
 
-    // upload ทีละ 2 ไฟล์พร้อมกัน (parallel=2)
-    const PARALLEL = 2;
-    for (let i = 0; i < items.length; i += PARALLEL) {
-      const batch = items.slice(i, i + PARALLEL);
-      await Promise.all(batch.map(item => uploadSingle(item, selectedSubject)));
+    // upload ทีละไฟล์ (sequential) เหมือน YouTube — ลดภาระ worker
+    for (const item of items) {
+      await uploadSingle(item, selectedSubject);
     }
     await loadFiles(filterSubject);
     await loadSubjects();
-    setMsg(`อัปโหลดสำเร็จ ${items.length} ไฟล์`);
   }, [selectedSubject, uploadSingle, loadFiles, loadSubjects, filterSubject]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
