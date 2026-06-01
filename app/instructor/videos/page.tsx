@@ -6,6 +6,11 @@ interface VideoFile {
   name: string; size: number; url: string; modified: number;
   course_slug: string; uploader: string;
 }
+interface UploadItem {
+  id: string; file: File; progress: number;
+  status: 'pending' | 'uploading' | 'done' | 'error';
+  error?: string; url?: string;
+}
 
 function formatSize(b: number) {
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
@@ -26,16 +31,15 @@ export default function VideosPage() {
   const [files, setFiles] = useState<VideoFile[]>([]);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingFiles, setLoadingFiles] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [uploadedBytes, setUploadedBytes] = useState(0);
-  const [totalBytes, setTotalBytes] = useState(0);
+  const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState('');
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const csrf = getCookie('csrftoken') || '';
+
+  const isUploading = uploadQueue.some(u => u.status === 'uploading' || u.status === 'pending');
 
   const loadSubjects = useCallback(async () => {
     setLoadingSubjects(true);
@@ -63,11 +67,83 @@ export default function VideosPage() {
   useEffect(() => { loadSubjects(); }, [loadSubjects]);
   useEffect(() => { loadFiles(filterSubject); }, [filterSubject, loadFiles]);
 
+  // อัปโหลดไฟล์เดียวผ่าน XHR พร้อม progress
+  const uploadSingle = useCallback((item: UploadItem, subject: string): Promise<void> => {
+    return new Promise(resolve => {
+      setUploadQueue(q => q.map(u => u.id === item.id ? { ...u, status: 'uploading' } : u));
+
+      const form = new FormData();
+      form.append('file', item.file);
+      form.append('course_slug', subject);
+
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) {
+          const pct = Math.round(e.loaded / e.total * 100);
+          setUploadQueue(q => q.map(u => u.id === item.id ? { ...u, progress: pct } : u));
+        }
+      });
+      xhr.addEventListener('load', () => {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          if (xhr.status === 200 && result.success) {
+            setUploadQueue(q => q.map(u => u.id === item.id
+              ? { ...u, status: 'done', progress: 100, url: result.url } : u));
+          } else {
+            setUploadQueue(q => q.map(u => u.id === item.id
+              ? { ...u, status: 'error', error: result.error || 'อัปโหลดไม่สำเร็จ' } : u));
+          }
+        } catch {
+          setUploadQueue(q => q.map(u => u.id === item.id
+            ? { ...u, status: 'error', error: 'Parse error' } : u));
+        }
+        resolve();
+      });
+      xhr.addEventListener('error', () => {
+        setUploadQueue(q => q.map(u => u.id === item.id
+          ? { ...u, status: 'error', error: 'Connection error' } : u));
+        resolve();
+      });
+      xhr.open('POST', '/military/api/v1/videos/upload/');
+      xhr.setRequestHeader('X-CSRFToken', csrf);
+      xhr.withCredentials = true;
+      xhr.send(form);
+    });
+  }, [csrf]);
+
+  // เพิ่มไฟล์เข้า queue และเริ่ม upload ทีละ 2 ไฟล์พร้อมกัน
+  const addFiles = useCallback(async (newFiles: File[]) => {
+    if (!selectedSubject) { setError('กรุณาเลือกหมวดหมู่ก่อนอัปโหลด'); return; }
+    setError(''); setMsg('');
+
+    const items: UploadItem[] = newFiles.map(f => ({
+      id: Math.random().toString(36).slice(2),
+      file: f, progress: 0, status: 'pending',
+    }));
+    setUploadQueue(q => [...q, ...items]);
+
+    // upload ทีละ 2 ไฟล์พร้อมกัน (parallel=2)
+    const PARALLEL = 2;
+    for (let i = 0; i < items.length; i += PARALLEL) {
+      const batch = items.slice(i, i + PARALLEL);
+      await Promise.all(batch.map(item => uploadSingle(item, selectedSubject)));
+    }
+    await loadFiles(filterSubject);
+    await loadSubjects();
+    setMsg(`อัปโหลดสำเร็จ ${items.length} ไฟล์`);
+  }, [selectedSubject, uploadSingle, loadFiles, loadSubjects, filterSubject]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('video/') || f.name.match(/\.(mp4|mov|avi|mkv|webm|flv|wmv)$/i));
+    if (dropped.length > 0) addFiles(dropped);
+    else setError('กรุณาเลือกไฟล์วิดีโอเท่านั้น');
+  }, [addFiles]);
+
   const createSubject = async () => {
     const name = newSubjectName.trim();
     if (!name) return;
-    setCreatingSubject(true);
-    setError(''); setMsg('');
+    setCreatingSubject(true); setError(''); setMsg('');
     try {
       const res = await fetch('/military/api/v1/videos/subjects/', {
         method: 'POST', credentials: 'include',
@@ -102,42 +178,6 @@ export default function VideosPage() {
     } catch (e: any) { setError(e.message); }
   };
 
-  const uploadFile = (file: File) => {
-    if (!selectedSubject) { setError('กรุณาเลือกหมวดหมู่ก่อนอัปโหลด'); return; }
-    setUploading(true); setProgress(0); setUploadedBytes(0);
-    setTotalBytes(file.size); setError(''); setMsg('');
-
-    const form = new FormData();
-    form.append('file', file);
-    form.append('course_slug', selectedSubject);
-
-    const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) { setUploadedBytes(e.loaded); setProgress(Math.round(e.loaded / e.total * 100)); }
-    });
-    xhr.addEventListener('load', () => {
-      setUploading(false);
-      try {
-        const result = JSON.parse(xhr.responseText);
-        if (xhr.status === 200 && result.success) {
-          setMsg('อัปโหลดสำเร็จ');
-          loadFiles(filterSubject);
-          loadSubjects();
-        } else { setError(result.error || 'อัปโหลดไม่สำเร็จ'); }
-      } catch { setError('เกิดข้อผิดพลาด'); }
-    });
-    xhr.addEventListener('error', () => { setUploading(false); setError('เกิดข้อผิดพลาด'); });
-    xhr.open('POST', '/military/api/v1/videos/upload/');
-    xhr.setRequestHeader('X-CSRFToken', csrf);
-    xhr.withCredentials = true;
-    xhr.send(form);
-  };
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setDragging(false);
-    const f = e.dataTransfer.files[0]; if (f) uploadFile(f);
-  }, [selectedSubject]);
-
   const deleteFile = async (f: VideoFile) => {
     if (!confirm(`ลบ "${f.name}" ใช่ไหม?`)) return;
     const path = `${f.course_slug}/${f.name}`;
@@ -157,6 +197,9 @@ export default function VideosPage() {
     (acc[f.course_slug] = acc[f.course_slug] || []).push(f); return acc;
   }, {});
 
+  const doneCount = uploadQueue.filter(u => u.status === 'done').length;
+  const errorCount = uploadQueue.filter(u => u.status === 'error').length;
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
@@ -170,51 +213,33 @@ export default function VideosPage() {
           <h2 className="font-semibold text-gray-700 text-sm">📁 หมวดหมู่วิดีโอ</h2>
           <span className="text-xs text-gray-400">{subjects.length} หมวดหมู่</span>
         </div>
-
-        {/* สร้างหมวดหมู่ใหม่ */}
         <div className="px-4 py-3 border-b border-gray-100 flex gap-2">
-          <input
-            type="text"
-            value={newSubjectName}
-            onChange={e => setNewSubjectName(e.target.value)}
+          <input type="text" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && createSubject()}
             placeholder="ชื่อหมวดหมู่ใหม่ เช่น วิชาวิทยุ, บทที่ 1"
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none"
-          />
-          <button
-            onClick={createSubject}
-            disabled={creatingSubject || !newSubjectName.trim()}
-            className="px-4 py-2 bg-[#4A1A6B] text-white rounded-lg text-sm font-medium hover:bg-[#2D0F42] disabled:opacity-50 whitespace-nowrap"
-          >
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none" />
+          <button onClick={createSubject} disabled={creatingSubject || !newSubjectName.trim()}
+            className="px-4 py-2 bg-[#4A1A6B] text-white rounded-lg text-sm font-medium hover:bg-[#2D0F42] disabled:opacity-50 whitespace-nowrap">
             {creatingSubject ? '...' : '+ สร้าง'}
           </button>
         </div>
-
-        {/* รายการหมวดหมู่ */}
         {loadingSubjects ? (
           <div className="p-4 text-center text-gray-400 text-sm">กำลังโหลด...</div>
         ) : subjects.length === 0 ? (
-          <div className="p-4 text-center text-gray-400 text-sm">ยังไม่มีหมวดหมู่ — สร้างหมวดหมู่แรกด้านบน</div>
+          <div className="p-4 text-center text-gray-400 text-sm">ยังไม่มีหมวดหมู่ — สร้างด้านบน</div>
         ) : (
           <div className="divide-y divide-gray-100">
             {subjects.map(s => (
-              <div
-                key={s.name}
-                onClick={() => setSelectedSubject(s.name)}
+              <div key={s.name} onClick={() => setSelectedSubject(s.name)}
                 className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-colors
-                  ${selectedSubject === s.name ? 'bg-purple-50 border-l-4 border-l-[#4A1A6B]' : 'hover:bg-gray-50'}`}
-              >
+                  ${selectedSubject === s.name ? 'bg-purple-50 border-l-4 border-l-[#4A1A6B]' : 'hover:bg-gray-50'}`}>
                 <span className="text-lg">📁</span>
                 <span className={`flex-1 text-sm font-medium ${selectedSubject === s.name ? 'text-[#4A1A6B]' : 'text-gray-700'}`}>
                   {s.name}
                 </span>
                 <span className="text-xs text-gray-400">{s.file_count} ไฟล์</span>
-                <button
-                  onClick={e => { e.stopPropagation(); deleteSubject(s.name); }}
-                  className="text-xs text-red-400 hover:text-red-600 px-2 py-0.5 rounded hover:bg-red-50"
-                >
-                  ลบ
-                </button>
+                <button onClick={e => { e.stopPropagation(); deleteSubject(s.name); }}
+                  className="text-xs text-red-400 hover:text-red-600 px-2 py-0.5 rounded hover:bg-red-50">ลบ</button>
               </div>
             ))}
           </div>
@@ -224,39 +249,80 @@ export default function VideosPage() {
       {msg && <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg p-3 text-sm">{msg}</div>}
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
 
-      {/* Upload zone */}
+      {/* Upload Zone — รองรับหลายไฟล์ */}
       {selectedSubject ? (
-        <div
-          onDrop={handleDrop}
-          onDragOver={e => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onClick={() => !uploading && fileRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all
-            ${dragging ? 'border-purple-500 bg-purple-50' : uploading ? 'border-yellow-400 bg-yellow-50 cursor-not-allowed' : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'}`}
-        >
-          {uploading ? (
-            <div className="space-y-3">
-              <div className="text-yellow-600 font-medium">กำลังอัปโหลดเข้า "{selectedSubject}"...</div>
-              <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
-                <div className="h-4 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 transition-all" style={{ width: progress + '%' }} />
+        <div>
+          <div
+            onDrop={handleDrop}
+            onDragOver={e => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onClick={() => !isUploading && fileRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all
+              ${dragging ? 'border-purple-500 bg-purple-50'
+                : isUploading ? 'border-yellow-400 bg-yellow-50 cursor-default'
+                : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'}`}
+          >
+            {isUploading ? (
+              <div className="space-y-2">
+                <div className="text-yellow-600 font-medium">กำลังอัปโหลดเข้า "{selectedSubject}"</div>
+                <p className="text-xs text-gray-500">อย่าปิดหน้านี้ระหว่างอัปโหลด</p>
               </div>
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>{formatSize(uploadedBytes)} / {formatSize(totalBytes)}</span>
-                <span className="font-bold text-purple-600 text-xl">{progress}%</span>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-4xl">🎬</div>
+                <div className="text-gray-600 font-medium">
+                  ลากไฟล์มาวาง → <span className="text-[#4A1A6B] font-semibold">{selectedSubject}</span>
+                </div>
+                <div className="text-gray-400 text-sm">หรือคลิกเพื่อเลือกไฟล์ · รองรับหลายไฟล์พร้อมกัน</div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="text-4xl">🎬</div>
-              <div className="text-gray-600 font-medium">
-                ลากไฟล์มาวาง → <span className="text-[#4A1A6B] font-semibold">{selectedSubject}</span>
+            )}
+            <input ref={fileRef} type="file" accept="video/*" multiple
+              onChange={e => {
+                const fs = Array.from(e.target.files || []);
+                if (fs.length) addFiles(fs);
+                e.target.value = '';
+              }}
+              className="hidden" />
+          </div>
+
+          {/* Upload Queue */}
+          {uploadQueue.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-600">
+                  คิวอัปโหลด ({doneCount}/{uploadQueue.length} เสร็จ{errorCount > 0 ? `, ${errorCount} ผิดพลาด` : ''})
+                </span>
+                {!isUploading && (
+                  <button onClick={() => setUploadQueue([])}
+                    className="text-xs text-gray-400 hover:text-gray-600">ล้างคิว</button>
+                )}
               </div>
-              <div className="text-gray-400 text-sm">หรือคลิกเพื่อเลือกไฟล์ (.mp4, .mov, .avi ฯลฯ)</div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {uploadQueue.map(item => (
+                  <div key={item.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <span className="text-xs text-gray-700 truncate flex-1">{item.file.name}</span>
+                      <span className="text-xs shrink-0">
+                        {item.status === 'done' && <span className="text-green-600">✓ เสร็จ</span>}
+                        {item.status === 'error' && <span className="text-red-500">✕ ผิดพลาด</span>}
+                        {item.status === 'uploading' && <span className="text-blue-600">{item.progress}%</span>}
+                        {item.status === 'pending' && <span className="text-gray-400">รอ...</span>}
+                      </span>
+                    </div>
+                    {(item.status === 'uploading' || item.status === 'done') && (
+                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                        <div className={`h-1.5 rounded-full transition-all ${item.status === 'done' ? 'bg-green-500' : 'bg-purple-500'}`}
+                          style={{ width: `${item.progress}%` }} />
+                      </div>
+                    )}
+                    {item.status === 'error' && (
+                      <p className="text-xs text-red-500 mt-0.5">{item.error}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-          <input ref={fileRef} type="file" accept="video/*"
-            onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }}
-            className="hidden" />
         </div>
       ) : (
         <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center text-gray-400 text-sm">
