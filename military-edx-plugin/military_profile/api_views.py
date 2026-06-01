@@ -887,6 +887,58 @@ def api_admin_reset_password(request, user_id: int):
     })
 
 
+@csrf_exempt
+@require_POST
+def api_reset_password_request(request):
+    """
+    POST /military/api/v1/reset-password/request/
+    สาธารณะ — รับ national_id แล้วสร้าง pending reset request แจ้ง HR/Admin
+    ไม่รีเซ็ตทันที เพื่อความปลอดภัย — admin ต้องยืนยันก่อน
+    """
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    national_id = data.get("national_id", "").strip()
+    if not national_id or not national_id.isdigit() or len(national_id) != 13:
+        return JsonResponse({"error": "กรุณากรอกเลขบัตรประชาชน 13 หลัก"}, status=400)
+
+    try:
+        from .models import MilitaryUserProfile
+        from django.contrib.auth import get_user_model
+        _User = get_user_model()
+
+        # ค้นหา user จาก national_id (เข้ารหัสอยู่ ต้องใช้ field search)
+        profile = MilitaryUserProfile.objects.filter(national_id_hash=national_id).first()
+        if not profile:
+            # ไม่แสดงว่าไม่พบ เพื่อป้องกัน user enumeration
+            pass
+        else:
+            from django.conf import settings as _s
+            hr_emails = getattr(_s, 'MILITARY_HR_EMAILS', [])
+            if hr_emails:
+                from django.core.mail import send_mail
+                send_mail(
+                    subject="[ระบบ eLearning] คำขอรีเซ็ตรหัสผ่าน",
+                    message=(
+                        f"มีคำขอรีเซ็ตรหัสผ่านจาก:\n"
+                        f"ชื่อ: {profile.full_name_th}\n"
+                        f"ยศ: {profile.get_rank_display()}\n"
+                        f"หน่วย: {profile.unit}\n\n"
+                        f"กรุณาเข้าระบบ Admin เพื่อรีเซ็ตรหัสผ่านให้กับบุคลากรท่านนี้"
+                    ),
+                    from_email="noreply@signalstandard.rta.mi.th",
+                    recipient_list=hr_emails,
+                    fail_silently=True,
+                )
+    except Exception:
+        pass
+
+    # คืน success เสมอ ไม่ว่าจะพบ user หรือไม่ (ป้องกัน user enumeration)
+    return JsonResponse({"success": True, "message": "ส่งคำขอเรียบร้อยแล้ว"})
+
+
 @require_GET
 @_require_login
 def api_courses_catalog(request):
@@ -1060,6 +1112,263 @@ def api_my_certificate_detail(request, cert_id):
         'full_name':   full_name,
         'unit':        unit,
         'sub_unit':    sub_unit,
+    })
+
+
+@require_GET
+@_require_login
+def api_my_notifications(request):
+    """
+    GET /military/api/v1/my/notifications/
+    แจ้งเตือน in-app สำหรับผู้ใช้: ใบประกาศใกล้หมดอายุ, หมดอายุแล้ว
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    soon = today + timedelta(days=30)
+    notifications = []
+
+    # ใบประกาศใกล้หมดอายุ (30 วัน)
+    near = UserCertificateExpiry.objects.filter(
+        user=request.user, status="active",
+        expiry_date__lte=soon, expiry_date__gte=today
+    ).select_related()
+    for cert in near:
+        days = (cert.expiry_date - today).days
+        try:
+            config = CourseCertificateConfig.objects.get(course_id=cert.course_id)
+            name = config.course_name
+        except CourseCertificateConfig.DoesNotExist:
+            name = str(cert.course_id)
+        notifications.append({
+            "id": f"cert-near-{cert.id}",
+            "type": "warning",
+            "title": "ใบประกาศใกล้หมดอายุ",
+            "message": f"{name} จะหมดอายุในอีก {days} วัน",
+            "link": "/my/certificates",
+            "created_at": cert.expiry_date.isoformat(),
+        })
+
+    # ใบประกาศที่หมดอายุแล้ว
+    expired = UserCertificateExpiry.objects.filter(
+        user=request.user, status="expired"
+    ).select_related()[:5]
+    for cert in expired:
+        try:
+            config = CourseCertificateConfig.objects.get(course_id=cert.course_id)
+            name = config.course_name
+        except CourseCertificateConfig.DoesNotExist:
+            name = str(cert.course_id)
+        notifications.append({
+            "id": f"cert-exp-{cert.id}",
+            "type": "error",
+            "title": "ใบประกาศหมดอายุแล้ว",
+            "message": f"{name} หมดอายุแล้ว กรุณาต่ออายุ",
+            "link": "/my/certificates",
+            "created_at": cert.expiry_date.isoformat() if cert.expiry_date else None,
+        })
+
+    return JsonResponse({"notifications": notifications, "unread": len(notifications)})
+
+
+@require_GET
+@_require_login
+def api_my_certificate_download(request, cert_id):
+    """
+    GET /military/api/v1/my/certificates/<cert_id>/download/
+    สร้าง PDF ใบประกาศแล้วส่งกลับ (ใช้ WeasyPrint)
+    """
+    from django.http import HttpResponse
+    try:
+        cert = UserCertificateExpiry.objects.get(id=cert_id, user=request.user)
+    except UserCertificateExpiry.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    try:
+        config = CourseCertificateConfig.objects.get(course_id=cert.course_id)
+        course_name = config.course_name
+    except CourseCertificateConfig.DoesNotExist:
+        course_name = str(cert.course_id)
+
+    try:
+        from military_profile.models import MilitaryUserProfile
+        profile = MilitaryUserProfile.objects.get(user=request.user)
+        rank = profile.get_rank_display()
+        full_name = profile.full_name_th
+        unit = profile.unit
+    except Exception:
+        rank = full_name = unit = ''
+
+    issued_str = cert.issued_date.strftime('%d/%m/%Y') if cert.issued_date else '-'
+    expiry_str = cert.expiry_date.strftime('%d/%m/%Y') if cert.expiry_date else 'ไม่มีวันหมดอายุ'
+    cert_no = f"สส.{cert.issued_date.year + 543 if cert.issued_date else 'xxxx'}-{cert.id:04d}"
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+  body {{ font-family: 'Sarabun', sans-serif; margin: 0; padding: 40px; background: #fff; }}
+  .cert {{ border: 8px double #4A1A6B; padding: 40px; max-width: 700px; margin: auto; text-align: center; }}
+  .logo {{ font-size: 48px; margin-bottom: 8px; }}
+  .org {{ color: #4A1A6B; font-size: 22px; font-weight: 700; }}
+  .title {{ font-size: 28px; font-weight: 700; color: #2D0F42; margin: 24px 0 8px; }}
+  .subtitle {{ color: #666; margin-bottom: 32px; }}
+  .recipient {{ font-size: 20px; font-weight: 600; color: #1a1a1a; margin: 8px 0; }}
+  .course {{ font-size: 18px; color: #4A1A6B; font-weight: 600; margin: 16px 0; }}
+  .detail {{ color: #555; font-size: 14px; margin: 4px 0; }}
+  .cert-no {{ color: #888; font-size: 13px; margin-top: 32px; border-top: 1px solid #eee; padding-top: 16px; }}
+  .gold {{ color: #C9A84C; }}
+</style>
+</head>
+<body>
+<div class="cert">
+  <div class="logo">🏆</div>
+  <div class="org">กรมการทหารสื่อสาร</div>
+  <div class="title">ใบประกาศนียบัตร</div>
+  <div class="subtitle">CERTIFICATE OF COMPLETION</div>
+  <p class="detail">ขอมอบให้แก่</p>
+  <p class="recipient">{rank} {full_name}</p>
+  <p class="detail">สังกัด {unit}</p>
+  <p class="detail" style="margin-top:16px">ได้ผ่านการศึกษาหลักสูตร</p>
+  <p class="course">"{course_name}"</p>
+  <p class="detail">วันที่ออกใบประกาศ: {issued_str}</p>
+  <p class="detail">วันที่หมดอายุ: {expiry_str}</p>
+  <div class="cert-no">เลขที่ใบประกาศ: {cert_no}</div>
+</div>
+</body>
+</html>"""
+
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(string=html_content, base_url=None).write_pdf()
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="certificate_{cert_no}.pdf"'
+        return response
+    except ImportError:
+        # Fallback: ส่ง HTML ถ้าไม่มี WeasyPrint
+        response = HttpResponse(html_content, content_type='text/html; charset=utf-8')
+        response['Content-Disposition'] = f'inline; filename="certificate_{cert_no}.html"'
+        return response
+
+
+@require_GET
+@_require_admin
+def api_audit_log(request):
+    """
+    GET /military/api/v1/admin/audit-log/?page=1&per_page=50&search=&action=
+    แสดง audit log การกระทำที่สำคัญในระบบ
+    """
+    try:
+        from military_auth.models import AuditLog
+    except ImportError:
+        return JsonResponse({"results": [], "count": 0, "error": "AuditLog model not available"})
+
+    import math
+    qs = AuditLog.objects.select_related("user").order_by("-created_at")
+
+    search = request.GET.get("search", "").strip()
+    action = request.GET.get("action", "").strip()
+    if search:
+        from django.db.models import Q
+        qs = qs.filter(Q(user__username__icontains=search) | Q(path__icontains=search))
+    if action:
+        qs = qs.filter(method=action.upper())
+
+    page = max(1, int(request.GET.get("page", 1)))
+    per_page = min(100, max(10, int(request.GET.get("per_page", 50))))
+    total = qs.count()
+    start = (page - 1) * per_page
+    records = qs[start:start + per_page]
+
+    results = []
+    for log in records:
+        results.append({
+            "id": log.id,
+            "username": log.user.username if log.user else "—",
+            "full_name": getattr(getattr(log.user, "military_profile", None), "full_name_th", ""),
+            "method": log.method,
+            "path": log.path,
+            "status_code": getattr(log, "status_code", None),
+            "ip_address": getattr(log, "ip_address", ""),
+            "created_at": log.created_at.isoformat(),
+        })
+
+    return JsonResponse({
+        "results": results,
+        "count": len(results),
+        "total": total,
+        "page": page,
+        "total_pages": math.ceil(total / per_page),
+    })
+
+
+@require_GET
+@_require_admin
+def api_system_health(request):
+    """
+    GET /military/api/v1/admin/system-health/
+    ข้อมูล server resources สำหรับ Admin dashboard
+    """
+    import shutil, time
+    import os as _os2
+
+    # Disk usage
+    disk = shutil.disk_usage("/")
+    disk_total_gb = round(disk.total / (1024**3), 1)
+    disk_used_gb  = round(disk.used  / (1024**3), 1)
+    disk_pct      = round(disk.used / disk.total * 100, 1)
+
+    # Memory
+    try:
+        import resource
+        with open("/proc/meminfo") as f:
+            mem_info = {}
+            for line in f:
+                k, v = line.split(":")
+                mem_info[k.strip()] = int(v.strip().split()[0])
+        mem_total_gb = round(mem_info.get("MemTotal", 0) / (1024**2), 1)
+        mem_avail_gb = round(mem_info.get("MemAvailable", 0) / (1024**2), 1)
+        mem_used_gb  = round(mem_total_gb - mem_avail_gb, 1)
+        mem_pct      = round(mem_used_gb / mem_total_gb * 100, 1) if mem_total_gb else 0
+    except Exception:
+        mem_total_gb = mem_used_gb = mem_avail_gb = mem_pct = 0
+
+    # Video storage
+    from .api_views_helpers import _get_video_dir_safe
+    video_dir = getattr(__import__("django.conf", fromlist=["settings"]).settings,
+                        "MILITARY_VIDEO_DIR", "/openedx/media/videos")
+    try:
+        video_size = sum(
+            _os2.path.getsize(_os2.path.join(root, f))
+            for root, _, files in _os2.walk(video_dir)
+            for f in files
+        )
+        video_size_gb = round(video_size / (1024**3), 2)
+    except Exception:
+        video_size_gb = 0
+
+    # Active users (sessions in last 30 min)
+    try:
+        from django.contrib.sessions.models import Session
+        from datetime import datetime, timedelta, timezone as tz
+        cutoff = datetime.now(tz.utc) - timedelta(minutes=30)
+        active_sessions = Session.objects.filter(expire_date__gte=cutoff).count()
+    except Exception:
+        active_sessions = 0
+
+    # DB counts
+    from .models import MilitaryUserProfile
+    from certificate_expiry.models import UserCertificateExpiry
+
+    return JsonResponse({
+        "disk": {"total_gb": disk_total_gb, "used_gb": disk_used_gb, "pct": disk_pct},
+        "memory": {"total_gb": mem_total_gb, "used_gb": mem_used_gb, "pct": mem_pct},
+        "video_storage_gb": video_size_gb,
+        "active_sessions": active_sessions,
+        "total_personnel": MilitaryUserProfile.objects.count(),
+        "total_certificates": UserCertificateExpiry.objects.count(),
+        "expired_certificates": UserCertificateExpiry.objects.filter(status="expired").count(),
     })
 
 
@@ -1498,6 +1807,39 @@ def api_delete_library(request, library_key_str):
             pass
 
         lib_api.delete_library(library_key)
+
+        # ล้าง Meilisearch index — ป้องกันข้อสอบเก่าปรากฎหลังสร้าง Library ใหม่ key เดิม
+        try:
+            from django.conf import settings
+            import urllib.request, json as _json
+            _ms_url = getattr(settings, "MEILISEARCH_URL", "http://meilisearch:7700")
+            _ms_key = getattr(settings, "MEILISEARCH_API_KEY", "")
+            _ms_prefix = getattr(settings, "MEILISEARCH_INDEX_PREFIX", "")
+            _index = f"{_ms_prefix}studio_content"
+            _search_body = _json.dumps({
+                "filter": f'context_key = "{library_key_str}"',
+                "limit": 1000,
+                "attributesToRetrieve": ["id"],
+            }).encode()
+            _req = urllib.request.Request(
+                f"{_ms_url}/indexes/{_index}/search",
+                data=_search_body,
+                headers={"Authorization": f"Bearer {_ms_key}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(_req, timeout=10) as _resp:
+                _result = _json.loads(_resp.read())
+            _ids = [h["id"] for h in _result.get("hits", [])]
+            if _ids:
+                _del_req = urllib.request.Request(
+                    f"{_ms_url}/indexes/{_index}/documents/delete-batch",
+                    data=_json.dumps(_ids).encode(),
+                    method="POST",
+                    headers={"Authorization": f"Bearer {_ms_key}", "Content-Type": "application/json"},
+                )
+                urllib.request.urlopen(_del_req, timeout=10)
+        except Exception:
+            pass
+
         return JsonResponse({"success": True, "deleted": library_key_str})
     except Exception as e:
         import traceback
@@ -2217,24 +2559,106 @@ def _get_video_base_url():
     return getattr(_djsettings, 'MILITARY_VIDEO_BASE_URL', '/media/videos')
 
 
+@csrf_exempt
+@_require_instructor
+def api_video_subjects(request):
+    """
+    GET  /military/api/v1/videos/subjects/   → list subjects ของ user ปัจจุบัน
+    POST /military/api/v1/videos/subjects/   → สร้าง subject ใหม่ (body: {name})
+    DELETE /military/api/v1/videos/subjects/ → ลบ subject (body: {name})
+    """
+    user_dir = _os.path.join(_get_video_dir(), request.user.username)
+
+    if request.method == 'GET':
+        subjects = []
+        if _os.path.isdir(user_dir):
+            for name in sorted(_os.listdir(user_dir)):
+                sub_dir = _os.path.join(user_dir, name)
+                if _os.path.isdir(sub_dir):
+                    count = sum(1 for f in _os.listdir(sub_dir) if _os.path.isfile(_os.path.join(sub_dir, f)))
+                    subjects.append({'name': name, 'file_count': count})
+        return JsonResponse({'subjects': subjects})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        name = data.get('name', '').strip()
+        safe = _re.sub(r'[^\w\-ก-๙ ]', '_', name).strip()
+        if not safe:
+            return JsonResponse({'error': 'ชื่อไม่ถูกต้อง'}, status=400)
+        sub_dir = _os.path.join(user_dir, safe)
+        _os.makedirs(sub_dir, exist_ok=True)
+        return JsonResponse({'success': True, 'name': safe})
+
+    if request.method == 'DELETE':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        name = _os.path.basename(data.get('name', '').strip())
+        if not name:
+            return JsonResponse({'error': 'ระบุชื่อ subject'}, status=400)
+        sub_dir = _os.path.join(user_dir, name)
+        if not _os.path.isdir(sub_dir):
+            return JsonResponse({'error': 'ไม่พบ subject นี้'}, status=404)
+        # ลบทั้ง directory และไฟล์ข้างใน
+        import shutil as _shutil
+        _shutil.rmtree(sub_dir)
+        return JsonResponse({'success': True})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
 @_require_instructor
 def api_video_list(request):
+    """
+    GET /military/api/v1/videos/?course_slug=<slug>
+    คืนเฉพาะไฟล์ของผู้ใช้ปัจจุบัน จัดเก็บใน videos/{username}/{course_slug}/
+    Admin เห็นทุกไฟล์ของทุกคน
+    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
-        video_dir = _get_video_dir()
-        _os.makedirs(video_dir, exist_ok=True)
+        base_dir = _get_video_dir()
+        base_url = _get_video_base_url()
+        is_admin = request.user.is_staff or request.user.is_superuser
+        filter_course = request.GET.get('course_slug', '').strip()
         files = []
-        for fname in sorted(_os.listdir(video_dir)):
-            fpath = _os.path.join(video_dir, fname)
-            if _os.path.isfile(fpath):
-                stat = _os.stat(fpath)
-                files.append({
-                    'name': fname,
-                    'size': stat.st_size,
-                    'url': f"{_get_video_base_url()}/{fname}",
-                    'modified': stat.st_mtime,
-                })
+
+        # กำหนด users ที่จะ scan
+        if is_admin:
+            scan_users = [d for d in _os.listdir(base_dir)
+                          if _os.path.isdir(_os.path.join(base_dir, d))] if _os.path.exists(base_dir) else []
+        else:
+            scan_users = [request.user.username]
+
+        for uname in scan_users:
+            user_dir = _os.path.join(base_dir, uname)
+            if not _os.path.isdir(user_dir):
+                continue
+            # scan course subdirectories
+            for course_slug in sorted(_os.listdir(user_dir)):
+                if filter_course and course_slug != filter_course:
+                    continue
+                course_dir = _os.path.join(user_dir, course_slug)
+                if not _os.path.isdir(course_dir):
+                    continue
+                for fname in sorted(_os.listdir(course_dir)):
+                    fpath = _os.path.join(course_dir, fname)
+                    if not _os.path.isfile(fpath):
+                        continue
+                    stat = _os.stat(fpath)
+                    files.append({
+                        'name': fname,
+                        'size': stat.st_size,
+                        'url': f"{base_url}/{uname}/{course_slug}/{fname}",
+                        'modified': stat.st_mtime,
+                        'course_slug': course_slug,
+                        'uploader': uname,
+                    })
+
         return JsonResponse({'files': files})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -2243,24 +2667,34 @@ def api_video_list(request):
 @csrf_exempt
 @_require_instructor
 def api_video_upload(request):
+    """
+    POST /military/api/v1/videos/upload/
+    บันทึกไฟล์ที่ videos/{username}/{course_slug}/
+    ต้องส่ง course_slug มาด้วย
+    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     if 'file' not in request.FILES:
         return JsonResponse({'error': 'No file provided'}, status=400)
+
+    course_slug = _re.sub(r'[^\w\-]', '_', request.POST.get('course_slug', '').strip())
+    if not course_slug:
+        return JsonResponse({'error': 'กรุณาระบุ course_slug'}, status=400)
+
     uploaded_file = request.FILES['file']
-    original_name = uploaded_file.name
-    safe_name = _re.sub(r'[^\w\-_.]', '_', original_name)
-    if not safe_name or safe_name == '.':
-        safe_name = f"video_{_uuid_mod.uuid4().hex}"
-    video_dir = _get_video_dir()
-    _os.makedirs(video_dir, exist_ok=True)
-    file_path = _os.path.join(video_dir, safe_name)
+    safe_name = _re.sub(r'[^\w\-_.]', '_', uploaded_file.name) or f"video_{_uuid_mod.uuid4().hex}"
+
+    dest_dir = _os.path.join(_get_video_dir(), request.user.username, course_slug)
+    _os.makedirs(dest_dir, exist_ok=True)
+
+    file_path = _os.path.join(dest_dir, safe_name)
     base, ext = _os.path.splitext(safe_name)
     counter = 1
     while _os.path.exists(file_path):
         safe_name = f"{base}_{counter}{ext}"
-        file_path = _os.path.join(video_dir, safe_name)
+        file_path = _os.path.join(dest_dir, safe_name)
         counter += 1
+
     try:
         with open(file_path, 'wb+') as dest:
             for chunk in uploaded_file.chunks(chunk_size=8 * 1024 * 1024):
@@ -2268,7 +2702,7 @@ def api_video_upload(request):
         return JsonResponse({
             'success': True,
             'filename': safe_name,
-            'url': f"{_get_video_base_url()}/{safe_name}",
+            'url': f"{_get_video_base_url()}/{request.user.username}/{course_slug}/{safe_name}",
             'size': _os.path.getsize(file_path),
         })
     except Exception as e:
@@ -2280,12 +2714,33 @@ def api_video_upload(request):
 @csrf_exempt
 @_require_instructor
 def api_video_delete(request, filename):
+    """
+    DELETE /military/api/v1/videos/<course_slug>/<filename>/
+    ลบได้เฉพาะไฟล์ของตัวเอง (admin ลบได้ทุกไฟล์)
+    """
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    safe_name = _os.path.basename(filename)
-    file_path = _os.path.join(_get_video_dir(), safe_name)
+
+    parts = filename.strip('/').split('/')
+    if len(parts) != 2:
+        return JsonResponse({'error': 'path ต้องเป็น <course_slug>/<filename>'}, status=400)
+
+    course_slug, fname = parts
+    safe_course = _re.sub(r'[^\w\-]', '_', course_slug)
+    safe_fname = _os.path.basename(fname)
+
+    is_admin = request.user.is_staff or request.user.is_superuser
+    base_dir = _get_video_dir()
+
+    if is_admin:
+        # admin ต้องส่ง uploader มาใน query string
+        uname = request.GET.get('uploader', request.user.username)
+    else:
+        uname = request.user.username
+
+    file_path = _os.path.join(base_dir, uname, safe_course, safe_fname)
     if not _os.path.exists(file_path):
-        return JsonResponse({'error': 'File not found'}, status=404)
+        return JsonResponse({'error': 'ไม่พบไฟล์'}, status=404)
     try:
         _os.remove(file_path)
         return JsonResponse({'success': True})

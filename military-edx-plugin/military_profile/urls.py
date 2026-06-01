@@ -4,6 +4,10 @@ military_profile/urls.py
 from django.urls import path
 from .api_views import (
     api_my_certificate_detail,
+    api_my_certificate_download,
+    api_my_notifications,
+    api_system_health,
+    api_audit_log,
     api_me,
     api_my_profile,
     api_my_certificates,
@@ -31,6 +35,7 @@ from .api_views import (
     api_enroll_course,
     # Password
     api_change_password,
+    api_reset_password_request,
     api_import_list_libraries,
     api_import_parse,
     api_import_execute,
@@ -46,6 +51,7 @@ from .api_views import (
     api_video_list,
     api_video_upload,
     api_video_delete,
+    api_video_subjects,
     # Reports
     api_reports_compliance_overview,
     api_reports_compliance_by_region,
@@ -67,6 +73,10 @@ urlpatterns = [
     path("api/v1/my/profile/",      api_my_profile,      name="api_my_profile"),
     path("api/v1/my/certificates/", api_my_certificates, name="api_my_certificates"),
     path("api/v1/my/certificates/<int:cert_id>/", api_my_certificate_detail, name="api_my_certificate_detail"),
+    path("api/v1/my/certificates/<int:cert_id>/download/", api_my_certificate_download, name="api_my_certificate_download"),
+    path("api/v1/my/notifications/", api_my_notifications, name="api_my_notifications"),
+    path("api/v1/admin/system-health/", api_system_health, name="api_system_health"),
+    path("api/v1/admin/audit-log/", api_audit_log, name="api_audit_log"),
 
     # Public
     path("api/v1/register/", api_register, name="api_register"),
@@ -92,6 +102,7 @@ urlpatterns = [
 
     # Password Change (self)
     path("api/v1/change-password/", api_change_password, name="api_change_password"),
+    path("api/v1/reset-password/request/", api_reset_password_request, name="api_reset_password_request"),
 
     # Courses catalog proxy
     path("api/v1/courses/", api_courses_catalog, name="api_courses_catalog"),
@@ -116,8 +127,9 @@ urlpatterns = [
     path("api/v1/cert/my-status/", api_cert_student_status, name="api_cert_student_status"),
     # Video Management
     path("api/v1/videos/", api_video_list, name="api_video_list"),
+    path("api/v1/videos/subjects/", api_video_subjects, name="api_video_subjects"),
     path("api/v1/videos/upload/", api_video_upload, name="api_video_upload"),
-    path("api/v1/videos/<str:filename>/", api_video_delete, name="api_video_delete"),
+    path("api/v1/videos/<path:filename>/", api_video_delete, name="api_video_delete"),
     # Reports — Compliance
     path("api/v1/reports/compliance/overview/",      api_reports_compliance_overview,     name="api_reports_compliance_overview"),
     path("api/v1/reports/compliance/by-region/",      api_reports_compliance_by_region,    name="api_reports_compliance_by_region"),

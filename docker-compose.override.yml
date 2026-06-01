@@ -12,7 +12,7 @@ services:
   lms:
     image: overhangio/openedx:21.0.4-indigo
     volumes:
-      - /Users/weerasakmatcha/Library/Application Support/tutor/env/build/openedx/themes/indigo:/openedx/themes/indigo:ro
+      - ${TUTOR_ROOT:-/home/adminrta/.local/share/tutor}/env/build/openedx/themes/indigo:/openedx/themes/indigo:ro
     environment:
       - MILITARY_ENCRYPTION_KEY=${MILITARY_ENCRYPTION_KEY:-CHANGE_ME}
     command: >

@@ -61,7 +61,14 @@ AUTHENTICATION_BACKENDS = [
 MIDDLEWARE += [
     "military_auth.middleware.LoginRateLimitMiddleware",
     "military_auth.middleware.AuditLogMiddleware",
+    "military_auth.middleware.ApiRateLimitMiddleware",
 ]
+
+# ── Performance: DB Connection Pooling ──────────────────────────
+# CONN_MAX_AGE=0 (default) เปิด connection ใหม่ทุก request → ช้า
+# ตั้งเป็น 60 วินาที ลด latency ได้มาก
+DATABASES['default']['CONN_MAX_AGE'] = 60
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 MILITARY_ENCRYPTION_KEY = "{{ MILITARY_ENCRYPTION_KEY }}"
 SESSION_COOKIE_SECURE = True
@@ -397,4 +404,33 @@ MFE_CONFIG["MEILISEARCH_API_KEY"] = MEILISEARCH_API_KEY
 MFE_CONFIG["ENABLE_HOME_PAGE_COURSE_API_V2"] = False
 ''',
     ),
+])
+
+########################################################################
+# MILITARY_PATCH: เปิดใช้งาน PDF Viewer XBlock ใน LMS และ CMS        #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    (
+        "openedx-lms-common-settings",
+        """
+# ── Military PDF Viewer XBlock ────────────────────────────────────
+XBLOCK_SETTINGS.setdefault("military-pdf-viewer", {})
+""",
+    ),
+    (
+        "openedx-cms-common-settings",
+        """
+# ── Military PDF Viewer XBlock ────────────────────────────────────
+XBLOCK_SETTINGS.setdefault("military-pdf-viewer", {})
+""",
+    ),
+])
+
+########################################################################
+# MILITARY_PATCH: Performance — เพิ่ม uWSGI workers LMS/CMS          #
+# Server: 4 CPU cores, 16GB RAM — optimal workers = 6                 #
+########################################################################
+hooks.Filters.CONFIG_DEFAULTS.add_items([
+    ("OPENEDX_LMS_UWSGI_WORKERS", 6),
+    ("OPENEDX_CMS_UWSGI_WORKERS", 6),
 ])

@@ -25,5 +25,8 @@ setup(
             "certificate_expiry = certificate_expiry.apps:CertificateExpiryConfig",
             "military_profile = military_profile.apps:MilitaryProfileConfig",
         ],
+        "xblock.v1": [
+            "military-pdf-viewer = military_pdf_viewer.xblock:MilitaryPdfViewerXBlock",
+        ],
     },
 )

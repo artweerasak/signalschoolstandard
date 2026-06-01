@@ -140,3 +140,52 @@ class UsernameLoginMiddleware:
         except Exception as exc:
             log.error("UsernameLoginMiddleware error: %s", exc)
         return request
+
+
+# ── API Rate Limiter ────────────────────────────────────────────────────────
+import time
+from collections import defaultdict
+
+class ApiRateLimitMiddleware:
+    """
+    Rate limit สำหรับ /military/api/* endpoints
+    Default: 120 requests ต่อ IP ต่อนาที (ป้องกัน abuse)
+    ยกเว้น: video upload endpoint (ไฟล์ใหญ่ใช้เวลานาน)
+    """
+    LIMIT = 120        # requests
+    WINDOW = 60        # seconds
+    _store: dict = defaultdict(list)
+    EXEMPT_PATHS = ("/military/api/v1/videos/upload/",)
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not request.path.startswith("/military/api/"):
+            return self.get_response(request)
+        if any(request.path.startswith(p) for p in self.EXEMPT_PATHS):
+            return self.get_response(request)
+
+        ip = self._get_ip(request)
+        now = time.time()
+        window_start = now - self.WINDOW
+
+        # ล้าง timestamps เก่า
+        ApiRateLimitMiddleware._store[ip] = [
+            t for t in ApiRateLimitMiddleware._store[ip] if t > window_start
+        ]
+
+        if len(ApiRateLimitMiddleware._store[ip]) >= self.LIMIT:
+            from django.http import JsonResponse
+            return JsonResponse(
+                {"error": "Too many requests — please slow down"},
+                status=429
+            )
+
+        ApiRateLimitMiddleware._store[ip].append(now)
+        return self.get_response(request)
+
+    @staticmethod
+    def _get_ip(request) -> str:
+        xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR", "")

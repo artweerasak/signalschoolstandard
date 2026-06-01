@@ -8,6 +8,8 @@ import json
 from datetime import date, timedelta
 
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -49,20 +51,28 @@ def api_dashboard_summary(request):
     GET /military/api/v1/dashboard/summary/
     Returns: stats counts สำหรับ summary cards บน dashboard
     """
+    CACHE_KEY = "dashboard_summary"
+    cached = cache.get(CACHE_KEY)
+    if cached:
+        return JsonResponse(cached)
+
     today = date.today()
     soon = today + timedelta(days=30)
 
-    all_certs = UserCertificateExpiry.objects.all()
+    cert_stats = UserCertificateExpiry.objects.aggregate(
+        active_count=Count("id", filter=Q(status="active")),
+        expired_count=Count("id", filter=Q(status="expired")),
+        renewed_count=Count("id", filter=Q(status="renewed")),
+        near_expiry_count=Count("id", filter=Q(
+            status="active", expiry_date__lte=soon, expiry_date__gte=today
+        )),
+    )
 
     data = {
         "total_personnel": MilitaryUserProfile.objects.count(),
-        "active_count": all_certs.filter(status="active").count(),
-        "expired_count": all_certs.filter(status="expired").count(),
-        "renewed_count": all_certs.filter(status="renewed").count(),
-        "near_expiry_count": all_certs.filter(
-            status="active", expiry_date__lte=soon, expiry_date__gte=today
-        ).count(),
+        **cert_stats,
     }
+    cache.set(CACHE_KEY, data, timeout=300)
     return JsonResponse(data)
 
 
@@ -73,14 +83,25 @@ def api_dashboard_chart(request):
     GET /military/api/v1/dashboard/chart/
     Returns: ข้อมูล chart แสดงสถานะใบประกาศแต่ละหลักสูตร
     """
-    all_certs = UserCertificateExpiry.objects.all()
+    CACHE_KEY = "dashboard_chart"
+    cached = cache.get(CACHE_KEY)
+    if cached:
+        return JsonResponse(cached)
+
     courses = CourseCertificateConfig.objects.all()
+    course_ids = [c.course_id for c in courses]
 
-    labels = []
-    active = []
-    expired = []
-    renewed = []
+    stats_qs = (
+        UserCertificateExpiry.objects
+        .filter(course_id__in=course_ids)
+        .values("course_id", "status")
+        .annotate(count=Count("id"))
+    )
+    stats_map: dict[str, dict[str, int]] = {}
+    for row in stats_qs:
+        stats_map.setdefault(row["course_id"], {})[row["status"]] = row["count"]
 
+    labels, active, expired, renewed = [], [], [], []
     for course in courses:
         short_id = (
             course.course_id.split("+")[-2]
@@ -88,19 +109,17 @@ def api_dashboard_chart(request):
             else course.course_id
         )
         labels.append(short_id)
-        certs = all_certs.filter(course_id=course.course_id)
-        active.append(certs.filter(status="active").count())
-        expired.append(certs.filter(status="expired").count())
-        renewed.append(certs.filter(status="renewed").count())
+        cs = stats_map.get(course.course_id, {})
+        active.append(cs.get("active", 0))
+        expired.append(cs.get("expired", 0))
+        renewed.append(cs.get("renewed", 0))
 
-    return JsonResponse({
+    data = {
         "labels": labels,
-        "datasets": {
-            "active": active,
-            "expired": expired,
-            "renewed": renewed,
-        },
-    })
+        "datasets": {"active": active, "expired": expired, "renewed": renewed},
+    }
+    cache.set(CACHE_KEY, data, timeout=300)
+    return JsonResponse(data)
 
 
 @require_GET
@@ -143,14 +162,24 @@ def api_rank_stats(request):
     GET /military/api/v1/dashboard/rank-stats/
     Returns: จำนวนบุคลากรแยกตามชั้นยศ
     """
-    rank_lookup = dict(RANK_CHOICES)
-    stats = []
-    for code, label in RANK_CHOICES:
-        count = MilitaryUserProfile.objects.filter(rank=code).count()
-        if count:
-            stats.append({"code": code, "label": label, "count": count})
+    CACHE_KEY = "rank_stats"
+    cached = cache.get(CACHE_KEY)
+    if cached:
+        return JsonResponse(cached)
 
-    return JsonResponse({"results": stats})
+    rank_lookup = dict(RANK_CHOICES)
+    count_map = {
+        row["rank"]: row["count"]
+        for row in MilitaryUserProfile.objects.values("rank").annotate(count=Count("id"))
+    }
+    stats = [
+        {"code": code, "label": label, "count": count_map[code]}
+        for code, label in RANK_CHOICES
+        if count_map.get(code, 0) > 0
+    ]
+    data = {"results": stats}
+    cache.set(CACHE_KEY, data, timeout=600)
+    return JsonResponse(data)
 
 
 @require_GET
@@ -159,11 +188,16 @@ def api_me(request):
     """
     GET /military/api/v1/me/
     Returns: ข้อมูลผู้ใช้ปัจจุบัน (สำหรับ header/nav ของ Next.js)
+    Cache per-user 2 นาที — ถูกเรียกทุก page load
     """
+    CACHE_KEY = f"api_me_{request.user.id}"
+    cached = cache.get(CACHE_KEY)
+    if cached:
+        return JsonResponse(cached)
+
     user = request.user
     profile = getattr(user, "military_profile", None)
 
-    # Determine effective role
     if user.is_staff:
         role = "admin"
     elif profile and profile.role == "instructor":
@@ -181,6 +215,7 @@ def api_me(request):
         "rank": profile.get_rank_display() if profile else None,
         "unit": profile.unit if profile else None,
     }
+    cache.set(CACHE_KEY, data, timeout=120)
     return JsonResponse(data)
 
 
@@ -424,22 +459,17 @@ def api_certificates_expired(request):
     ใบประกาศที่หมดอายุแล้ว
     """
     filters = _parse_filters(request)
-    records = (
-        UserCertificateExpiry.objects
-        .filter(status="expired")
-        .select_related("user__military_profile")
-        .order_by("-expiry_date")
-    )
+    qs = UserCertificateExpiry.objects.filter(status="expired").select_related("user__military_profile")
+    if filters.get("army_region"):
+        qs = qs.filter(user__military_profile__army_region=filters["army_region"])
+    if filters.get("unit"):
+        qs = qs.filter(user__military_profile__unit__icontains=filters["unit"])
+    records = qs.order_by("-expiry_date")
 
     results = []
     for cert in records:
         profile = getattr(cert.user, "military_profile", None)
         if not profile:
-            continue
-        # Apply filters
-        if filters.get("army_region") and profile.army_region != filters["army_region"]:
-            continue
-        if filters.get("unit") and filters["unit"].lower() not in profile.unit.lower():
             continue
         results.append({
             "user_id": cert.user.id,
