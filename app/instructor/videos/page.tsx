@@ -157,6 +157,28 @@ export default function VideosPage() {
     finally { setCreatingSubject(false); }
   };
 
+  const renameSubject = async (oldName: string) => {
+    const newName = prompt(`แก้ไขชื่อหมวดหมู่ "${oldName}"`, oldName);
+    if (newName === null) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    setError(''); setMsg('');
+    try {
+      const res = await fetch('/military/api/v1/videos/subjects/', {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        body: JSON.stringify({ old_name: oldName, new_name: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'แก้ไขไม่สำเร็จ');
+      setMsg(`เปลี่ยนชื่อเป็น "${data.name}" สำเร็จ`);
+      if (selectedSubject === oldName) setSelectedSubject(data.name);
+      if (filterSubject === oldName) setFilterSubject(data.name);
+      await loadSubjects();
+      await loadFiles(filterSubject === oldName ? data.name : filterSubject);
+    } catch (e: any) { setError(e.message); }
+  };
+
   const deleteSubject = async (name: string) => {
     if (!confirm(`ลบหมวดหมู่ "${name}" และวิดีโอทั้งหมดในนั้น ใช่ไหม?`)) return;
     setError(''); setMsg('');
@@ -235,6 +257,8 @@ export default function VideosPage() {
                   {s.name}
                 </span>
                 <span className="text-xs text-gray-400">{s.file_count} ไฟล์</span>
+                <button onClick={e => { e.stopPropagation(); renameSubject(s.name); }}
+                  className="text-xs text-blue-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50">แก้ไข</button>
                 <button onClick={e => { e.stopPropagation(); deleteSubject(s.name); }}
                   className="text-xs text-red-400 hover:text-red-600 px-2 py-0.5 rounded hover:bg-red-50">ลบ</button>
               </div>
