@@ -444,16 +444,18 @@ handle /media/videos/* {
     }
 }
 
-# ── Root path → Next.js (เจาะจง / เพราะ base template handle_path /* ดัก root) ──
-handle / {
-    encode gzip
-    reverse_proxy 172.18.0.1:3000 {
-        header_up X-Forwarded-Port 443
-    }
-}
 
-# ── Catch-all → Military Next.js frontend ─────────────────────────────────
-handle {
+# ── Next.js frontend — explicit paths (catch-all group ถูก base template override) ──
+@nextjs {
+    path / /login /register /privacy /reset-password
+    path /dashboard /dashboard/*
+    path /instructor /instructor/*
+    path /my /my/*
+    path /certificate /certificate/*
+    path /_next/*
+    path /favicon.ico /signal_logo.png
+}
+handle @nextjs {
     encode gzip
     reverse_proxy 172.18.0.1:3000 {
         header_up X-Forwarded-Port 443
