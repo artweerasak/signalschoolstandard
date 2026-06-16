@@ -4,10 +4,10 @@
  * รองรับ: ทหาร (ชาย/หญิง), ลูกจ้างประจำ, พนักงานราชการ
  */
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { api } from "@/lib/api"
+import { api, Organization } from "@/lib/api"
 
 const RANK_CHOICES = [
   ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
@@ -83,6 +83,92 @@ function validateNationalId(id: string): boolean {
   return (11 - (sum % 11)) % 10 === parseInt(id[12])
 }
 
+function UnitDropdown({ value, orgId, onSelect, hasError }: {
+  value: string
+  orgId: number | null
+  onSelect: (name: string, id: number | null) => void
+  hasError?: boolean
+}) {
+  const [orgs, setOrgs]       = useState<Organization[]>([])
+  const [q, setQ]             = useState(value)
+  const [open, setOpen]       = useState(false)
+  const [focused, setFocused] = useState(-1)
+  const wrapRef               = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    api.organizationsPublic().then(r => setOrgs(r.results)).catch(() => {})
+  }, [])
+
+  useEffect(() => { setQ(value) }, [value])
+
+  const filtered = orgs.filter(o =>
+    o.name.toLowerCase().includes(q.toLowerCase()) ||
+    o.code.toLowerCase().includes(q.toLowerCase())
+  ).slice(0, 20)
+
+  function selectOrg(org: Organization) {
+    onSelect(org.name, org.id)
+    setQ(org.name)
+    setOpen(false)
+    setFocused(-1)
+  }
+
+  function handleKey(e: React.KeyboardEvent) {
+    if (!open) { if (e.key === "ArrowDown") setOpen(true); return }
+    if (e.key === "ArrowDown") setFocused(f => Math.min(f + 1, filtered.length - 1))
+    else if (e.key === "ArrowUp") setFocused(f => Math.max(f - 1, 0))
+    else if (e.key === "Enter" && focused >= 0) { e.preventDefault(); selectOrg(filtered[focused]) }
+    else if (e.key === "Escape") setOpen(false)
+  }
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClickOutside)
+    return () => document.removeEventListener("mousedown", onClickOutside)
+  }, [])
+
+  const border = hasError ? "border-red-400" : "border-gray-300"
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <input
+        type="text"
+        value={q}
+        onChange={e => {
+          setQ(e.target.value)
+          // พิมพ์อิสระ → ล้าง FK (ไม่ได้เลือกจาก list)
+          onSelect(e.target.value, null)
+          setOpen(true)
+          setFocused(-1)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKey}
+        placeholder="พิมพ์ชื่อหรือรหัสหน่วยงาน..."
+        className={`w-full border ${border} rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]`}
+        autoComplete="off"
+      />
+      {/* badge แสดงว่าผูก FK แล้ว */}
+      {orgId && (
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600 font-medium">✓ ยืนยันแล้ว</span>
+      )}
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-56 overflow-auto text-sm">
+          {filtered.map((o, i) => (
+            <li key={o.id}
+              onMouseDown={() => selectOrg(o)}
+              className={`px-4 py-2.5 cursor-pointer hover:bg-purple-50 ${i === focused ? "bg-purple-100" : ""}`}>
+              <span className="font-medium">{o.name}</span>
+              <span className="text-xs text-gray-400 ml-2">[{o.code}]</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function RegisterPage() {
   const [form, setForm] = useState({
     full_name_th: "",
@@ -94,6 +180,7 @@ export default function RegisterPage() {
     national_id: "", military_id: "", birth_date: "",
     phone_number: "", email: "",
   })
+  const [organizationId, setOrganizationId] = useState<number | null>(null)
   const [errors, setErrors]   = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -123,7 +210,7 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      await api.register(form)
+      await api.register({ ...form, organization_id: organizationId })
       setSuccess(true)
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง")
@@ -281,8 +368,12 @@ export default function RegisterPage() {
           {/* หน่วยต้นสังกัด */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">หน่วยต้นสังกัด <span className="text-red-500">*</span></label>
-            <input type="text" value={form.unit} onChange={e => update("unit", e.target.value)}
-              placeholder="เช่น กรมการทหารสื่อสาร" className={inputCls("unit")} />
+            <UnitDropdown
+              value={form.unit}
+              orgId={organizationId}
+              onSelect={(name, id) => { update("unit", name); setOrganizationId(id) }}
+              hasError={!!errors.unit}
+            />
             {errors.unit && <p className="text-red-500 text-xs mt-1">{errors.unit}</p>}
           </div>
 

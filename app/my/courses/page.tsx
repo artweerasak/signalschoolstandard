@@ -9,6 +9,15 @@ import { useEffect, useState, useCallback } from "react"
 import Image from "next/image"
 import { api, Course } from "@/lib/api"
 
+const LMS_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th"
+
+function buildCourseUrl(courseId: string): string | null {
+  if (!courseId?.trim()) return null
+  if (!courseId.match(/^(course-v1|block-v1):/i)) return null
+  const safeId = encodeURIComponent(courseId).replace(/%3A/gi, ":").replace(/%2B/gi, "+")
+  return `${LMS_BASE}/courses/${safeId}/courseware`
+}
+
 // ── หมวดหมู่ (categories) ────────────────────────────────────────────────
 const CATEGORIES = [
   { key: "",              label: "ทั้งหมด", icon: "📚" },
@@ -21,16 +30,27 @@ const CATEGORIES = [
 ]
 
 // ── Course Card ───────────────────────────────────────────────────────────
-function CourseCard({ course, onEnroll }: { course: Course; onEnroll: (id: string) => void }) {
+function CourseCard({ course, onEnroll, onEnterCourse }: {
+  course: Course
+  onEnroll: (id: string) => void
+  onEnterCourse: (id: string) => void
+}) {
   const isOpen = !course.enrollment_end ||
     new Date(course.enrollment_end) > new Date()
+  const [imgOk, setImgOk] = useState(!!course.course_image_url)
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
       {/* Banner image */}
       <div className="h-40 bg-gradient-to-br from-[#4A1A6B] to-[#7B3FA0] relative flex items-center justify-center">
-        {course.course_image_url ? (
-          <Image src={course.course_image_url} alt={course.name} fill className="object-cover" />
+        {imgOk ? (
+          <Image
+            src={course.course_image_url!}
+            alt={course.name}
+            fill
+            className="object-cover"
+            onError={() => setImgOk(false)}
+          />
         ) : (
           <div className="text-center px-4">
             <p className="text-white/40 text-5xl mb-1">📡</p>
@@ -47,6 +67,12 @@ function CourseCard({ course, onEnroll }: { course: Course; onEnroll: (id: strin
         {course.is_enrolled && (
           <span className="absolute top-3 right-3 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
             ✓ ลงทะเบียนแล้ว
+          </span>
+        )}
+        {/* ประเภทหลักสูตรตามเงื่อนไข */}
+        {!course.is_enrolled && course.course_type === "conditional" && (
+          <span className="absolute bottom-3 right-3 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+            🔒 ตามเงื่อนไข
           </span>
         )}
       </div>
@@ -69,15 +95,18 @@ function CourseCard({ course, onEnroll }: { course: Course; onEnroll: (id: strin
         {/* Action */}
         <div className="mt-4">
           {course.is_enrolled ? (
-            <a
-              href={`/edx/courses/${course.id}/courseware`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => onEnterCourse(course.id)}
               className="block w-full text-center bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-semibold py-2 rounded-lg transition-colors"
             >
-              เข้าเรียน →
-            </a>
-          ) : isOpen ? (
+              {course.is_course_staff ? "เข้าเรียน (โหมดนักเรียน) →" : "เข้าเรียน →"}
+            </button>
+          ) : course.locked ? (
+            <button disabled title={course.lock_reason}
+              className="w-full bg-amber-50 text-amber-600 border border-amber-200 text-sm py-2 rounded-lg cursor-not-allowed">
+              🔒 {course.lock_reason || "ต้องผ่านวิชาบังคับก่อน"}
+            </button>
+          ) : (isOpen || course.is_course_staff) ? (
             <button
               onClick={() => onEnroll(course.id)}
               className="w-full bg-[#C9A84C] hover:bg-[#b8942f] text-white text-sm font-semibold py-2 rounded-lg transition-colors"
@@ -105,6 +134,7 @@ export default function CoursesPage() {
   const [enrolling, setEnrolling] = useState<string | null>(null)
   const [enrollMsg, setEnrollMsg] = useState("")
   const [courseError, setCourseError] = useState<string | null>(null)
+  const [entryError, setEntryError] = useState("")
 
   const loadCourses = useCallback(() => {
     setLoading(true)
@@ -121,6 +151,22 @@ export default function CoursesPage() {
     const t = setTimeout(() => setSearch(searchInput), 350)
     return () => clearTimeout(t)
   }, [searchInput])
+
+  function handleEnterCourse(courseId: string) {
+    if (!courseId?.match(/^(course-v1|block-v1):/i)) {
+      setEntryError("รูปแบบ Course ID ไม่ถูกต้อง (ต้องขึ้นต้นด้วย course-v1:) กรุณาติดต่อผู้ดูแลระบบ")
+      setTimeout(() => setEntryError(""), 6000)
+      return
+    }
+    const isStaff = courses.find(c => c.id === courseId)?.is_course_staff ?? false
+    if (isStaff) {
+      // เปิด intermediate page ที่ backend ตั้ง masquerade='student' + redirect (CSRF จาก server)
+      window.open(`/military/api/v1/goto-course/?course_id=${encodeURIComponent(courseId)}`, "_blank", "noopener,noreferrer")
+    } else {
+      const safeId = encodeURIComponent(courseId).replace(/%3A/gi, ":").replace(/%2B/gi, "+")
+      window.open(`${LMS_BASE}/courses/${safeId}/courseware`, "_blank", "noopener,noreferrer")
+    }
+  }
 
   async function handleEnroll(courseId: string) {
     setEnrolling(courseId)
@@ -244,9 +290,17 @@ export default function CoursesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {courses.map((course) => (
             <div key={course.id} className={enrolling === course.id ? "opacity-60 pointer-events-none" : ""}>
-              <CourseCard course={course} onEnroll={handleEnroll} />
+              <CourseCard course={course} onEnroll={handleEnroll} onEnterCourse={handleEnterCourse} />
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Error toast — course access failed */}
+      {entryError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white text-sm px-5 py-3 rounded-xl shadow-xl z-50 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>{entryError}</span>
         </div>
       )}
     </div>

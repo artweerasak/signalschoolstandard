@@ -8,6 +8,15 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { api, MyProfile, MyCertificate, Course } from "@/lib/api"
 
+const LMS_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th"
+
+function buildCourseUrl(courseId: string): string | null {
+  if (!courseId?.trim()) return null
+  if (!courseId.match(/^(course-v1|block-v1):/i)) return null
+  const safeId = encodeURIComponent(courseId).replace(/%3A/gi, ":").replace(/%2B/gi, "+")
+  return `${LMS_BASE}/courses/${safeId}/courseware`
+}
+
 function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | null }) {
   if (status === "expired") return (
     <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">หมดอายุแล้ว</span>
@@ -28,6 +37,7 @@ export default function MyHomePage() {
   const [certs, setCerts] = useState<MyCertificate[]>([])
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
+  const [entryError, setEntryError] = useState("")
 
   useEffect(() => {
     Promise.all([api.myProfile(), api.myCertificates(), api.courses()])
@@ -38,6 +48,21 @@ export default function MyHomePage() {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  function handleEnterCourse(courseId: string) {
+    if (!courseId?.match(/^(course-v1|block-v1):/i)) {
+      setEntryError("รูปแบบ Course ID ไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ")
+      setTimeout(() => setEntryError(""), 6000)
+      return
+    }
+    const isStaff = enrolledCourses.find(c => c.id === courseId)?.is_course_staff ?? false
+    if (isStaff) {
+      window.open(`/military/api/v1/goto-course/?course_id=${encodeURIComponent(courseId)}`, "_blank", "noopener,noreferrer")
+    } else {
+      const safeId = encodeURIComponent(courseId).replace(/%3A/gi, ":").replace(/%2B/gi, "+")
+      window.open(`${LMS_BASE}/courses/${safeId}/courseware`, "_blank", "noopener,noreferrer")
+    }
+  }
 
   const expiredCount = certs.filter(c => c.status === "expired").length
   const nearExpiryCount = certs.filter(c => c.status === "active" && c.days_left !== null && c.days_left <= 30).length
@@ -144,9 +169,9 @@ export default function MyHomePage() {
                     {isPassed ? (
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full shrink-0">ผ่านแล้ว ✓</span>
                     ) : (
-                      <a href={`https://signalstandard.rta.mi.th/courses/${c.id}/courseware`}
-                        target="_blank" rel="noreferrer"
-                        className="text-xs text-[#4A1A6B] hover:underline shrink-0">เรียนต่อ →</a>
+                      <button
+                        onClick={() => handleEnterCourse(c.id)}
+                        className="text-xs text-[#4A1A6B] hover:underline shrink-0">เรียนต่อ →</button>
                     )}
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-1.5">
@@ -193,6 +218,12 @@ export default function MyHomePage() {
         </div>
       </div>
 
+      {entryError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white text-sm px-5 py-3 rounded-xl shadow-xl z-50 flex items-center gap-2">
+          <span>⚠️</span>
+          <span>{entryError}</span>
+        </div>
+      )}
     </div>
   )
 }

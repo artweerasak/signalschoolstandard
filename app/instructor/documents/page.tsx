@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 
 interface Subject { name: string; file_count: number; }
-interface VideoFile {
+interface DocFile {
   name: string; size: number; url: string; modified: number;
   course_slug: string; uploader: string;
   is_shared_with_me?: boolean;
-  share_count?: number;
+  share_count?: number;  // folder-level count
 }
 interface ShareInstructor {
   id: number; username: string; full_name: string; already_shared: boolean;
@@ -18,6 +18,11 @@ interface UploadItem {
   error?: string; url?: string;
 }
 
+const MAX_RETRIES = 3;
+const STALL_TIMEOUT = 45000;
+const PROCESS_TIMEOUT = 120000;
+const ACCEPT = '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx';
+
 function formatSize(b: number) {
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
   if (b < 1024 ** 3) return (b / 1024 / 1024).toFixed(1) + ' MB';
@@ -27,25 +32,30 @@ function getCookie(name: string) {
   const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
   return v ? v[2] : null;
 }
+function fileIcon(name: string) {
+  const e = name.split('.').pop()?.toLowerCase();
+  if (e === 'pdf') return '📕';
+  if (e === 'doc' || e === 'docx') return '📘';
+  if (e === 'ppt' || e === 'pptx') return '📙';
+  if (e === 'xls' || e === 'xlsx') return '📗';
+  return '📄';
+}
+function fileIsOffice(name: string) {
+  return /\.(doc|docx|ppt|pptx|xls|xlsx)$/i.test(name);
+}
 
-const MAX_RETRIES = 3;
-const STALL_TIMEOUT = 45000;
-const PROCESS_TIMEOUT = 180000;
-
-export default function VideosPage() {
+export default function DocumentsPage() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [newSubjectName, setNewSubjectName] = useState('');
   const [creatingSubject, setCreatingSubject] = useState(false);
   const [filterSubject, setFilterSubject] = useState('');
-  const [files, setFiles] = useState<VideoFile[]>([]);
+  const [files, setFiles] = useState<DocFile[]>([]);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState('');
-  const [moveTarget, setMoveTarget] = useState<VideoFile | null>(null);
-  const [moveTo, setMoveTo] = useState('');
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
 
@@ -54,21 +64,18 @@ export default function VideosPage() {
   const [shareInstructors, setShareInstructors] = useState<ShareInstructor[]>([]);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareSearch, setShareSearch] = useState('');
-  // folder-level share counts: { courseSlug: count }
   const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
 
   const fileRef = useRef<HTMLInputElement>(null);
   const csrf = getCookie('csrftoken') || '';
+
   const isUploading = uploadQueue.some(u => u.status === 'uploading' || u.status === 'pending');
 
   const myFiles = files.filter(f => !f.is_shared_with_me);
   const sharedFiles = files.filter(f => f.is_shared_with_me);
 
-  const myGrouped = myFiles.reduce<Record<string, VideoFile[]>>((acc, f) => {
-    (acc[f.course_slug] = acc[f.course_slug] || []).push(f); return acc;
-  }, {});
-  // group shared files by "uploader::course_slug"
-  const sharedGrouped = sharedFiles.reduce<Record<string, VideoFile[]>>((acc, f) => {
+  // Group shared files by uploader::course_slug
+  const sharedGrouped = sharedFiles.reduce<Record<string, DocFile[]>>((acc, f) => {
     const key = `${f.uploader}::${f.course_slug}`;
     (acc[key] = acc[key] || []).push(f); return acc;
   }, {});
@@ -76,7 +83,7 @@ export default function VideosPage() {
   const loadSubjects = useCallback(async () => {
     setLoadingSubjects(true);
     try {
-      const res = await fetch('/military/api/v1/videos/subjects/', { credentials: 'include' });
+      const res = await fetch('/military/api/v1/documents/subjects/', { credentials: 'include' });
       const data = await res.json();
       const list: Subject[] = data.subjects || [];
       setSubjects(list);
@@ -89,11 +96,10 @@ export default function VideosPage() {
     setLoadingFiles(true);
     try {
       const qs = subject ? `?course_slug=${encodeURIComponent(subject)}` : '';
-      const res = await fetch(`/military/api/v1/videos/${qs}`, { credentials: 'include' });
+      const res = await fetch(`/military/api/v1/documents/${qs}`, { credentials: 'include' });
       const data = await res.json();
-      const fileList: VideoFile[] = data.files || [];
+      const fileList: DocFile[] = data.files || [];
       setFiles(fileList);
-      // build share count map from first file of each folder
       const counts: Record<string, number> = {};
       fileList.forEach(f => {
         if (!f.is_shared_with_me && f.share_count !== undefined) {
@@ -113,18 +119,18 @@ export default function VideosPage() {
     setShareSearch('');
     setShareLoading(true);
     try {
-      const data = await api.getVideoShare(courseSlug);
+      const data = await api.getDocShare(courseSlug);
       setShareInstructors(data.instructors || []);
-    } catch { setError('โหลดรายชื่อครูไม่สำเร็จ'); setShareFolder(null); }
+    } catch { setShareInstructors([]); }
     finally { setShareLoading(false); }
   };
 
   const toggleShare = async (courseSlug: string, instructor: ShareInstructor) => {
     try {
       if (instructor.already_shared) {
-        await api.removeVideoShare(courseSlug, instructor.username);
+        await api.removeDocShare(courseSlug, instructor.username);
       } else {
-        await api.addVideoShare(courseSlug, instructor.username);
+        await api.addDocShare(courseSlug, instructor.username);
       }
       const delta = instructor.already_shared ? -1 : 1;
       setShareInstructors(prev =>
@@ -200,7 +206,7 @@ export default function VideosPage() {
       xhr.addEventListener('timeout', () => retryOrFail('หมดเวลาเชื่อมต่อ'));
       xhr.addEventListener('abort', () => retryOrFail('การเชื่อมต่อค้าง'));
 
-      xhr.open('POST', '/military/api/v1/videos/upload/');
+      xhr.open('POST', '/military/api/v1/documents/upload/');
       xhr.setRequestHeader('X-CSRFToken', csrf);
       xhr.withCredentials = true;
       armWatchdog(STALL_TIMEOUT);
@@ -226,9 +232,9 @@ export default function VideosPage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     const dropped = Array.from(e.dataTransfer.files).filter(
-      f => f.type.startsWith('video/') || f.name.match(/\.(mp4|mov|avi|mkv|webm|flv|wmv)$/i));
+      f => f.name.match(/\.(pdf|docx?|pptx?|xlsx?)$/i));
     if (dropped.length > 0) addFiles(dropped);
-    else setError('กรุณาเลือกไฟล์วิดีโอเท่านั้น');
+    else setError('กรุณาเลือกไฟล์ PDF หรือเอกสาร (doc, ppt, xls)');
   }, [addFiles]);
 
   const createSubject = async () => {
@@ -236,7 +242,7 @@ export default function VideosPage() {
     if (!name) return;
     setCreatingSubject(true); setError(''); setMsg('');
     try {
-      const res = await fetch('/military/api/v1/videos/subjects/', {
+      const res = await fetch('/military/api/v1/documents/subjects/', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
         body: JSON.stringify({ name }),
@@ -258,7 +264,7 @@ export default function VideosPage() {
     if (!trimmed || trimmed === oldName) return;
     setError(''); setMsg('');
     try {
-      const res = await fetch('/military/api/v1/videos/subjects/', {
+      const res = await fetch('/military/api/v1/documents/subjects/', {
         method: 'PATCH', credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
         body: JSON.stringify({ old_name: oldName, new_name: trimmed }),
@@ -274,10 +280,10 @@ export default function VideosPage() {
   };
 
   const deleteSubject = async (name: string) => {
-    if (!confirm(`ลบหมวดหมู่ "${name}" และวิดีโอทั้งหมดในนั้น ใช่ไหม?`)) return;
+    if (!confirm(`ลบหมวดหมู่ "${name}" และเอกสารทั้งหมดในนั้น ใช่ไหม?`)) return;
     setError(''); setMsg('');
     try {
-      const res = await fetch('/military/api/v1/videos/subjects/', {
+      const res = await fetch('/military/api/v1/documents/subjects/', {
         method: 'DELETE', credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
         body: JSON.stringify({ name }),
@@ -291,10 +297,10 @@ export default function VideosPage() {
     } catch (e: any) { setError(e.message); }
   };
 
-  const deleteFile = async (f: VideoFile) => {
+  const deleteFile = async (f: DocFile) => {
     if (!confirm(`ลบ "${f.name}" ใช่ไหม?`)) return;
     setError(''); setMsg('');
-    const res = await fetch('/military/api/v1/videos/delete/', {
+    const res = await fetch('/military/api/v1/documents/delete/', {
       method: 'DELETE', credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
       body: JSON.stringify({ course_slug: f.course_slug, filename: f.name, uploader: f.uploader }),
@@ -303,34 +309,14 @@ export default function VideosPage() {
     else setError((await res.json().catch(() => ({}))).error || 'ลบไม่สำเร็จ');
   };
 
-  const moveFile = async () => {
-    if (!moveTarget || !moveTo || moveTo === moveTarget.course_slug) { setMoveTarget(null); return; }
-    setError(''); setMsg('');
-    try {
-      const res = await fetch('/military/api/v1/videos/move/', {
-        method: 'PATCH', credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-        body: JSON.stringify({
-          course_slug: moveTarget.course_slug, filename: moveTarget.name,
-          new_course_slug: moveTo, uploader: moveTarget.uploader,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'ย้ายไม่สำเร็จ');
-      setMsg(`ย้าย "${moveTarget.name}" → "${moveTo}" สำเร็จ`);
-      setMoveTarget(null); setMoveTo('');
-      await loadFiles(filterSubject);
-      await loadSubjects();
-    } catch (e: any) { setError(e.message); }
-  };
-
-  const copyUrl = (f: VideoFile) => {
+  const copyUrl = (f: DocFile) => {
     navigator.clipboard.writeText('https://signalstandard.rta.mi.th' + f.url);
     setCopiedUrl(f.url); setTimeout(() => setCopiedUrl(''), 2000);
   };
 
-  const doneCount = uploadQueue.filter(u => u.status === 'done').length;
-  const errorCount = uploadQueue.filter(u => u.status === 'error').length;
+  const myGrouped = myFiles.reduce<Record<string, DocFile[]>>((acc, f) => {
+    (acc[f.course_slug] = acc[f.course_slug] || []).push(f); return acc;
+  }, {});
 
   const filteredShareInstructors = shareSearch
     ? shareInstructors.filter(i =>
@@ -338,23 +324,26 @@ export default function VideosPage() {
         (i.full_name || '').toLowerCase().includes(shareSearch.toLowerCase()))
     : shareInstructors;
 
+  const doneCount = uploadQueue.filter(u => u.status === 'done').length;
+  const errorCount = uploadQueue.filter(u => u.status === 'error').length;
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-800">จัดการวิดีโอการสอน</h1>
-        <p className="text-gray-500 mt-1 text-sm">วิดีโอแยกตามหมวดหมู่ — แชร์ทั้ง folder ให้ครูอื่นได้เลยด้วยปุ่ม 👥 แชร์</p>
+        <h1 className="text-2xl font-bold text-gray-800">จัดการเอกสาร / ตำราเรียน (PDF)</h1>
+        <p className="text-gray-500 mt-1 text-sm">เอกสารแยกตามหมวดหมู่ — คุณจะเห็นเฉพาะไฟล์ที่คุณอัปโหลด · มีแถบแสดงความคืบหน้า</p>
       </div>
 
       {/* Subject Management */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-700 text-sm">📁 หมวดหมู่วิดีโอ</h2>
+          <h2 className="font-semibold text-gray-700 text-sm">📁 หมวดหมู่เอกสาร</h2>
           <span className="text-xs text-gray-400">{subjects.length} หมวดหมู่</span>
         </div>
         <div className="px-4 py-3 border-b border-gray-100 flex gap-2">
           <input type="text" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && createSubject()}
-            placeholder="ชื่อหมวดหมู่ใหม่ เช่น วิชาวิทยุ, บทที่ 1"
+            placeholder="ชื่อหมวดหมู่ใหม่ เช่น คู่มือวิทยุ, บทที่ 1"
             className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none" />
           <button onClick={createSubject} disabled={creatingSubject || !newSubjectName.trim()}
             className="px-4 py-2 bg-[#4A1A6B] text-white rounded-lg text-sm font-medium hover:bg-[#2D0F42] disabled:opacity-50 whitespace-nowrap">
@@ -409,14 +398,17 @@ export default function VideosPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="text-4xl">🎬</div>
+                <div className="text-4xl">📄</div>
                 <div className="text-gray-600 font-medium">
                   ลากไฟล์มาวาง → <span className="text-[#4A1A6B] font-semibold">{selectedSubject}</span>
                 </div>
-                <div className="text-gray-400 text-sm">หรือคลิกเพื่อเลือกไฟล์ · รองรับหลายไฟล์พร้อมกัน</div>
+                <div className="text-gray-400 text-sm">หรือคลิกเพื่อเลือกไฟล์ · PDF / Word / PowerPoint / Excel · รองรับหลายไฟล์</div>
+                <div className="text-xs text-purple-500 bg-purple-50 rounded-lg px-3 py-1.5 inline-block mt-1">
+                  ⚡ Word / PPT / Excel จะถูกแปลงเป็น PDF อัตโนมัติ
+                </div>
               </div>
             )}
-            <input ref={fileRef} type="file" accept="video/*" multiple
+            <input ref={fileRef} type="file" accept={ACCEPT} multiple
               onChange={e => {
                 const fs = Array.from(e.target.files || []);
                 if (fs.length) addFiles(fs);
@@ -425,6 +417,7 @@ export default function VideosPage() {
               className="hidden" />
           </div>
 
+          {/* Upload Queue */}
           {uploadQueue.length > 0 && (
             <div className="mt-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -432,18 +425,24 @@ export default function VideosPage() {
                   คิวอัปโหลด ({doneCount}/{uploadQueue.length} เสร็จ{errorCount > 0 ? `, ${errorCount} ผิดพลาด` : ''})
                 </span>
                 {!isUploading && (
-                  <button onClick={() => setUploadQueue([])} className="text-xs text-gray-400 hover:text-gray-600">ล้างคิว</button>
+                  <button onClick={() => setUploadQueue([])}
+                    className="text-xs text-gray-400 hover:text-gray-600">ล้างคิว</button>
                 )}
               </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {uploadQueue.map(item => (
                   <div key={item.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
                     <div className="flex items-center justify-between gap-3 mb-1">
-                      <span className="text-xs text-gray-700 truncate flex-1">{item.file.name}</span>
+                      <span className="text-xs text-gray-700 truncate flex-1">{fileIcon(item.file.name)} {item.file.name}</span>
                       <span className="text-xs shrink-0">
-                        {item.status === 'done' && <span className="text-green-600">✓ เสร็จ</span>}
+                        {item.status === 'done' && <span className="text-green-600">✓ เสร็จ{fileIsOffice(item.file.name) ? ' (PDF)' : ''}</span>}
                         {item.status === 'error' && <span className="text-red-500">✕ ผิดพลาด</span>}
-                        {item.status === 'uploading' && <span className="text-blue-600">{item.progress}%</span>}
+                        {item.status === 'uploading' && item.progress < 99 && <span className="text-blue-600">{item.progress}%</span>}
+                        {item.status === 'uploading' && item.progress >= 99 && (
+                          <span className="text-amber-600">
+                            {fileIsOffice(item.file.name) ? '🔄 กำลังแปลง PDF...' : 'กำลังบันทึก...'}
+                          </span>
+                        )}
                         {item.status === 'pending' && <span className="text-gray-400">รอ...</span>}
                       </span>
                     </div>
@@ -453,8 +452,12 @@ export default function VideosPage() {
                           style={{ width: `${item.progress}%` }} />
                       </div>
                     )}
-                    {item.status === 'uploading' && item.error && <p className="text-xs text-amber-600 mt-0.5">{item.error}</p>}
-                    {item.status === 'error' && <p className="text-xs text-red-500 mt-0.5">{item.error}</p>}
+                    {item.status === 'uploading' && item.error && (
+                      <p className="text-xs text-amber-600 mt-0.5">{item.error}</p>
+                    )}
+                    {item.status === 'error' && (
+                      <p className="text-xs text-red-500 mt-0.5">{item.error}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -463,11 +466,11 @@ export default function VideosPage() {
         </div>
       ) : (
         <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center text-gray-400 text-sm">
-          เลือกหมวดหมู่ด้านบนก่อนอัปโหลดวิดีโอ
+          เลือกหมวดหมู่ด้านบนก่อนอัปโหลดเอกสาร
         </div>
       )}
 
-      {/* Filter */}
+      {/* Filter + File list */}
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium text-gray-600">กรองตามหมวดหมู่:</span>
         <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)}
@@ -482,19 +485,19 @@ export default function VideosPage() {
         <div className="text-center text-gray-400 py-8">กำลังโหลด...</div>
       ) : myFiles.length === 0 && sharedFiles.length === 0 ? (
         <div className="text-center text-gray-400 py-8 border border-dashed border-gray-200 rounded-xl">
-          ยังไม่มีวิดีโอ{filterSubject ? ` ในหมวด "${filterSubject}"` : ''}
+          ยังไม่มีเอกสาร{filterSubject ? ` ในหมวด "${filterSubject}"` : ''}
         </div>
       ) : (
         <div className="space-y-4">
-          {/* My folders */}
-          {Object.entries(myGrouped).map(([subjectName, vids]) => {
+          {/* My files */}
+          {Object.entries(myGrouped).map(([subjectName, docs]) => {
             const count = shareCounts[subjectName] ?? 0;
             return (
               <div key={subjectName} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
                   <span>📁</span>
                   <span className="font-semibold text-gray-700 text-sm flex-1">{subjectName}</span>
-                  <span className="text-xs text-gray-400">{vids.length} ไฟล์</span>
+                  <span className="text-xs text-gray-400">{docs.length} ไฟล์</span>
                   <button
                     onClick={() => openShareModal(subjectName)}
                     className={`text-xs px-3 py-1 rounded-lg font-medium border transition-all ${
@@ -506,9 +509,9 @@ export default function VideosPage() {
                   </button>
                 </div>
                 <div className="divide-y divide-gray-100">
-                  {vids.map(f => (
+                  {docs.map(f => (
                     <div key={f.url} className="px-4 py-3 flex items-center gap-4 hover:bg-gray-50">
-                      <span className="text-xl">🎬</span>
+                      <span className="text-xl">{fileIcon(f.name)}</span>
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-gray-800 truncate text-sm">{f.name}</div>
                         <div className="text-xs text-gray-400">
@@ -516,14 +519,18 @@ export default function VideosPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        <a href={'https://signalstandard.rta.mi.th' + f.url} target="_blank" rel="noopener noreferrer"
+                          className="text-xs px-3 py-1.5 rounded-lg font-medium bg-gray-50 text-gray-600 hover:bg-gray-100">
+                          เปิด
+                        </a>
                         <button onClick={() => copyUrl(f)}
                           className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${copiedUrl === f.url ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
                           {copiedUrl === f.url ? '✓ คัดลอกแล้ว' : '📋 URL'}
                         </button>
-                        <button onClick={() => { setMoveTarget(f); setMoveTo(''); }}
-                          className="text-xs px-3 py-1.5 rounded-lg text-amber-600 hover:bg-amber-50 font-medium">ย้าย</button>
                         <button onClick={() => deleteFile(f)}
-                          className="text-xs px-3 py-1.5 rounded-lg text-red-500 hover:bg-red-50 font-medium">ลบ</button>
+                          className="text-xs px-3 py-1.5 rounded-lg text-red-500 hover:bg-red-50 font-medium">
+                          ลบ
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -534,32 +541,38 @@ export default function VideosPage() {
 
           {/* Shared with me */}
           {sharedFiles.length > 0 && (
-            <div className="mt-4">
-              <h2 className="text-base font-semibold text-gray-700 mb-3">👥 วิดีโอที่แชร์ให้ฉัน</h2>
-              {Object.entries(sharedGrouped).map(([key, vids]) => {
+            <div className="mt-6">
+              <h2 className="text-base font-semibold text-gray-700 mb-3">📄 เอกสารที่แชร์ให้ฉัน</h2>
+              {Object.entries(sharedGrouped).map(([key, docs]) => {
                 const [uploader, courseSlug] = key.split('::');
                 return (
-                  <div key={key} className="bg-white border border-purple-200 rounded-xl overflow-hidden mb-4">
-                    <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-200 flex items-center gap-2">
+                  <div key={key} className="bg-white border border-green-200 rounded-xl overflow-hidden mb-4">
+                    <div className="px-4 py-2.5 bg-green-50 border-b border-green-200 flex items-center gap-2">
                       <span>👤</span>
-                      <span className="font-semibold text-purple-800 text-sm">{uploader}</span>
-                      <span className="text-xs text-purple-400">/ {courseSlug}</span>
-                      <span className="text-xs text-purple-400 ml-auto">{vids.length} ไฟล์</span>
+                      <span className="font-semibold text-green-800 text-sm">{uploader}</span>
+                      <span className="text-xs text-green-600">/ {courseSlug}</span>
+                      <span className="text-xs text-green-600 ml-auto">{docs.length} ไฟล์</span>
                     </div>
                     <div className="divide-y divide-gray-100">
-                      {vids.map(f => (
-                        <div key={f.url} className="px-4 py-3 flex items-center gap-4 hover:bg-purple-50">
-                          <span className="text-xl">🎬</span>
+                      {docs.map(f => (
+                        <div key={f.url} className="px-4 py-3 flex items-center gap-4 hover:bg-green-50">
+                          <span className="text-xl">{fileIcon(f.name)}</span>
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-gray-800 truncate text-sm">{f.name}</div>
                             <div className="text-xs text-gray-400">
                               {formatSize(f.size)} • {new Date(f.modified * 1000).toLocaleDateString('th-TH')}
                             </div>
                           </div>
-                          <button onClick={() => copyUrl(f)}
-                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${copiedUrl === f.url ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
-                            {copiedUrl === f.url ? '✓ คัดลอกแล้ว' : '📋 URL'}
-                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <a href={'https://signalstandard.rta.mi.th' + f.url} target="_blank" rel="noopener noreferrer"
+                              className="text-xs px-3 py-1.5 rounded-lg font-medium bg-gray-50 text-gray-600 hover:bg-gray-100">
+                              เปิด
+                            </a>
+                            <button onClick={() => copyUrl(f)}
+                              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${copiedUrl === f.url ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+                              {copiedUrl === f.url ? '✓ คัดลอกแล้ว' : '📋 URL'}
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -572,8 +585,8 @@ export default function VideosPage() {
       )}
 
       <div className="bg-blue-50 rounded-xl p-4 text-sm text-blue-800">
-        <div className="font-semibold mb-1">วิธีใช้ URL ใน edX Studio:</div>
-        <p className="text-blue-700">กด <strong>📋 URL</strong> → Studio → Add Component → Video → วาง URL</p>
+        <div className="font-semibold mb-1">วิธีใช้ใน edX Studio (PDF Viewer):</div>
+        <p className="text-blue-700">กด <strong>คัดลอก URL</strong> → Studio → unit → Add New Component → Advanced → <strong>PDF Viewer</strong> → วาง URL</p>
       </div>
 
       {/* Share Folder Modal */}
@@ -582,10 +595,11 @@ export default function VideosPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-gray-800">แชร์ folder วิดีโอ</h3>
+                <h3 className="font-semibold text-gray-800">แชร์ folder เอกสาร</h3>
                 <p className="text-xs text-gray-500 mt-0.5">📁 {shareFolder} — ครูที่เลือกจะเห็นทุกไฟล์ใน folder นี้</p>
               </div>
-              <button onClick={() => setShareFolder(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              <button onClick={() => setShareFolder(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             <div className="px-5 py-3 border-b border-gray-100">
               <input type="text" placeholder="ค้นหาชื่อหรือ username..."
@@ -620,31 +634,6 @@ export default function VideosPage() {
             <div className="px-5 py-3 border-t border-gray-100">
               <button onClick={() => setShareFolder(null)}
                 className="w-full py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">ปิด</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Move Modal */}
-      {moveTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setMoveTarget(null)}>
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-[#4A1A6B] mb-1">ย้ายหมวดหมู่วิดีโอ</h3>
-            <p className="text-sm text-gray-500 mb-4 truncate">🎬 {moveTarget.name}</p>
-            <p className="text-xs text-gray-400 mb-1">หมวดหมู่ปัจจุบัน: <span className="text-gray-600">{moveTarget.course_slug}</span></p>
-            <label className="block text-xs font-medium text-gray-600 mb-1 mt-3">ย้ายไปหมวดหมู่ใหม่:</label>
-            <select value={moveTo} onChange={e => setMoveTo(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
-              <option value="">— เลือกหมวดหมู่ —</option>
-              {subjects.filter(s => s.name !== moveTarget.course_slug).map(s => (
-                <option key={s.name} value={s.name}>{s.name}</option>
-              ))}
-            </select>
-            <div className="flex gap-3 mt-5">
-              <button onClick={moveFile} disabled={!moveTo}
-                className="flex-1 bg-[#4A1A6B] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#2D0F42] disabled:opacity-50">ย้าย</button>
-              <button onClick={() => setMoveTarget(null)}
-                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50">ยกเลิก</button>
             </div>
           </div>
         </div>

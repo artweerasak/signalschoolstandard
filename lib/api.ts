@@ -22,7 +22,10 @@ async function fetchAPI<T>(path: string): Promise<T> {
     headers: { "Accept": "application/json" },
   })
   if (res.status === 401) throw new Error("UNAUTHORIZED")
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? `API error: ${res.status}`)
+  }
   return res.json() as Promise<T>
 }
 
@@ -114,10 +117,11 @@ export interface CurrentUser {
   username: string
   email: string
   is_staff: boolean
-  role: "admin" | "instructor" | "student"
+  role: "admin" | "org_admin" | "instructor" | "student"
   full_name: string
   rank: string | null
   unit: string | null
+  organization_id?: number | null
 }
 
 // Open edX Course API — /api/courses/v1/courses/
@@ -135,7 +139,11 @@ export interface Course {
   effort: string | null
   category: string         // field เพิ่มเองใน plugin
   is_enrolled: boolean     // จาก enrollment API
+  is_course_staff?: boolean // เป็น staff/instructor ของหลักสูตรนี้
   enrollment_count: number
+  course_type?: "general" | "conditional"  // ประเภทหลักสูตร
+  locked?: boolean         // ติดเงื่อนไขวิชาบังคับก่อน
+  lock_reason?: string
 }
 
 export interface CourseListResponse {
@@ -147,13 +155,43 @@ export interface CourseListResponse {
 
 // ── Admin Types ────────────────────────────────────────────────────────────
 
+export interface Organization {
+  id: number
+  code: string
+  name: string
+  is_active: boolean
+  member_count?: number
+}
+
+export interface OrgAdminDashboard {
+  org_name: string
+  total: number
+  passed: number
+  expired: number
+  not_tested: number
+  pct_passed: number
+  pct_expired: number
+  pct_not_tested: number
+  passed_list: OrgMemberRow[]
+  expired_list: OrgMemberRow[]
+}
+
+export interface OrgMemberRow {
+  user_id: number
+  full_name: string
+  rank: string
+  unit: string
+  expiry_date: string | null
+  course_name: string | null
+}
+
 export interface AdminUser {
   id: number
   username: string
   email: string
   is_active: boolean
   is_staff: boolean
-  role: "admin" | "instructor" | "student"
+  role: "admin" | "org_admin" | "instructor" | "student"
   full_name: string
   rank: string
   rank_display: string
@@ -302,6 +340,18 @@ export interface AdminCourse {
   effort: string
   enrollment_count: number
   instructors: AdminCourseInstructor[]
+  course_type?: "general" | "conditional"
+  allowed_rank_classes?: string[]
+  prerequisite_course_ids?: string[]
+}
+
+export interface CoursePolicy {
+  course_id: string
+  course_type: "general" | "conditional"
+  allowed_rank_classes: string[]
+  prerequisite_course_ids: string[]
+  can_edit_visibility?: boolean
+  course_options?: { id: string; name: string }[]
 }
 
 export const api = {
@@ -342,6 +392,12 @@ export const api = {
     fetchAPIPost<{ success: boolean }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/assign-instructor/`, { user_id: userId, action }),
   adminDeleteCourse: (courseId: string) =>
     fetchAPIPost<{ success: boolean }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/delete/`, {}, "DELETE"),
+  adminGetCoursePolicy: (courseId: string) =>
+    fetchAPI<CoursePolicy>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/policy/`),
+  adminSaveCoursePolicy: (courseId: string, body: { course_type: string; allowed_rank_classes: string[]; prerequisite_course_ids: string[] }) =>
+    fetchAPIPost<CoursePolicy & { success: boolean }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/policy/`, body),
+  adminRenameCourse: (courseId: string, courseName: string) =>
+    fetchAPIPost<{ success: boolean; course_name: string }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/rename/`, { course_name: courseName }, "PATCH"),
 
   adminRegistrationAction: (id: number, body: unknown) => fetchAPIPost<{ success: boolean; status: string }>(`api/v1/admin/registrations/${id}/`, body, "PATCH"),
 
@@ -352,6 +408,10 @@ export const api = {
   // ── Instructor ───────────────────────────────────────────────────────────
 
   instructorCourses: () => fetchAPI<CourseListResponse>("api/v1/instructor/courses/"),
+  instructorGetCoursePolicy: (courseId: string) =>
+    fetchAPI<CoursePolicy>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/policy/`),
+  instructorSaveCoursePolicy: (courseId: string, body: { course_type: string; allowed_rank_classes: string[]; prerequisite_course_ids: string[] }) =>
+    fetchAPIPost<CoursePolicy & { success: boolean }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/policy/`, body),
   deleteInstructorCourse: (courseId: string) => fetchAPIPost<{ success: boolean }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/delete/`, {}, "DELETE"),
 
   instructorStudents: (courseId: string) => fetchAPI<{ results: InstructorStudent[]; count: number }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/students/`),
@@ -408,5 +468,59 @@ export const api = {
   deleteCourseRequirement: (id: number) =>
     fetchAPIPost<{ success: boolean }>(`api/v1/admin/course-requirements/${id}/`, {}, "DELETE"),
 
+  // ── Organizations ─────────────────────────────────────────────────────────
+  organizationsPublic: () =>
+    fetchAPI<{ results: Organization[] }>("api/v1/organizations/"),
 
+  adminOrganizations: (params?: { q?: string; active_only?: boolean }) => {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set("q", params.q)
+    if (params?.active_only) qs.set("active_only", "1")
+    return fetchAPI<{ count: number; results: Organization[] }>(`api/v1/admin/organizations/?${qs}`)
+  },
+  adminCreateOrganization: (body: { name: string; code: string }) =>
+    fetchAPIPost<Organization>("api/v1/admin/organizations/", body),
+
+  adminUpdateOrganization: (id: number, body: Partial<Organization>) =>
+    fetchAPIPost<Organization>(`api/v1/admin/organizations/${id}/`, body, "PATCH"),
+
+  adminDeactivateOrganization: (id: number) =>
+    fetchAPIPost<{ status: string }>(`api/v1/admin/organizations/${id}/`, {}, "DELETE"),
+
+  adminBulkTransfer: (orgId: number, targetOrgId: number) =>
+    fetchAPIPost<{ moved: number; from: string; to: string }>(
+      `api/v1/admin/organizations/${orgId}/bulk-transfer/`, { target_org_id: targetOrgId }
+    ),
+
+  // ── Org Admin ─────────────────────────────────────────────────────────────
+  orgAdminDashboard: (orgId?: number) => {
+    const qs = orgId ? `?org_id=${orgId}` : ""
+    return fetchAPI<OrgAdminDashboard>(`api/v1/org-admin/dashboard/${qs}`)
+  },
+  orgAdminUsers: (params?: { q?: string; org_id?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set("q", params.q)
+    if (params?.org_id) qs.set("org_id", String(params.org_id))
+    return fetchAPI<{ count: number; results: OrgMemberRow[] }>(`api/v1/org-admin/users/?${qs}`)
+  },
+
+  // ── Video Folder Sharing ─────────────────────────────────────────────────
+  getVideoShare: (courseSlug: string) =>
+    fetchAPI<{ instructors: { id: number; username: string; full_name: string; already_shared: boolean }[] }>(
+      `api/v1/videos/share/?course_slug=${encodeURIComponent(courseSlug)}`
+    ),
+  addVideoShare: (courseSlug: string, username: string) =>
+    fetchAPIPost<{ success: boolean }>("api/v1/videos/share/", { course_slug: courseSlug, username }),
+  removeVideoShare: (courseSlug: string, username: string) =>
+    fetchAPIPost<{ success: boolean }>("api/v1/videos/share/", { course_slug: courseSlug, username }, "DELETE"),
+
+  // ── Document Folder Sharing ───────────────────────────────────────────────
+  getDocShare: (courseSlug: string) =>
+    fetchAPI<{ instructors: { id: number; username: string; full_name: string; already_shared: boolean }[] }>(
+      `api/v1/documents/share/?course_slug=${encodeURIComponent(courseSlug)}`
+    ),
+  addDocShare: (courseSlug: string, username: string) =>
+    fetchAPIPost<{ success: boolean }>("api/v1/documents/share/", { course_slug: courseSlug, username }),
+  removeDocShare: (courseSlug: string, username: string) =>
+    fetchAPIPost<{ success: boolean }>("api/v1/documents/share/", { course_slug: courseSlug, username }, "DELETE"),
 }

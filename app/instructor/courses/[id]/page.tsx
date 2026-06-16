@@ -4,7 +4,16 @@ import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { api, InstructorStudent, InstructorGrade } from "@/lib/api"
 
-type Tab = "students" | "grades"
+type Tab = "students" | "grades" | "prereq"
+
+// ระดับบุคลากร (rank_class) สำหรับกำหนดการมองเห็นหลักสูตรตามเงื่อนไข
+const RANK_CLASS_OPTIONS = [
+  { key: "officer",    label: "นายทหารสัญญาบัตร" },
+  { key: "nco",        label: "นายทหารประทวน" },
+  { key: "pvt",        label: "พลทหาร" },
+  { key: "civilian",   label: "ลูกจ้างประจำ" },
+  { key: "government", label: "พนักงานราชการ" },
+]
 
 export default function CourseDetailPage() {
   const params = useParams()
@@ -16,6 +25,15 @@ export default function CourseDetailPage() {
   const [loadingStudents, setLoadingStudents] = useState(true)
   const [loadingGrades, setLoadingGrades] = useState(false)
   const [gradesLoaded, setGradesLoaded] = useState(false)
+  // ── เงื่อนไขหลักสูตร (ประเภท + ระดับที่มองเห็น + วิชาบังคับก่อน) ──
+  const [policyType, setPolicyType] = useState<"general" | "conditional">("general")
+  const [policyRanks, setPolicyRanks] = useState<string[]>([])
+  const [prereqOptions, setPrereqOptions] = useState<{ id: string; name: string }[]>([])
+  const [prereqSelected, setPrereqSelected] = useState<string[]>([])
+  const [prereqLoaded, setPrereqLoaded] = useState(false)
+  const [loadingPrereq, setLoadingPrereq] = useState(false)
+  const [savingPrereq, setSavingPrereq] = useState(false)
+  const [prereqMsg, setPrereqMsg] = useState("")
 
   const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio-signalstandard.rta.mi.th"
 
@@ -27,6 +45,13 @@ export default function CourseDetailPage() {
       .finally(() => setLoadingStudents(false))
   }, [courseId])
 
+  // เปิดแท็บตาม query string เช่น ?tab=prereq (มาจากปุ่ม "เงื่อนไข" ในหน้ารายการ)
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab")
+    if (t === "grades" || t === "prereq") handleTabChange(t as Tab)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function loadGrades() {
     if (gradesLoaded) return
     setLoadingGrades(true)
@@ -36,9 +61,48 @@ export default function CourseDetailPage() {
       .finally(() => setLoadingGrades(false))
   }
 
+  function loadPrereq() {
+    if (prereqLoaded) return
+    setLoadingPrereq(true)
+    api.instructorGetCoursePolicy(courseId)
+      .then((p) => {
+        setPolicyType(p.course_type ?? "general")
+        setPolicyRanks(p.allowed_rank_classes ?? [])
+        setPrereqOptions(p.course_options ?? [])
+        setPrereqSelected(p.prerequisite_course_ids ?? [])
+        setPrereqLoaded(true)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPrereq(false))
+  }
+
+  async function savePrereq() {
+    setSavingPrereq(true)
+    setPrereqMsg("")
+    try {
+      await api.instructorSaveCoursePolicy(courseId, {
+        course_type: policyType,
+        allowed_rank_classes: policyType === "conditional" ? policyRanks : [],
+        prerequisite_course_ids: policyType === "conditional" ? prereqSelected : [],
+      })
+      setPrereqMsg("✅ บันทึกเงื่อนไขหลักสูตรสำเร็จ")
+    } catch (e: any) {
+      setPrereqMsg("❌ " + (e.message || "บันทึกไม่สำเร็จ"))
+    } finally {
+      setSavingPrereq(false)
+      setTimeout(() => setPrereqMsg(""), 3000)
+    }
+  }
+
+  const togglePrereq = (id: string) =>
+    setPrereqSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const toggleRank = (k: string) =>
+    setPolicyRanks((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]))
+
   function handleTabChange(t: Tab) {
     setTab(t)
     if (t === "grades") loadGrades()
+    if (t === "prereq") loadPrereq()
   }
 
   const passCount = grades.filter(g => g.passed).length
@@ -82,6 +146,7 @@ export default function CourseDetailPage() {
         {[
           { key: "students" as Tab, label: "👥 รายชื่อนักเรียน" },
           { key: "grades"   as Tab, label: "📊 คะแนน" },
+          { key: "prereq"   as Tab, label: "🔒 เงื่อนไขหลักสูตร" },
         ].map((t) => (
           <button
             key={t.key}
@@ -203,6 +268,98 @@ export default function CourseDetailPage() {
                 </tbody>
               </table>
             </>
+          )}
+        </div>
+      )}
+
+      {/* Course Policy Tab — อาจารย์เจ้าของวิชากำหนดเงื่อนไขได้เต็ม (ประเภท + ระดับที่มองเห็น + วิชาบังคับก่อน) */}
+      {tab === "prereq" && (
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="mb-4">
+            <h3 className="font-semibold text-gray-800">เงื่อนไขหลักสูตร</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              กำหนดประเภทหลักสูตร ระดับบุคลากรที่มองเห็นได้ และวิชาที่ต้องสอบผ่านก่อน
+            </p>
+          </div>
+
+          {prereqMsg && (
+            <div className={`px-4 py-2 rounded-lg text-sm mb-4 ${prereqMsg.startsWith("✅") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+              {prereqMsg}
+            </div>
+          )}
+
+          {loadingPrereq ? (
+            <div className="p-8 text-center text-gray-400">กำลังโหลด...</div>
+          ) : (
+            <div className="space-y-6">
+              {/* ประเภทหลักสูตร */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-2">ประเภทหลักสูตร</p>
+                <div className="space-y-2 max-w-md">
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "general" ? "border-[#4A1A6B] bg-purple-50" : "border-gray-200"}`}>
+                    <input type="radio" checked={policyType === "general"} onChange={() => setPolicyType("general")} className="mt-0.5" />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">หลักสูตรทั่วไป</span>
+                      <span className="block text-xs text-gray-500">ทุกระดับมองเห็นและเข้าเรียนได้ทันที</span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "conditional" ? "border-amber-400 bg-amber-50" : "border-gray-200"}`}>
+                    <input type="radio" checked={policyType === "conditional"} onChange={() => setPolicyType("conditional")} className="mt-0.5" />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">หลักสูตรตามเงื่อนไข</span>
+                      <span className="block text-xs text-gray-500">กำหนดระดับที่มองเห็น และวิชาบังคับก่อน</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {policyType === "conditional" && (
+                <>
+                  {/* ระดับบุคลากรที่มองเห็น/สมัครได้ */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">ระดับที่มองเห็น/สมัครได้ <span className="font-normal text-gray-400">(ไม่เลือก = ทุกระดับ)</span></p>
+                    <div className="flex flex-wrap gap-2">
+                      {RANK_CLASS_OPTIONS.map((r) => (
+                        <button key={r.key} type="button" onClick={() => toggleRank(r.key)}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                            policyRanks.includes(r.key)
+                              ? "bg-[#4A1A6B] text-white border-[#4A1A6B]"
+                              : "bg-white text-gray-600 border-gray-300 hover:border-[#4A1A6B]"}`}>
+                          {policyRanks.includes(r.key) ? "✓ " : ""}{r.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* วิชาบังคับก่อน */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">ต้องผ่านหลักสูตรเหล่านี้ก่อนจึงปลดล็อก</p>
+                    {prereqOptions.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-4">ไม่มีหลักสูตรอื่นให้เลือก</p>
+                    ) : (
+                      <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-gray-100">
+                        {prereqOptions.map((c) => (
+                          <label key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" checked={prereqSelected.includes(c.id)} onChange={() => togglePrereq(c.id)} />
+                            <span className="text-gray-700">{c.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                <button onClick={savePrereq} disabled={savingPrereq}
+                  className="bg-[#4A1A6B] text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-[#7B3FA0] disabled:opacity-50">
+                  {savingPrereq ? "กำลังบันทึก..." : "บันทึกเงื่อนไข"}
+                </button>
+                {policyType === "conditional" && (
+                  <span className="text-xs text-gray-400">วิชาบังคับก่อน {prereqSelected.length} วิชา</span>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}

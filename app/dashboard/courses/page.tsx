@@ -4,6 +4,15 @@ import { api, AdminCourse, AdminCourseInstructor } from "@/lib/api"
 
 const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio-signalstandard.rta.mi.th"
 
+// ระดับบุคลากร (rank_class) สำหรับกำหนดการมองเห็นหลักสูตรตามเงื่อนไข
+const RANK_CLASS_OPTIONS = [
+  { key: "officer",    label: "นายทหารสัญญาบัตร" },
+  { key: "nco",        label: "นายทหารประทวน" },
+  { key: "pvt",        label: "พลทหาร" },
+  { key: "civilian",   label: "ลูกจ้างประจำ" },
+  { key: "government", label: "พนักงานราชการ" },
+]
+
 interface InstructorUser {
   id: number
   username: string
@@ -19,6 +28,16 @@ export default function AdminCoursesPage() {
   const [assignModal, setAssignModal] = useState<AdminCourse | null>(null)
   const [instructorUsers, setInstructorUsers] = useState<InstructorUser[]>([])
   const [assigning, setAssigning] = useState(false)
+  // ── นโยบายหลักสูตร (ประเภท + การมองเห็น + วิชาบังคับก่อน) ──
+  const [policyModal, setPolicyModal] = useState<AdminCourse | null>(null)
+  const [policyType, setPolicyType] = useState<"general" | "conditional">("general")
+  const [policyRanks, setPolicyRanks] = useState<string[]>([])
+  const [policyPrereqs, setPolicyPrereqs] = useState<string[]>([])
+  const [savingPolicy, setSavingPolicy] = useState(false)
+  // ── Rename ──────────────────────────────────────────────────────────────
+  const [renameModal, setRenameModal] = useState<AdminCourse | null>(null)
+  const [renameName, setRenameName] = useState("")
+  const [savingRename, setSavingRename] = useState(false)
 
   const loadCourses = () => {
     setLoading(true)
@@ -55,6 +74,57 @@ export default function AdminCoursesPage() {
       alert("ลบ course ไม่สำเร็จ: " + err.message)
     } finally {
       setDeleting(null)
+    }
+  }
+
+  // เปิด modal นโยบาย + โหลดค่าปัจจุบัน
+  const openPolicy = async (course: AdminCourse) => {
+    setPolicyModal(course)
+    setPolicyType(course.course_type ?? "general")
+    setPolicyRanks(course.allowed_rank_classes ?? [])
+    setPolicyPrereqs(course.prerequisite_course_ids ?? [])
+    try {
+      const p = await api.adminGetCoursePolicy(course.id)
+      setPolicyType(p.course_type)
+      setPolicyRanks(p.allowed_rank_classes)
+      setPolicyPrereqs(p.prerequisite_course_ids)
+    } catch { /* ใช้ค่าจาก listing */ }
+  }
+
+  const toggle = (list: string[], v: string) =>
+    list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
+
+  const handleSavePolicy = async () => {
+    if (!policyModal) return
+    setSavingPolicy(true)
+    try {
+      await api.adminSaveCoursePolicy(policyModal.id, {
+        course_type: policyType,
+        allowed_rank_classes: policyType === "conditional" ? policyRanks : [],
+        prerequisite_course_ids: policyType === "conditional" ? policyPrereqs : [],
+      })
+      setPolicyModal(null)
+      loadCourses()
+    } catch (err: any) {
+      alert("บันทึกเงื่อนไขไม่สำเร็จ: " + err.message)
+    } finally {
+      setSavingPolicy(false)
+    }
+  }
+
+  const handleRename = async () => {
+    if (!renameModal) return
+    const name = renameName.trim()
+    if (!name) return
+    setSavingRename(true)
+    try {
+      await api.adminRenameCourse(renameModal.id, name)
+      setRenameModal(null)
+      loadCourses()
+    } catch (err: any) {
+      alert("แก้ชื่อไม่สำเร็จ: " + err.message)
+    } finally {
+      setSavingRename(false)
     }
   }
 
@@ -120,7 +190,14 @@ export default function AdminCoursesPage() {
                 <span className="text-3xl">📡</span>
               </div>
               <div className="p-4">
-                <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2">{course.name}</h3>
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <h3 className="font-semibold text-gray-900 line-clamp-2">{course.name}</h3>
+                  <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
+                    course.course_type === "conditional"
+                      ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                    {course.course_type === "conditional" ? "🔒 ตามเงื่อนไข" : "ทั่วไป"}
+                  </span>
+                </div>
                 <p className="text-gray-500 text-xs mb-3 line-clamp-2">{course.short_description}</p>
 
                 {/* Instructors */}
@@ -151,6 +228,19 @@ export default function AdminCoursesPage() {
                   >
                     👨‍🏫 มอบหมายครู
                   </button>
+                  <button
+                    onClick={() => openPolicy(course)}
+                    className="px-3 py-2 border border-amber-300 rounded-lg text-xs text-amber-600 hover:bg-amber-50 transition-colors"
+                  >
+                    ⚙️ เงื่อนไข
+                  </button>
+                  <button
+                    onClick={() => { setRenameModal(course); setRenameName(course.name) }}
+                    className="px-3 py-2 border border-blue-300 rounded-lg text-xs text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="แก้ไขชื่อหลักสูตร"
+                  >
+                    ✏️
+                  </button>
                   <a
                     href={`${STUDIO_URL}/course/${course.id}`}
                     target="_blank"
@@ -169,6 +259,42 @@ export default function AdminCoursesPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Rename Modal */}
+      {renameModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-[#4A1A6B]">✏️ แก้ไขชื่อหลักสูตร</h3>
+              <button onClick={() => setRenameModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <label className="block text-xs text-gray-500 mb-1">ชื่อหลักสูตร</label>
+            <input
+              type="text"
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleRename()}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none mb-4"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleRename}
+                disabled={savingRename || !renameName.trim()}
+                className="flex-1 bg-[#4A1A6B] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#7B3FA0] disabled:opacity-50"
+              >
+                {savingRename ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+              <button
+                onClick={() => setRenameModal(null)}
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -253,6 +379,91 @@ export default function AdminCoursesPage() {
               {instructorUsers.filter((u) => !assignModal.instructors.some((ins) => ins.user_id === u.id)).length === 0 && (
                 <p className="text-sm text-gray-400 text-center py-4">ไม่มีครูที่สามารถเพิ่มได้</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Course Policy Modal — ประเภท + การมองเห็น + วิชาบังคับก่อน */}
+      {policyModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-[#4A1A6B]">⚙️ เงื่อนไขหลักสูตร</h3>
+              <button onClick={() => setPolicyModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4 font-medium">{policyModal.name}</p>
+
+            <div className="overflow-y-auto flex-1 space-y-5">
+              {/* ประเภทหลักสูตร */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-2">ประเภทหลักสูตร</p>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "general" ? "border-[#4A1A6B] bg-purple-50" : "border-gray-200"}`}>
+                    <input type="radio" checked={policyType === "general"} onChange={() => setPolicyType("general")} className="mt-0.5" />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">หลักสูตรทั่วไป</span>
+                      <span className="block text-xs text-gray-500">ทุกระดับมองเห็นและเข้าเรียนได้ทันที</span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "conditional" ? "border-amber-400 bg-amber-50" : "border-gray-200"}`}>
+                    <input type="radio" checked={policyType === "conditional"} onChange={() => setPolicyType("conditional")} className="mt-0.5" />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">หลักสูตรตามเงื่อนไข</span>
+                      <span className="block text-xs text-gray-500">กำหนดระดับที่มองเห็น และวิชาบังคับก่อน</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {policyType === "conditional" && (
+                <>
+                  {/* ระดับบุคลากรที่มองเห็น/สมัครได้ */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">ระดับที่มองเห็น/สมัครได้ <span className="font-normal text-gray-400">(ไม่เลือก = ทุกระดับ)</span></p>
+                    <div className="flex flex-wrap gap-2">
+                      {RANK_CLASS_OPTIONS.map((r) => (
+                        <button key={r.key} type="button"
+                          onClick={() => setPolicyRanks((prev) => toggle(prev, r.key))}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                            policyRanks.includes(r.key)
+                              ? "bg-[#4A1A6B] text-white border-[#4A1A6B]"
+                              : "bg-white text-gray-600 border-gray-300 hover:border-[#4A1A6B]"}`}>
+                          {policyRanks.includes(r.key) ? "✓ " : ""}{r.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* วิชาบังคับก่อน */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">ต้องผ่านหลักสูตรเหล่านี้ก่อนจึงปลดล็อก</p>
+                    <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-100">
+                      {courses.filter((c) => c.id !== policyModal.id).map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+                          <input type="checkbox" checked={policyPrereqs.includes(c.id)}
+                            onChange={() => setPolicyPrereqs((prev) => toggle(prev, c.id))} />
+                          <span className="text-gray-700 line-clamp-1">{c.name}</span>
+                        </label>
+                      ))}
+                      {courses.filter((c) => c.id !== policyModal.id).length === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-4">ไม่มีหลักสูตรอื่นให้เลือก</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={handleSavePolicy} disabled={savingPolicy}
+                className="flex-1 bg-[#4A1A6B] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#7B3FA0] disabled:opacity-50">
+                {savingPolicy ? "กำลังบันทึก..." : "บันทึกเงื่อนไข"}
+              </button>
+              <button onClick={() => setPolicyModal(null)}
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                ยกเลิก
+              </button>
             </div>
           </div>
         </div>

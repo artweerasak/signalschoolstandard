@@ -18,8 +18,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     api.me()
       .then((u) => {
-        setUser(u)
-        if (!u.is_staff && u.role !== "admin") router.replace("/my")
+        if (!u.is_staff && u.role === "org_admin") { router.replace("/org-admin"); return }
+        if (!u.is_staff && u.role !== "admin") { router.replace("/my"); return }
+        setUser(u)  // set user เฉพาะเมื่อได้รับอนุญาต — ป้องกัน flash of content
       })
       .catch((err) => {
         if (err.message === "UNAUTHORIZED") router.replace("/login")

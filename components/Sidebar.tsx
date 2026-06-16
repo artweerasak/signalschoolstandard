@@ -48,6 +48,12 @@ const adminNavGroups: NavGroup[] = [
     ],
   },
   {
+    groupLabel: "หน่วยงาน",
+    items: [
+      { href: "/dashboard/organizations", label: "จัดการหน่วยงาน", icon: "🏢" },
+    ],
+  },
+  {
     groupLabel: "ระบบ",
     items: [
       { href: "/dashboard/system-health", label: "สถานะระบบ", icon: "🖥️" },
@@ -74,6 +80,7 @@ const instructorNavGroups: NavGroup[] = [
     items: [
       { href: "/instructor", label: "หลักสูตรของฉัน", icon: "🎓" },
       { href: "/instructor/videos", label: "วิดีโอการสอน", icon: "🎬" },
+      { href: "/instructor/documents", label: "เอกสาร / ตำราเรียน", icon: "📄" },
     ],
   },
   {
@@ -240,12 +247,12 @@ export default function Sidebar({
           <p className="text-white text-sm font-medium truncate">{userName}</p>
           {userRank && <p className="text-purple-300 text-xs">{userRank}</p>}
           {userUnit && <p className="text-purple-400 text-xs truncate">{userUnit}</p>}
-          <Link
-            href="/login"
-            className="block mt-2 text-purple-400 hover:text-white text-xs transition-colors"
+          <button
+            onClick={() => { fetch("/logout", { method: "GET", credentials: "include" }).finally(() => { window.location.href = "/login" }) }}
+            className="block mt-2 text-purple-400 hover:text-white text-xs transition-colors text-left"
           >
             ออกจากระบบ →
-          </Link>
+          </button>
         </div>
       )}
     </aside>
