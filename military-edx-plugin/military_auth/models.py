@@ -60,6 +60,16 @@ class PendingRegistration(models.Model):
     # Encrypted — ใช้ encrypt_field() จาก military_profile.models
     national_id_encrypted   = models.CharField(max_length=500, verbose_name="เลขบัตรประชาชน (encrypted)")
     military_id_encrypted   = models.CharField(max_length=500, verbose_name="เลขประจำตัวทหาร (encrypted)")
+    # HMAC (deterministic) สำหรับ duplicate-check — AES-GCM random nonce ไม่สามารถ lookup ได้
+    national_id_hmac        = models.CharField(max_length=64, blank=True, default="", db_index=True, verbose_name="เลขบัตรประชาชน (HMAC)")
+    # organization FK — ถ้าผู้สมัครเลือกจาก dropdown 154 หน่วย จะมีค่า
+    organization            = models.ForeignKey(
+        "military_profile.Organization",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="pending_registrations",
+        verbose_name="หน่วยงาน (FK)",
+    )
 
     # Workflow
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)

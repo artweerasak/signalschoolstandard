@@ -9,12 +9,13 @@ import json
 from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
-from django.db import connection
+from django.db import connection, IntegrityError
+from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES, encrypt_field, decrypt_field
+from .models import MilitaryUserProfile, Organization, RANK_CHOICES, ARMY_REGION_CHOICES, encrypt_field, decrypt_field, hmac_field
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 from military_auth.models import PendingRegistration
 
@@ -25,6 +26,9 @@ except ImportError:
 
 User = get_user_model()
 
+# บทบาทที่ถือว่าเป็น "กำลังพล" — admin/org_admin เป็น system accounts ไม่นับ
+_SYSTEM_ROLES = ("admin", "org_admin")  # system accounts ไม่ใช่กำลังพล
+_PERSONNEL_ROLES = ("instructor", "student")  # บทบาทกำลังพลจริง
 
 def _parse_date(value) -> date:
     """Parse a date string ('YYYY-MM-DD') or date object to datetime.date."""
@@ -36,37 +40,47 @@ def _parse_date(value) -> date:
 
 
 def _grant_course_creator(user) -> None:
-    """Grant CourseCreator 'granted' status to a user via raw SQL.
-    The course_creators app lives in CMS which shares the same DB, but the
-    model is not registered in LMS INSTALLED_APPS, so we use raw SQL.
+    """Grant CourseCreator status:
+    1. course_creators_coursecreator  (Studio homepage badge / status display)
+    2. student_courseaccessrole role='course_creator_group'  (actual gate checked by CourseCreatorRole)
     """
     try:
         now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        with connection.cursor() as cursor:
-            cursor.execute(
+        with connection.cursor() as cur:
+            # ---- 1. Studio badge table ----
+            cur.execute(
                 "INSERT INTO course_creators_coursecreator "
-                "(user_id, state, note, created, updated) "
-                "VALUES (%s, 'granted', '', %s, %s) "
-                "ON DUPLICATE KEY UPDATE state='granted', updated=%s",
-                [user.id, now_str, now_str, now_str],
+                "(user_id, state, note, state_changed, all_organizations) "
+                "VALUES (%s, 'granted', '', %s, 1) "
+                "ON DUPLICATE KEY UPDATE state='granted', state_changed=%s, all_organizations=1",
+                [user.id, now_str, now_str],
+            )
+            # ---- 2. CourseCreatorRole (global) in student_courseaccessrole ----
+            cur.execute(
+                "INSERT IGNORE INTO student_courseaccessrole (user_id, org, course_id, role) "
+                "VALUES (%s, '', '', 'course_creator_group')",
+                [user.id],
             )
     except Exception:
-        pass  # Table may not exist in dev; non-fatal
+        pass  # non-fatal in dev
 
 
 def _revoke_course_creator(user) -> None:
-    """Revoke CourseCreator by setting state='denied' via raw SQL."""
+    """Revoke CourseCreator: update badge table + remove from role"""
     try:
         now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE course_creators_coursecreator "
-                "SET state='denied', updated=%s "
-                "WHERE user_id=%s",
+        with connection.cursor() as cur:
+            cur.execute(
+                "UPDATE course_creators_coursecreator SET state='denied', state_changed=%s WHERE user_id=%s",
                 [now_str, user.id],
             )
+            cur.execute(
+                "DELETE FROM student_courseaccessrole "
+                "WHERE user_id=%s AND role='course_creator_group' AND org='' AND course_id=''",
+                [user.id],
+            )
     except Exception:
-        pass  # Non-fatal
+        pass
 
 
 def _require_login(view_func):
@@ -85,6 +99,18 @@ def _require_admin(view_func):
         profile = getattr(request.user, "military_profile", None)
         is_military_admin = profile and profile.role == "admin"
         if not (request.user.is_staff or is_military_admin):
+            return JsonResponse({"error": "Forbidden"}, status=403)
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
+
+def _require_org_admin(view_func):
+    """ต้องเป็น admin หรือ org_admin เท่านั้น"""
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+        profile = getattr(request.user, "military_profile", None)
+        if not (request.user.is_staff or (profile and profile.role in ("admin", "org_admin"))):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return view_func(request, *args, **kwargs)
     return wrapper
@@ -142,14 +168,13 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
     }
 
 
-@require_GET
-@_require_login
-
-
 def _derive_gender_from_prefix(prefix: str) -> str:
     """นาย→M, นาง/นางสาว→F (สำหรับพลเรือน/พนักงานราชการ)"""
     return "M" if prefix == "นาย" else "F"
 
+
+@require_GET
+@_require_login
 def api_me(request):
     """
     GET /military/api/v1/me/
@@ -167,6 +192,7 @@ def api_me(request):
         "full_name": (profile.full_name_th if profile else None) or user.get_full_name() or user.username,
         "rank": profile.rank if profile else None,
         "unit": profile.unit if profile else None,
+        "organization_id": profile.organization_id if profile else None,
     })
 
 
@@ -266,10 +292,13 @@ def api_admin_users(request):
     Query params: ?search=&unit=&role=&page=1&page_size=20
     """
     qs = MilitaryUserProfile.objects.select_related("user").order_by("-created_at")
+    # ค่าเริ่มต้น: ยกเว้น org_admin system accounts — แสดงได้ด้วย ?role=org_admin
+    if not request.GET.get("role"):
+        qs = qs.exclude(role__in=("admin", "org_admin"))
 
     search = request.GET.get("search", "").strip()
     if search:
-        qs = qs.filter(full_name_th__icontains=search) | qs.filter(unit__icontains=search)
+        qs = qs.filter(Q(full_name_th__icontains=search) | Q(unit__icontains=search))
 
     unit = request.GET.get("unit", "").strip()
     if unit:
@@ -279,8 +308,11 @@ def api_admin_users(request):
     if role:
         qs = qs.filter(role=role)
 
-    page = max(1, int(request.GET.get("page", 1)))
-    page_size = min(100, int(request.GET.get("page_size", 20)))
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(100, int(request.GET.get("page_size", 20)))
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
     total = qs.count()
     start = (page - 1) * page_size
     profiles = qs[start:start + page_size]
@@ -293,7 +325,6 @@ def api_admin_users(request):
     })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @_require_admin
 def api_admin_create_user(request):
@@ -322,25 +353,32 @@ def api_admin_create_user(request):
     if User.objects.filter(email=national_id).exists():
         return JsonResponse({"error": "National ID already registered"}, status=409)
 
+    _valid_roles = {r[0] for r in MilitaryUserProfile.ROLE_CHOICES}
+    _req_role = body.get("role", "student")
+    if _req_role not in _valid_roles:
+        return JsonResponse({"error": f"role ไม่ถูกต้อง ต้องเป็นหนึ่งใน: {', '.join(sorted(_valid_roles))}"}, status=400)
+    if _req_role == "admin" and not request.user.is_superuser:
+        return JsonResponse({"error": "ต้องการสิทธิ์ superuser ในการสร้าง admin"}, status=403)
+
     try:
         user = User.objects.create_user(
             username=body["username"],
             email=national_id,
-            password=body.get("password") or body["military_id"],
+            password=body.get("password") or body.get("military_id") or body.get("national_id"),
             first_name=body["full_name_th"],
         )
         # Force active — Open edX post-save signals may set is_active=False
         # for users created programmatically (email verification flow).
         user.is_active = True
-        user.is_staff = body.get("role") == "admin"
+        user.is_staff = _req_role == "admin"
         user.save()
 
         profile = MilitaryUserProfile.objects.create(
             user=user,
             national_id_encrypted=encrypt_field(body["national_id"]),
-            military_id_encrypted=encrypt_field(body["military_id"]),
+            military_id_encrypted=encrypt_field(body.get("military_id", "")),
             full_name_th=body["full_name_th"],
-            rank=body["rank"],
+            rank=body.get("rank", ""),
             unit=body["unit"],
             sub_unit=body.get("sub_unit", ""),
             service_start_date=_parse_date(body["service_start_date"]),
@@ -368,7 +406,6 @@ def api_admin_create_user(request):
         return JsonResponse({"error": str(exc)}, status=400)
 
 
-@csrf_exempt
 @require_http_methods(["PATCH", "PUT"])
 @_require_admin
 def api_admin_update_user(request, user_id: int):
@@ -401,6 +438,11 @@ def api_admin_update_user(request, user_id: int):
     if "role" in body:
         old_role = profile.role
         new_role = body["role"]
+        _valid_roles = {r[0] for r in MilitaryUserProfile.ROLE_CHOICES}
+        if new_role not in _valid_roles:
+            return JsonResponse({"error": f"role ไม่ถูกต้อง"}, status=400)
+        if new_role == "admin" and not request.user.is_superuser:
+            return JsonResponse({"error": "ต้องการสิทธิ์ superuser ในการเลื่อนเป็น admin"}, status=403)
         profile.role = new_role
         profile.user.is_staff = new_role == "admin"
         profile.user.save()
@@ -419,7 +461,6 @@ def api_admin_update_user(request, user_id: int):
     return JsonResponse(_profile_to_dict(profile))
 
 
-@csrf_exempt
 @require_http_methods(["DELETE"])
 @_require_admin
 def api_admin_deactivate_user(request, user_id: int):
@@ -440,14 +481,15 @@ def api_admin_deactivate_user(request, user_id: int):
     return JsonResponse({"success": True, "message": "User deactivated"})
 
 
-@csrf_exempt
 @require_http_methods(["DELETE"])
 @_require_admin
 def api_admin_hard_delete_user(request, user_id: int):
     """
     DELETE /military/api/v1/admin/users/<user_id>/hard-delete/
-    ลบ user ออกจากระบบถาวร (hard delete)
+    ลบ user ออกจากระบบถาวร (hard delete) — ต้องส่ง ?force=1
     """
+    if request.GET.get("force") != "1":
+        return JsonResponse({"error": "ต้องระบุ ?force=1 เพื่อยืนยันการลบถาวร"}, status=400)
     try:
         profile = MilitaryUserProfile.objects.select_related("user").get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
@@ -492,10 +534,11 @@ def api_register(request):
     if len(military_id) < 6 or len(military_id) > 15:
         return JsonResponse({"error": "เลขประจำตัวทหารต้องมี 6-15 ตัวอักษร"}, status=400)
 
-    # ป้องกัน duplicate — ถ้ามี national_id เดิมและยัง pending/approved
+    # ป้องกัน duplicate — ใช้ HMAC (deterministic) ไม่ใช่ AES-GCM (random nonce)
     enc_national_id = encrypt_field(national_id)
+    national_id_hmac = hmac_field(national_id)
     dup = PendingRegistration.objects.filter(
-        national_id_encrypted=enc_national_id,
+        national_id_hmac=national_id_hmac,
         status__in=("pending", "approved"),
     ).first()
     if dup:
@@ -503,6 +546,15 @@ def api_register(request):
             {"error": "มีคำขอสมัครสมาชิกที่ใช้เลขบัตรประชาชนนี้อยู่แล้ว"},
             status=409,
         )
+
+    # ถ้าผู้สมัครเลือกจาก dropdown ให้ผูก organization FK ทันที
+    _org_id = body.get("organization_id")
+    _org_obj = None
+    if _org_id:
+        try:
+            _org_obj = Organization.objects.get(pk=_org_id, is_active=True)
+        except Organization.DoesNotExist:
+            _org_obj = None
 
     pending = PendingRegistration.objects.create(
         full_name_th=body["full_name_th"],
@@ -512,7 +564,9 @@ def api_register(request):
         email=body.get("email", ""),
         phone_number=body.get("phone_number", ""),
         national_id_encrypted=enc_national_id,
+        national_id_hmac=national_id_hmac,
         military_id_encrypted=encrypt_field(military_id),
+        organization=_org_obj,
     )
 
     return JsonResponse({
@@ -566,7 +620,6 @@ def api_admin_registrations(request):
     return JsonResponse({"count": total, "page": page, "results": results})
 
 
-@csrf_exempt
 @require_http_methods(["PATCH"])
 @_require_admin
 def api_admin_registration_action(request, registration_id: int):
@@ -624,6 +677,7 @@ def api_admin_registration_action(request, registration_id: int):
         profile = MilitaryUserProfile.objects.create(
             user=user,
             national_id_encrypted=reg.national_id_encrypted,
+            national_id_hmac=reg.national_id_hmac,
             military_id_encrypted=reg.military_id_encrypted,
             full_name_th=reg.full_name_th,
             rank=reg.rank,
@@ -634,6 +688,7 @@ def api_admin_registration_action(request, registration_id: int):
             contact_email=reg.email,
             phone_number=reg.phone_number,
             army_region=body.get("army_region", ""),
+            organization=reg.organization,  # สืบทอด FK จากขั้นตอนสมัคร
         )
 
         _ensure_edx_user_profile(user, reg.full_name_th)
@@ -751,7 +806,11 @@ def api_instructor_course_students(request, course_id: str):
     api_url = f"{lms_url}/api/enrollment/v1/enrollments/?course_id={encoded_id}&page_size=100"
 
     try:
-        headers = {"Cookie": request.META.get("HTTP_COOKIE", "")}
+        from django.conf import settings as _dj_settings
+        _session_key = _dj_settings.SESSION_COOKIE_NAME
+        _session_val = request.COOKIES.get(_session_key, "")
+        _cookie_str = f"{_session_key}={_session_val}" if _session_val else ""
+        headers = {"Cookie": _cookie_str}
         req = urlreq.Request(api_url, headers=headers)
         with urlreq.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
@@ -793,7 +852,11 @@ def api_instructor_course_grades(request, course_id: str):
     api_url = f"{lms_url}/api/grades/v1/gradebook/{encoded_id}/?page_size=100"
 
     try:
-        headers = {"Cookie": request.META.get("HTTP_COOKIE", "")}
+        from django.conf import settings as _dj_settings
+        _session_key = _dj_settings.SESSION_COOKIE_NAME
+        _session_val = request.COOKIES.get(_session_key, "")
+        _cookie_str = f"{_session_key}={_session_val}" if _session_val else ""
+        headers = {"Cookie": _cookie_str}
         req = urlreq.Request(api_url, headers=headers)
         with urlreq.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
@@ -805,9 +868,8 @@ def api_instructor_course_grades(request, course_id: str):
 
 # ── Password Management ────────────────────────────────────────────────────
 
-@csrf_exempt
-@_require_login
 @require_POST
+@_require_login
 def api_change_password(request):
     """
     POST /military/api/v1/change-password/
@@ -855,7 +917,6 @@ def api_change_password(request):
     return JsonResponse({"success": True, "message": "เปลี่ยนรหัสผ่านสำเร็จ"})
 
 
-@csrf_exempt
 @_require_admin
 @require_POST
 def api_admin_reset_password(request, user_id: int):
@@ -909,8 +970,8 @@ def api_reset_password_request(request):
         from django.contrib.auth import get_user_model
         _User = get_user_model()
 
-        # ค้นหา user จาก national_id (เข้ารหัสอยู่ ต้องใช้ field search)
-        profile = MilitaryUserProfile.objects.filter(national_id_hash=national_id).first()
+        # ค้นหา user จาก national_id ผ่าน HMAC (deterministic lookup)
+        profile = MilitaryUserProfile.objects.filter(national_id_hmac=hmac_field(national_id)).first()
         if not profile:
             # ไม่แสดงว่าไม่พบ เพื่อป้องกัน user enumeration
             pass
@@ -939,6 +1000,46 @@ def api_reset_password_request(request):
     return JsonResponse({"success": True, "message": "ส่งคำขอเรียบร้อยแล้ว"})
 
 
+def _user_rank_class(user):
+    """คืน rank_class ของผู้ใช้ ('' ถ้าไม่มี profile)"""
+    try:
+        return user.military_profile.rank_class
+    except Exception:
+        return ''
+
+
+def _passed_course_ids(user, course_ids):
+    """คืน set ของ course_id ที่ user สอบผ่านแล้ว (จาก CourseGradeFactory)"""
+    if not course_ids:
+        return set()
+    from lms.djangoapps.grades.api import CourseGradeFactory
+    from opaque_keys.edx.keys import CourseKey
+    passed = set()
+    for cid in course_ids:
+        try:
+            grade = CourseGradeFactory().read(user, course_key=CourseKey.from_string(cid))
+            if grade.passed:
+                passed.add(cid)
+        except Exception:
+            pass
+    return passed
+
+
+def _evaluate_policy(policy, rank_class, passed_ids):
+    """คืน (visible, locked, lock_reason) ตามนโยบายหลักสูตร"""
+    if policy is None or policy.course_type == 'general':
+        return True, False, ''
+    # conditional — ตรวจระดับที่มองเห็นได้
+    allowed = policy.allowed_list
+    if allowed and 'all' not in allowed and rank_class not in allowed:
+        return False, False, ''
+    # ตรวจวิชาบังคับก่อน
+    unmet = [p for p in policy.prereq_list if p not in passed_ids]
+    if unmet:
+        return True, True, f'ต้องผ่านหลักสูตรบังคับก่อน {len(unmet)} วิชาจึงจะปลดล็อก'
+    return True, False, ''
+
+
 @require_GET
 @_require_login
 def api_courses_catalog(request):
@@ -947,11 +1048,17 @@ def api_courses_catalog(request):
     Return course catalog using Django ORM directly (avoids HTTP self-call deadlock).
     """
     from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
-    from common.djangoapps.student.models import CourseEnrollment
+    from common.djangoapps.student.models import CourseEnrollment, CourseAccessRole
+    from opaque_keys.edx.keys import CourseKey
+    from .models import CourseAccessPolicy
 
     search = request.GET.get('search_term', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 24))
+
+    is_priv = request.user.is_staff or request.user.is_superuser
+    rank_class = _user_rank_class(request.user)
+    policies = {p.course_id: p for p in CourseAccessPolicy.objects.all()}
 
     qs = CourseOverview.objects.filter(
         catalog_visibility__in=['both', 'about'],
@@ -960,14 +1067,49 @@ def api_courses_catalog(request):
     if search:
         qs = qs.filter(display_name__icontains=search)
 
+    # ซ่อนหลักสูตร conditional ที่ระดับบุคลากรของผู้ใช้มองไม่เห็น (admin เห็นทุกหลักสูตร)
+    if not is_priv:
+        hidden = []
+        for cid, p in policies.items():
+            if p.course_type == 'conditional':
+                allowed = p.allowed_list
+                if allowed and 'all' not in allowed and rank_class not in allowed:
+                    try:
+                        hidden.append(CourseKey.from_string(cid))
+                    except Exception:
+                        pass
+        if hidden:
+            qs = qs.exclude(id__in=hidden)
+
     total = qs.count()
     offset = (page - 1) * page_size
     courses = qs[offset:offset + page_size]
+
+    # คำนวณวิชาบังคับก่อนที่ต้องตรวจสถานะผ่าน (เฉพาะหลักสูตรในหน้านี้)
+    prereq_needed = set()
+    if not is_priv:
+        for c in courses:
+            p = policies.get(str(c.id))
+            if p and p.course_type == 'conditional':
+                prereq_needed.update(p.prereq_list)
+    passed_ids = _passed_course_ids(request.user, prereq_needed)
 
     enrolled_ids = set(
         str(e.course_id)
         for e in CourseEnrollment.objects.filter(user=request.user, is_active=True)
     )
+
+    # หลักสูตรที่ user เป็น staff/instructor (สำหรับเปิดโหมดนักเรียน)
+    if is_priv:
+        staff_course_ids = {str(c.id) for c in courses}
+    else:
+        staff_course_ids = set(
+            str(r.course_id)
+            for r in CourseAccessRole.objects.filter(
+                user=request.user,
+                role__in=['staff', 'instructor'],
+            )
+        )
 
     # Count active enrollments per course in one query
     from django.db.models import Count as _Count
@@ -987,6 +1129,10 @@ def api_courses_catalog(request):
                 course_image = c.course_image_url
             else:
                 course_image = f'https://signalstandard.rta.mi.th{c.course_image_url}'
+        policy = policies.get(str(c.id))
+        _visible, locked, lock_reason = _evaluate_policy(policy, rank_class, passed_ids)
+        if is_priv:
+            locked, lock_reason = False, ''
         results.append({
             'id': str(c.id),
             'name': c.display_name or '',
@@ -1000,8 +1146,12 @@ def api_courses_catalog(request):
             'number': c.number,
             'effort': None,
             'is_enrolled': str(c.id) in enrolled_ids,
+            'is_course_staff': str(c.id) in staff_course_ids,
             'category': '',
             'enrollment_count': _enroll_counts.get(c.id, 0),
+            'course_type': policy.course_type if policy else 'general',
+            'locked': locked,
+            'lock_reason': lock_reason,
         })
 
     base_url = '/military/api/v1/courses/'
@@ -1016,7 +1166,6 @@ def api_courses_catalog(request):
     })
 
 
-@csrf_exempt
 @require_POST
 @_require_login
 def api_enroll_course(request):
@@ -1044,6 +1193,23 @@ def api_enroll_course(request):
         # Verify course exists
         CourseOverview.objects.get(id=course_key)
 
+        # บังคับนโยบายหลักสูตรตามเงื่อนไข (admin ข้ามได้)
+        if not (request.user.is_staff or request.user.is_superuser):
+            from .models import CourseAccessPolicy
+            try:
+                policy = CourseAccessPolicy.objects.get(course_id=course_id)
+            except CourseAccessPolicy.DoesNotExist:
+                policy = None
+            if policy and policy.course_type == 'conditional':
+                rank_class = _user_rank_class(request.user)
+                allowed = policy.allowed_list
+                if allowed and 'all' not in allowed and rank_class not in allowed:
+                    return JsonResponse({"error": "หลักสูตรนี้ไม่เปิดให้ระดับบุคลากรของท่าน"}, status=403)
+                passed_ids = _passed_course_ids(request.user, policy.prereq_list)
+                unmet = [p for p in policy.prereq_list if p not in passed_ids]
+                if unmet:
+                    return JsonResponse({"error": "ต้องผ่านหลักสูตรบังคับก่อนจึงจะลงทะเบียนหลักสูตรนี้ได้"}, status=403)
+
         # Auto-create audit mode if course has no modes (required for enrollment to work)
         from common.djangoapps.course_modes.models import CourseMode
         if not CourseMode.objects.filter(course_id=course_key).exists():
@@ -1062,6 +1228,95 @@ def api_enroll_course(request):
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
+
+
+@require_GET
+@_require_login
+def api_goto_course_as_student(request):
+    """
+    GET /military/api/v1/goto-course/?course_id=course-v1:...
+
+    Sets masquerade='student' directly in the Django session (server-side),
+    then redirects to the courseware URL. Django's SessionMiddleware saves
+    the modified session and refreshes the cookie before the browser follows
+    the redirect, so the Learning MFE sees role='student' immediately.
+
+    Non-staff users are redirected directly without masquerade.
+    """
+    import urllib.parse as _up
+    from django.http import HttpResponseRedirect, HttpResponseBadRequest
+    from opaque_keys.edx.keys import CourseKey
+    from common.djangoapps.student.models import CourseEnrollment
+    from common.djangoapps.student.role_helpers import has_staff_roles
+    from lms.djangoapps.courseware.masquerade import MASQUERADE_SETTINGS_KEY, CourseMasquerade
+
+    course_id = request.GET.get('course_id', '').strip()
+    if not course_id:
+        return HttpResponseBadRequest('course_id required')
+
+    try:
+        course_key = CourseKey.from_string(course_id)
+    except Exception:
+        return HttpResponseBadRequest('Invalid course_id')
+
+    is_course_staff = (
+        request.user.is_staff
+        or request.user.is_superuser
+        or has_staff_roles(request.user, course_key)
+    )
+
+    safe_id = _up.quote(str(course_key), safe=':+')
+    courseware_url = f'/courses/{safe_id}/courseware'
+
+    if not is_course_staff:
+        return HttpResponseRedirect(courseware_url)
+
+    # Auto-enroll if needed so grades are recorded
+    if not CourseEnrollment.is_enrolled(request.user, course_key):
+        from common.djangoapps.course_modes.models import CourseMode
+        if not CourseMode.objects.filter(course_id=course_key).exists():
+            CourseMode.objects.create(
+                course_id=course_key, mode_slug='audit',
+                mode_display_name='Audit', min_price=0,
+            )
+        CourseEnrollment.enroll(request.user, course_key, check_access=False)
+
+    import logging as _log
+    from django.conf import settings as _djsettings
+    from importlib import import_module as _impmod
+
+    _logger = _log.getLogger(__name__)
+
+    _masq_obj = CourseMasquerade(
+        course_key, role='student',
+        user_partition_id=None, group_id=None, user_name=None,
+    )
+
+    # Store in the current (possibly cycled) session
+    masquerade_settings = request.session.get(MASQUERADE_SETTINGS_KEY, {})
+    masquerade_settings[course_key] = _masq_obj
+    request.session[MASQUERADE_SETTINGS_KEY] = masquerade_settings
+
+    # The session may have been cycled by JWT middleware — also write to the session
+    # that is stored in the browser cookie, which is what all MFE API calls use.
+    _cookie_key = request.COOKIES.get(_djsettings.SESSION_COOKIE_NAME)
+    _logger.warning(
+        'GOTO-COURSE-DEBUG cookie_session=%s view_session=%s same=%s',
+        _cookie_key, request.session.session_key,
+        _cookie_key == request.session.session_key,
+    )
+    if _cookie_key and _cookie_key != request.session.session_key:
+        _SessionStore = _impmod(_djsettings.SESSION_ENGINE).SessionStore
+        _orig = _SessionStore(_cookie_key)
+        _orig_masq = _orig.get(MASQUERADE_SETTINGS_KEY, {})
+        _orig_masq[course_key] = _masq_obj
+        _orig[MASQUERADE_SETTINGS_KEY] = _orig_masq
+        _orig.save()
+        _logger.warning('GOTO-COURSE-DEBUG also wrote masquerade to cookie session %s', _cookie_key)
+
+    resp = HttpResponseRedirect(courseware_url)
+    resp['Cache-Control'] = 'no-store'
+    return resp
 
 
 @require_GET
@@ -1189,18 +1444,21 @@ def api_my_certificate_download(request, cert_id):
     except CourseCertificateConfig.DoesNotExist:
         course_name = str(cert.course_id)
 
+    import html as _html
     try:
         from military_profile.models import MilitaryUserProfile
         profile = MilitaryUserProfile.objects.get(user=request.user)
-        rank = profile.get_rank_display()
-        full_name = profile.full_name_th
-        unit = profile.unit
+        rank = _html.escape(profile.get_rank_display())
+        full_name = _html.escape(profile.full_name_th)
+        unit = _html.escape(profile.unit)
     except Exception:
         rank = full_name = unit = ''
 
     issued_str = cert.issued_date.strftime('%d/%m/%Y') if cert.issued_date else '-'
     expiry_str = cert.expiry_date.strftime('%d/%m/%Y') if cert.expiry_date else 'ไม่มีวันหมดอายุ'
-    cert_no = f"สส.{cert.issued_date.year + 543 if cert.issued_date else 'xxxx'}-{cert.id:04d}"
+    _cert_year = cert.issued_date.year + 543 if cert.issued_date and 1900 < cert.issued_date.year < 2100 else 'xxxx'
+    cert_no = f"สส.{_cert_year}-{cert.id:04d}"
+    course_name = _html.escape(course_name)
 
     html_content = f"""<!DOCTYPE html>
 <html lang="th">
@@ -1366,7 +1624,7 @@ def api_system_health(request):
         "memory": {"total_gb": mem_total_gb, "used_gb": mem_used_gb, "pct": mem_pct},
         "video_storage_gb": video_size_gb,
         "active_sessions": active_sessions,
-        "total_personnel": MilitaryUserProfile.objects.count(),
+        "total_personnel": MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin")).count(),
         "total_certificates": UserCertificateExpiry.objects.count(),
         "expired_certificates": UserCertificateExpiry.objects.filter(status="expired").count(),
     })
@@ -1374,18 +1632,18 @@ def api_system_health(request):
 
 # --- Admin Course Management ---
 
-@csrf_exempt
+@require_GET
+@_require_admin
 def api_admin_courses(request):
-    if request.method != "GET":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-    if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
-        return JsonResponse({"error": "Forbidden"}, status=403)
     try:
         from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
         from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
         from django.contrib.auth import get_user_model
-        from military_profile.models import MilitaryUserProfile
+        from military_profile.models import MilitaryUserProfile, CourseAccessPolicy
+        from certificate_expiry.models import CourseCertificateConfig
         User = get_user_model()
+        policies = {p.course_id: p for p in CourseAccessPolicy.objects.all()}
+        cert_configs = {c.course_id: c for c in CourseCertificateConfig.objects.all()}
         courses = CourseOverview.objects.all()
         result = []
         for course in courses:
@@ -1408,23 +1666,27 @@ def api_admin_courses(request):
             enrollment_count = CourseEnrollment.objects.filter(
                 course_id=course.id, is_active=True
             ).count()
+            pol = policies.get(str(course.id))
+            cfg = cert_configs.get(str(course.id))
+            display_name = (cfg.course_name if cfg and cfg.course_name else None) or course.display_name or str(course.id)
             result.append({
                 "id": str(course.id),
-                "name": course.display_name or str(course.id),
+                "name": display_name,
                 "start": course.start.isoformat() if course.start else None,
                 "end": course.end.isoformat() if course.end else None,
                 "enrollment_count": enrollment_count,
                 "instructors": instructor_list,
+                "course_type": pol.course_type if pol else "general",
+                "allowed_rank_classes": pol.allowed_list if pol else [],
+                "prerequisite_course_ids": pol.prereq_list if pol else [],
             })
         return JsonResponse({"results": result, "count": len(result)})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
 
-@csrf_exempt
+@_require_admin
 def api_admin_course_assign_instructor(request, course_id: str):
-    if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)):
-        return JsonResponse({"error": "Forbidden"}, status=403)
     try:
         import json
         from opaque_keys.edx.keys import CourseKey
@@ -1448,19 +1710,7 @@ def api_admin_course_assign_instructor(request, course_id: str):
                 user=user, course_id=course_key, role="instructor", org=""
             ).update(org=course_key.org)
             # Grant Studio (CourseCreator) access so instructor can edit in Studio
-            from datetime import datetime as _dt
-            now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            from django.db import connection as _conn
-            with _conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE course_creators_coursecreator SET state='granted', state_changed=%s WHERE user_id=%s",
-                    [now, user.id]
-                )
-                if cur.rowcount == 0:
-                    cur.execute(
-                        "INSERT INTO course_creators_coursecreator (user_id, state, note, state_changed, all_organizations) VALUES (%s, 'granted', '', %s, 0)",
-                        [user.id, now]
-                    )
+            _grant_course_creator(user)
             msg = "Assigned " + user.username + " as instructor"
         else:
             CourseAccessRole.objects.filter(
@@ -1472,12 +1722,166 @@ def api_admin_course_assign_instructor(request, course_id: str):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-@csrf_exempt
-def api_admin_delete_course(request, course_id: str):
-    if request.method != "DELETE":
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-    if not (request.user.is_authenticated and request.user.is_superuser):
+def _is_course_instructor(user, course_id: str) -> bool:
+    """True ถ้า user เป็นครูเจ้าของวิชา (instructor/staff role ในวิชานั้น)"""
+    try:
+        from opaque_keys.edx.keys import CourseKey
+        from common.djangoapps.student.models import CourseAccessRole
+        ck = CourseKey.from_string(course_id)
+        return CourseAccessRole.objects.filter(
+            user=user, course_id=ck, role__in=["instructor", "staff"]
+        ).exists()
+    except Exception:
+        return False
+
+
+def api_admin_course_policy(request, course_id: str):
+    """
+    GET/POST /military/api/v1/(admin|instructor)/courses/<course_id>/policy/
+    สิทธิ์: แอดมิน + อาจารย์เจ้าของวิชา กำหนดได้เต็มเหมือนกัน
+      - ประเภทหลักสูตร (course_type)
+      - ระดับที่มองเห็นได้ (allowed_rank_classes)
+      - วิชาบังคับก่อน (prerequisite_course_ids)
+    """
+    if not request.user.is_authenticated:
         return JsonResponse({"error": "Forbidden"}, status=403)
+    is_admin = bool(request.user.is_staff or request.user.is_superuser)
+    is_owner = is_admin or _is_course_instructor(request.user, course_id)
+    if not is_owner:
+        return JsonResponse({"error": "ไม่มีสิทธิ์จัดการเงื่อนไขของหลักสูตรนี้"}, status=403)
+
+    from .models import CourseAccessPolicy
+
+    if request.method == "GET":
+        existing = CourseAccessPolicy.objects.filter(course_id=course_id).first()
+        from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+        course_options = [
+            {"id": str(c.id), "name": c.display_name or str(c.id)}
+            for c in CourseOverview.objects.all().order_by("display_name")
+            if str(c.id) != course_id
+        ]
+        return JsonResponse({
+            "course_id": course_id,
+            "course_type": existing.course_type if existing else "general",
+            "allowed_rank_classes": existing.allowed_list if existing else [],
+            "prerequisite_course_ids": existing.prereq_list if existing else [],
+            "can_edit_visibility": True,   # เจ้าของวิชา + แอดมิน แก้การมองเห็นได้
+            "course_options": course_options,
+        })
+
+    if request.method == "POST":
+        import json
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        # แอดมิน + อาจารย์เจ้าของวิชา — แก้ได้ทุกอย่างเหมือนกัน
+        prereqs = data.get("prerequisite_course_ids") or []
+        if isinstance(prereqs, list):
+            prereqs = ",".join(str(x).strip() for x in prereqs if str(x).strip())
+        course_type = data.get("course_type", "general")
+        if course_type not in (CourseAccessPolicy.TYPE_GENERAL, CourseAccessPolicy.TYPE_CONDITIONAL):
+            return JsonResponse({"error": "course_type ไม่ถูกต้อง"}, status=400)
+        allowed = data.get("allowed_rank_classes") or []
+        if isinstance(allowed, list):
+            allowed = ",".join(str(x).strip() for x in allowed if str(x).strip())
+        # หลักสูตรทั่วไป — ล้างเงื่อนไขทิ้งกันสับสน
+        if course_type == CourseAccessPolicy.TYPE_GENERAL:
+            allowed, prereqs = "", ""
+
+        p, _created = CourseAccessPolicy.objects.update_or_create(
+            course_id=course_id,
+            defaults={
+                "course_type": course_type,
+                "allowed_rank_classes": allowed,
+                "prerequisite_course_ids": prereqs,
+            },
+        )
+        return JsonResponse({
+            "success": True, "course_id": course_id, "course_type": p.course_type,
+            "allowed_rank_classes": p.allowed_list, "prerequisite_course_ids": p.prereq_list,
+            "can_edit_visibility": True,
+        })
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@require_http_methods(["PATCH"])
+@_require_admin
+def api_admin_course_rename(request, course_id: str):
+    """
+    PATCH /military/api/v1/admin/courses/<course_id>/rename/
+    อัปเดตชื่อ course ทุกที่พร้อมกัน:
+      1. Modulestore (MongoDB) — ชื่อจริงของ course
+      2. CourseOverview (MySQL cache) — ที่นักเรียนเห็น
+      3. CourseCertificateConfig — ชื่อบนใบประกาศ
+    Body: {"course_name": "ชื่อใหม่"}
+    """
+    import json as _json
+    from certificate_expiry.models import CourseCertificateConfig
+    from opaque_keys.edx.keys import CourseKey
+    from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+    from xmodule.modulestore.django import modulestore
+
+    try:
+        body = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    name = (body.get("course_name") or "").strip()
+    if not name:
+        return JsonResponse({"error": "course_name ห้ามว่าง"}, status=400)
+
+    try:
+        course_key = CourseKey.from_string(course_id)
+    except Exception:
+        return JsonResponse({"error": f"course_id ไม่ถูกต้อง: {course_id}"}, status=400)
+
+    errors = []
+
+    # 1. Modulestore (แหล่งข้อมูลหลัก — MongoDB)
+    try:
+        store = modulestore()
+        course_block = store.get_course(course_key)
+        if course_block is None:
+            errors.append("ไม่พบ course ใน modulestore")
+        else:
+            with store.bulk_operations(course_key):
+                course_block.display_name = name
+                store.update_item(course_block, request.user.id)
+    except Exception as e:
+        errors.append(f"modulestore: {e}")
+
+    # 2. CourseOverview cache (MySQL) — อัปเดตทันทีโดยไม่ต้องรอ signal
+    try:
+        CourseOverview.objects.filter(id=course_key).update(display_name=name)
+    except Exception as e:
+        errors.append(f"CourseOverview: {e}")
+
+    # 3. CourseCertificateConfig (ชื่อบนใบประกาศ)
+    try:
+        config, _ = CourseCertificateConfig.objects.get_or_create(
+            course_id=course_id,
+            defaults={"course_name": name, "validity_years": 3},
+        )
+        if config.course_name != name:
+            config.course_name = name
+            config.save(update_fields=["course_name"])
+    except Exception as e:
+        errors.append(f"CourseCertificateConfig: {e}")
+
+    if errors:
+        return JsonResponse({"success": False, "errors": errors}, status=500)
+
+    return JsonResponse({"success": True, "course_name": name})
+
+
+@require_http_methods(["DELETE"])
+@_require_admin
+def api_admin_delete_course(request, course_id: str):
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "ต้องการสิทธิ์ superuser"}, status=403)
     try:
         from opaque_keys.edx.keys import CourseKey
         from xmodule.modulestore.django import modulestore
@@ -2208,8 +2612,12 @@ def api_admin_bulk_import_users(request):
                 password=password,
                 first_name=u["full_name_th"],
             )
+            _allowed_import_roles = {"student", "instructor", "org_admin"}
+            _import_role = u.get("role", "student")
+            if _import_role not in _allowed_import_roles:
+                _import_role = "student"
             user.is_active = True
-            user.is_staff = u.get("role") == "admin"
+            user.is_staff = False  # bulk import ห้ามสร้าง admin — ต้องตั้งผ่าน admin panel
             user.save()
 
             profile = MilitaryUserProfile.objects.create(
@@ -2222,7 +2630,7 @@ def api_admin_bulk_import_users(request):
                 sub_unit=u.get("sub_unit", ""),
                 service_start_date=_parse_date(u["service_start_date"]),
                 birth_date=_parse_date(u["birth_date"]),
-                role=u.get("role", "student"),
+                role=_import_role,
                 contact_email=u.get("contact_email", ""),
                 phone_number=u.get("phone_number", ""),
                 army_region=u.get("army_region", ""),
@@ -2248,7 +2656,6 @@ def api_admin_bulk_import_users(request):
 # API: ระบบอนุมัติใบประกาศ Batch
 # ─────────────────────────────────────────────────────────────
 
-@csrf_exempt
 @require_http_methods(["GET", "POST"])
 @_require_admin
 def api_cert_batches(request):
@@ -2319,7 +2726,6 @@ def api_cert_batches(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-@csrf_exempt
 @require_http_methods(["GET", "POST", "DELETE"])
 @_require_admin
 def api_cert_batch_detail(request, batch_id):
@@ -2340,7 +2746,7 @@ def api_cert_batch_detail(request, batch_id):
         pendings = batch.pending_approvals.select_related('user').order_by('user__last_name')
         data = []
         for p in pendings:
-            profile = getattr(p.user, 'militaryuserprofile', None)
+            profile = getattr(p.user, 'military_profile', None)
             data.append({
                 'id': p.id,
                 'username': p.user.username,
@@ -2386,6 +2792,9 @@ def api_cert_batch_detail(request, batch_id):
                 ck = CourseKey.from_string(batch.course_id)
                 generate_certificate_task(p.user, ck)
                 p.status = 'approved'
+                # บันทึกหน่วยงาน ณ วันที่อนุมัติ
+                _uprof = getattr(p.user, 'military_profile', None)
+                p.unit_snapshot = _uprof.unit if _uprof else ''
                 p.save()
                 approved_count += 1
             except Exception as e:
@@ -2409,7 +2818,6 @@ def api_cert_batch_detail(request, batch_id):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @_require_admin
 def api_cert_scan_passed(request):
@@ -2464,7 +2872,6 @@ def api_cert_scan_passed(request):
     return JsonResponse({'added': added, 'skipped': skipped, 'message': f'เพิ่ม {added} คน'})
 
 
-@csrf_exempt
 @require_GET
 @_require_login
 def api_cert_student_status(request):
@@ -2559,7 +2966,13 @@ def _get_video_base_url():
     return getattr(_djsettings, 'MILITARY_VIDEO_BASE_URL', '/media/videos')
 
 
-@csrf_exempt
+def _encode_video_url(base_url: str, *path_parts) -> str:
+    """สร้าง URL-encoded path สำหรับไฟล์วิดีโอ — ป้องกัน 404 เมื่อชื่อมีภาษาไทยหรือ space"""
+    from urllib.parse import quote as _quote
+    encoded = '/'.join(_quote(p, safe='') for p in path_parts)
+    return f"{base_url}/{encoded}"
+
+
 @_require_instructor
 def api_video_subjects(request):
     """
@@ -2641,56 +3054,157 @@ def api_video_subjects(request):
 def api_video_list(request):
     """
     GET /military/api/v1/videos/?course_slug=<slug>
-    คืนเฉพาะไฟล์ของผู้ใช้ปัจจุบัน จัดเก็บใน videos/{username}/{course_slug}/
-    Admin เห็นทุกไฟล์ของทุกคน
+    - ไฟล์ของตัวเอง + ทุกไฟล์ใน folder ที่คนอื่น share ให้ (is_shared_with_me=true)
+    - Admin เห็นทุกไฟล์ของทุกคน
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
+        from .models import VideoSharePermission
         base_dir = _get_video_dir()
         base_url = _get_video_base_url()
         is_admin = request.user.is_staff or request.user.is_superuser
         filter_course = request.GET.get('course_slug', '').strip()
         files = []
 
-        # กำหนด users ที่จะ scan
+        # folder-level share counts สำหรับไฟล์ของตัวเอง
+        own_share_counts = {}
+        if not is_admin:
+            for row in VideoSharePermission.objects.filter(uploader=request.user).values('course_slug').annotate(
+                cnt=__import__('django.db.models', fromlist=['Count']).Count('id')
+            ):
+                own_share_counts[row['course_slug']] = row['cnt']
+
+        def _scan_folder(uname, course_slug, is_shared_with_me=False):
+            course_dir = _os.path.join(base_dir, uname, course_slug)
+            if not _os.path.isdir(course_dir):
+                return
+            share_count = own_share_counts.get(course_slug, 0) if not is_shared_with_me else 0
+            for fname in sorted(_os.listdir(course_dir)):
+                fpath = _os.path.join(course_dir, fname)
+                if not _os.path.isfile(fpath):
+                    continue
+                stat = _os.stat(fpath)
+                files.append({
+                    'name': fname,
+                    'size': stat.st_size,
+                    'url': _encode_video_url(base_url, uname, course_slug, fname),
+                    'modified': stat.st_mtime,
+                    'course_slug': course_slug,
+                    'uploader': uname,
+                    'is_shared_with_me': is_shared_with_me,
+                    'share_count': share_count,
+                })
+
         if is_admin:
             scan_users = [d for d in _os.listdir(base_dir)
                           if _os.path.isdir(_os.path.join(base_dir, d))] if _os.path.exists(base_dir) else []
-        else:
-            scan_users = [request.user.username]
-
-        for uname in scan_users:
-            user_dir = _os.path.join(base_dir, uname)
-            if not _os.path.isdir(user_dir):
-                continue
-            # scan course subdirectories
-            for course_slug in sorted(_os.listdir(user_dir)):
-                if filter_course and course_slug != filter_course:
-                    continue
-                course_dir = _os.path.join(user_dir, course_slug)
-                if not _os.path.isdir(course_dir):
-                    continue
-                for fname in sorted(_os.listdir(course_dir)):
-                    fpath = _os.path.join(course_dir, fname)
-                    if not _os.path.isfile(fpath):
+            for uname in scan_users:
+                udir = _os.path.join(base_dir, uname)
+                for slug in sorted(_os.listdir(udir)):
+                    if filter_course and slug != filter_course:
                         continue
-                    stat = _os.stat(fpath)
-                    files.append({
-                        'name': fname,
-                        'size': stat.st_size,
-                        'url': f"{base_url}/{uname}/{course_slug}/{fname}",
-                        'modified': stat.st_mtime,
-                        'course_slug': course_slug,
-                        'uploader': uname,
-                    })
+                    _scan_folder(uname, slug)
+        else:
+            # ไฟล์ของตัวเอง
+            udir = _os.path.join(base_dir, request.user.username)
+            if _os.path.isdir(udir):
+                for slug in sorted(_os.listdir(udir)):
+                    if filter_course and slug != filter_course:
+                        continue
+                    _scan_folder(request.user.username, slug)
+            # folder ที่คนอื่น share ให้ทั้ง folder
+            shared_folders = VideoSharePermission.objects.filter(
+                shared_with=request.user
+            ).values('uploader__username', 'course_slug')
+            for sf in shared_folders:
+                uname, slug = sf['uploader__username'], sf['course_slug']
+                if filter_course and slug != filter_course:
+                    continue
+                _scan_folder(uname, slug, is_shared_with_me=True)
 
         return JsonResponse({'files': files})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
+@_require_instructor
+def api_video_share(request):
+    """
+    GET  /military/api/v1/videos/share/?course_slug=X
+         คืนรายชื่อครูที่ folder นี้ถูก share ให้แล้ว + รายชื่อครูทั้งหมด
+    POST /military/api/v1/videos/share/
+         body: {course_slug, username} — แชร์ทั้ง folder ให้ user นั้น
+    DELETE /military/api/v1/videos/share/
+         body: {course_slug, username} — ยกเลิกแชร์
+    """
+    from .models import VideoSharePermission
+    User = get_user_model()
+
+    if request.method == 'GET':
+        course_slug = request.GET.get('course_slug', '').strip()
+        if not course_slug:
+            return JsonResponse({'error': 'ต้องระบุ course_slug'}, status=400)
+        shared = list(
+            VideoSharePermission.objects.filter(
+                uploader=request.user, course_slug=course_slug
+            ).select_related('shared_with').values('shared_with__username', 'shared_with__id')
+        )
+        from .models import MilitaryUserProfile
+        instructors = list(
+            MilitaryUserProfile.objects.filter(role__in=('instructor',))
+            .exclude(user=request.user)
+            .select_related('user')
+            .values('user__id', 'user__username', 'full_name_th')
+        )
+        shared_ids = {s['shared_with__id'] for s in shared}
+        return JsonResponse({
+            'instructors': [
+                {
+                    'id': i['user__id'],
+                    'username': i['user__username'],
+                    'full_name': i['full_name_th'],
+                    'already_shared': i['user__id'] in shared_ids,
+                }
+                for i in instructors
+            ],
+        })
+
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    course_slug = (body.get('course_slug') or '').strip()
+    username    = (body.get('username') or '').strip()
+    if not course_slug or not username:
+        return JsonResponse({'error': 'ต้องระบุ course_slug และ username'}, status=400)
+    target = User.objects.filter(username=username).first()
+    if not target:
+        return JsonResponse({'error': f'ไม่พบผู้ใช้ {username}'}, status=404)
+    if target == request.user:
+        return JsonResponse({'error': 'ไม่สามารถแชร์ให้ตัวเองได้'}, status=400)
+
+    folder_path = _os.path.join(_get_video_dir(), request.user.username, course_slug)
+    if not _os.path.isdir(folder_path):
+        return JsonResponse({'error': 'ไม่พบ folder'}, status=404)
+
+    if request.method == 'POST':
+        VideoSharePermission.objects.get_or_create(
+            uploader=request.user, course_slug=course_slug, shared_with=target,
+        )
+        return JsonResponse({'success': True})
+
+    if request.method == 'DELETE':
+        VideoSharePermission.objects.filter(
+            uploader=request.user, course_slug=course_slug, shared_with=target,
+        ).delete()
+        return JsonResponse({'success': True})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
 @_require_instructor
 def api_video_upload(request):
     """
@@ -2698,22 +3212,31 @@ def api_video_upload(request):
     บันทึกไฟล์ที่ videos/{username}/{course_slug}/
     ต้องส่ง course_slug มาด้วย
     """
+    import logging as _logging
+    _vlog = _logging.getLogger('military.video_upload')
+
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     if 'file' not in request.FILES:
+        _vlog.warning('upload: no file in request.FILES (user=%s)', request.user.username)
         return JsonResponse({'error': 'No file provided'}, status=400)
 
     course_slug = request.POST.get('course_slug', '').strip()
     if not course_slug:
         return JsonResponse({'error': 'กรุณาระบุ course_slug'}, status=400)
 
-    # ตรวจว่า subject นี้มีอยู่จริงแล้วเท่านั้น — ห้ามสร้างใหม่อัตโนมัติ
+    # ตรวจว่า subject มีอยู่จริง — ห้ามสร้างใหม่อัตโนมัติ
     user_dir = _os.path.join(_get_video_dir(), request.user.username)
     dest_dir = _os.path.join(user_dir, course_slug)
     if not _os.path.isdir(dest_dir):
+        _vlog.error('upload: subject dir not found: %s', dest_dir)
         return JsonResponse({'error': f'ไม่พบหมวดหมู่ "{course_slug}" กรุณาสร้างก่อนอัปโหลด'}, status=400)
 
+    _VIDEO_ALLOWED_EXTS = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v', '.flv', '.wmv'}
     uploaded_file = request.FILES['file']
+    _orig_ext = _os.path.splitext(uploaded_file.name)[1].lower()
+    if _orig_ext not in _VIDEO_ALLOWED_EXTS:
+        return JsonResponse({'error': f'ไม่รองรับไฟล์ประเภท "{_orig_ext}" กรุณาอัปโหลดไฟล์วิดีโอเท่านั้น'}, status=400)
     safe_name = _re.sub(r'[^\w\-_.]', '_', uploaded_file.name) or f"video_{_uuid_mod.uuid4().hex}"
 
     file_path = _os.path.join(dest_dir, safe_name)
@@ -2724,51 +3247,667 @@ def api_video_upload(request):
         file_path = _os.path.join(dest_dir, safe_name)
         counter += 1
 
+    _vlog.info('upload: start user=%s subject=%s file=%s size=%d dest=%s',
+               request.user.username, course_slug, safe_name,
+               uploaded_file.size, file_path)
     try:
+        bytes_written = 0
         with open(file_path, 'wb+') as dest:
             for chunk in uploaded_file.chunks(chunk_size=8 * 1024 * 1024):
                 dest.write(chunk)
+                bytes_written += len(chunk)
+
+        # ตรวจสอบว่าไฟล์เขียนครบจริง
+        if not _os.path.exists(file_path):
+            _vlog.error('upload: file missing after write! dest=%s', file_path)
+            return JsonResponse({'error': 'บันทึกไฟล์ไม่สำเร็จ — ไฟล์หายหลัง write'}, status=500)
+
+        actual_size = _os.path.getsize(file_path)
+        if actual_size == 0:
+            _os.remove(file_path)
+            _vlog.error('upload: zero-byte file written, dest=%s', file_path)
+            return JsonResponse({'error': 'บันทึกไฟล์ไม่สำเร็จ — ได้รับข้อมูล 0 bytes'}, status=500)
+
+        if uploaded_file.size and actual_size < uploaded_file.size:
+            _os.remove(file_path)
+            _vlog.error('upload: incomplete write %d/%d bytes, dest=%s',
+                        actual_size, uploaded_file.size, file_path)
+            return JsonResponse({
+                'error': f'ไฟล์ถูกบันทึกไม่ครบ ({actual_size}/{uploaded_file.size} bytes)'
+            }, status=500)
+
+        # ตั้งสิทธิ์ให้ nginx อ่านได้
+        _os.chmod(file_path, 0o644)
+
+        url = _encode_video_url(_get_video_base_url(), request.user.username, course_slug, safe_name)
+        _vlog.info('upload: success user=%s file=%s size=%d url=%s',
+                   request.user.username, safe_name, actual_size, url)
         return JsonResponse({
             'success': True,
             'filename': safe_name,
-            'url': f"{_get_video_base_url()}/{request.user.username}/{course_slug}/{safe_name}",
-            'size': _os.path.getsize(file_path),
+            'url': url,
+            'size': actual_size,
         })
+    except OSError as e:
+        _vlog.error('upload: OSError writing file=%s: %s', file_path, e, exc_info=True)
+        if _os.path.exists(file_path):
+            _os.remove(file_path)
+        return JsonResponse({'error': f'ระบบไฟล์ผิดพลาด: {e}'}, status=500)
     except Exception as e:
+        _vlog.error('upload: unexpected error file=%s: %s', file_path, e, exc_info=True)
         if _os.path.exists(file_path):
             _os.remove(file_path)
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
+def _resolve_video_path(base_dir, uname, course_slug, fname):
+    """รวม path อย่างปลอดภัย — basename กันอักขระ /.. และตรวจว่าอยู่ใต้ user dir
+    คืน (file_path, user_root) ; ใช้ basename เพื่อคง Thai/space ของชื่อจริงไว้ ไม่ mangle"""
+    safe_course = _os.path.basename((course_slug or '').strip())
+    safe_fname  = _os.path.basename((fname or '').strip())
+    user_root   = _os.path.realpath(_os.path.join(base_dir, uname))
+    file_path   = _os.path.realpath(_os.path.join(user_root, safe_course, safe_fname))
+    return file_path, user_root, safe_course, safe_fname
+
+
 @_require_instructor
-def api_video_delete(request, filename):
+def api_video_delete(request):
     """
-    DELETE /military/api/v1/videos/<course_slug>/<filename>/
-    ลบได้เฉพาะไฟล์ของตัวเอง (admin ลบได้ทุกไฟล์)
+    DELETE /military/api/v1/videos/delete/
+    body: {course_slug, filename, uploader?}
+    ลบไฟล์ของตัวเอง (admin ลบของผู้อื่นได้โดยส่ง uploader)
+    ── ใช้ JSON body แทนการแนบ path ภาษาไทยใน URL เพื่อเลี่ยงปัญหา encoding/404 ──
     """
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    parts = filename.strip('/').split('/')
-    if len(parts) != 2:
-        return JsonResponse({'error': 'path ต้องเป็น <course_slug>/<filename>'}, status=400)
-
-    course_slug, fname = parts
-    safe_course = _re.sub(r'[^\w\-]', '_', course_slug)
-    safe_fname = _os.path.basename(fname)
+    course_slug = (data.get('course_slug', '') or '').strip()
+    fname       = (data.get('filename', '') or '').strip()
+    if not course_slug or not fname:
+        return JsonResponse({'error': 'ระบุ course_slug และ filename'}, status=400)
 
     is_admin = request.user.is_staff or request.user.is_superuser
+    uname    = data.get('uploader', request.user.username) if is_admin else request.user.username
+
     base_dir = _get_video_dir()
+    file_path, user_root, _sc, _fn = _resolve_video_path(base_dir, uname, course_slug, fname)
+    if not file_path.startswith(user_root + _os.sep):
+        return JsonResponse({'error': 'path ไม่ถูกต้อง'}, status=400)
+    if not _os.path.isfile(file_path):
+        return JsonResponse({'error': 'ไม่พบไฟล์'}, status=404)
+    try:
+        _os.remove(file_path)
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
-    if is_admin:
-        # admin ต้องส่ง uploader มาใน query string
-        uname = request.GET.get('uploader', request.user.username)
+
+@_require_instructor
+def api_video_move(request):
+    """
+    PATCH /military/api/v1/videos/move/
+    body: {course_slug, filename, new_course_slug, uploader?}
+    ย้ายวิดีโอไปยังหมวดหมู่ใหม่ (ต้องเป็นหมวดหมู่ที่มีอยู่แล้ว — ห้ามสร้างใหม่)
+    """
+    if request.method != 'PATCH':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    course_slug = (data.get('course_slug', '') or '').strip()
+    fname       = (data.get('filename', '') or '').strip()
+    new_slug    = (data.get('new_course_slug', '') or '').strip()
+    if not (course_slug and fname and new_slug):
+        return JsonResponse({'error': 'ระบุ course_slug, filename, new_course_slug'}, status=400)
+    if new_slug == course_slug:
+        return JsonResponse({'error': 'หมวดหมู่ปลายทางเหมือนเดิม'}, status=400)
+
+    is_admin = request.user.is_staff or request.user.is_superuser
+    uname    = data.get('uploader', request.user.username) if is_admin else request.user.username
+
+    base_dir = _get_video_dir()
+    src, user_root, _sc, safe_fname = _resolve_video_path(base_dir, uname, course_slug, fname)
+    new_dir = _os.path.realpath(_os.path.join(user_root, _os.path.basename(new_slug)))
+    # ป้องกัน path traversal ทั้งต้นทาง/ปลายทาง
+    if not src.startswith(user_root + _os.sep) or not new_dir.startswith(user_root + _os.sep):
+        return JsonResponse({'error': 'path ไม่ถูกต้อง'}, status=400)
+    if not _os.path.isfile(src):
+        return JsonResponse({'error': 'ไม่พบไฟล์ต้นทาง'}, status=404)
+    if not _os.path.isdir(new_dir):
+        return JsonResponse({'error': f'ไม่พบหมวดหมู่ปลายทาง "{new_slug}" กรุณาสร้างก่อน'}, status=404)
+
+    # กันชื่อซ้ำที่ปลายทาง
+    dst = _os.path.join(new_dir, safe_fname)
+    base, ext = _os.path.splitext(safe_fname)
+    counter = 1
+    while _os.path.exists(dst):
+        dst = _os.path.join(new_dir, f"{base}_{counter}{ext}")
+        counter += 1
+    try:
+        import shutil as _shutil
+        _shutil.move(src, dst)
+        new_name = _os.path.basename(dst)
+        return JsonResponse({
+            'success': True,
+            'course_slug': _os.path.basename(new_slug),
+            'filename': new_name,
+            'url': _encode_video_url(_get_video_base_url(), uname, _os.path.basename(new_slug), new_name),
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Document / PDF library — เก็บที่ documents/{username}/{subject}/{file}
+# เสิร์ฟผ่าน nginx-videos location /media/documents/ — มี progress bar ฝั่ง FE
+# ─────────────────────────────────────────────────────────────────────
+
+def _get_doc_dir():
+    return getattr(_djsettings, 'MILITARY_DOC_DIR', '/openedx/media/documents')
+
+
+def _get_doc_base_url():
+    return getattr(_djsettings, 'MILITARY_DOC_BASE_URL', '/media/documents')
+
+
+# นามสกุลไฟล์เอกสารที่อนุญาต — Office จะถูกแปลงเป็น PDF อัตโนมัติก่อนบันทึก
+_DOC_ALLOWED_EXTS = {'.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'}
+_OFFICE_EXTS = {'.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'}
+
+
+def _convert_office_to_pdf(tmp_path: str, original_name: str) -> bytes:
+    """แปลง Office document เป็น PDF ผ่าน Gotenberg (LibreOffice)"""
+    import requests as _req
+    url = getattr(_djsettings, 'GOTENBERG_URL', 'http://gotenberg:3000') + '/forms/libreoffice/convert'
+    with open(tmp_path, 'rb') as fh:
+        resp = _req.post(
+            url,
+            files={'files': (original_name, fh, 'application/octet-stream')},
+            timeout=120,
+        )
+    if resp.status_code != 200:
+        raise Exception(f'แปลงไฟล์ไม่สำเร็จ (status {resp.status_code}): {resp.text[:300]}')
+    return resp.content
+
+
+# ── Font normalization + binary-format upgrade ─────────────────────────────
+# ขั้นตอนก่อนส่ง Gotenberg:
+#   1. ถ้าเป็น .ppt/.doc/.xls (binary) → แปลงเป็น .pptx/.docx/.xlsx ก่อน
+#   2. แทนที่ font ทั้งหมดด้วย TH SarabunPSK
+#   3. ส่ง Gotenberg แปลงเป็น PDF
+_FONT_REPLACE_TARGET = "TH SarabunPSK"
+_BINARY_TO_MODERN = {'.ppt': '.pptx', '.doc': '.docx', '.xls': '.xlsx'}
+
+
+def _convert_binary_to_modern(src_path: str, ext: str) -> tuple:
+    """แปลง .ppt/.doc/.xls → .pptx/.docx/.xlsx ผ่าน converter_server ใน Gotenberg
+    คืน (bytes_of_modern_file, new_ext) หรือ (None, ext) ถ้าล้มเหลว"""
+    import requests as _req
+    target_ext = _BINARY_TO_MODERN.get(ext)
+    if not target_ext:
+        return None, ext
+    base_url = getattr(_djsettings, 'GOTENBERG_URL', 'http://gotenberg:3000')
+    converter_url = base_url.replace(':3000', ':2004') + '/convert-to-modern'
+    with open(src_path, 'rb') as fh:
+        resp = _req.post(
+            converter_url,
+            files={'file': ('input' + ext, fh, 'application/octet-stream')},
+            timeout=120,
+        )
+    if resp.status_code != 200:
+        import logging as _l2
+        _l2.getLogger('military.doc_upload').warning(
+            'binary-to-modern failed ext=%s status=%d: %s',
+            ext, resp.status_code, resp.text[:200])
+        return None, ext
+    return resp.content, target_ext
+
+def _normalize_fonts_docx(xml: str) -> str:
+    """แทนที่ font ใน DOCX XML (word/document.xml, styles.xml, theme/theme1.xml ...)"""
+    import re as _re2
+    # แทนที่ w:rFonts attributes (document body, styles, headers, footers)
+    for attr in ('w:ascii', 'w:hAnsi', 'w:cs', 'w:eastAsia'):
+        xml = _re2.sub(rf'{attr}="[^"]*"', f'{attr}="{_FONT_REPLACE_TARGET}"', xml)
+    # ลบ theme-font refs ที่ override การตั้งค่าข้างต้น
+    xml = _re2.sub(r'\s+w:(?:ascii|hAnsi|cs|eastAsia)Theme="[^"]*"', '', xml)
+    # แทนที่ DrawingML typeface ใน word/theme/theme1.xml (a:latin, a:cs, a:ea, a:font)
+    def _rep_typeface(m):
+        val = m.group(1)
+        if val.startswith('+'):   # theme font ref → ไม่แตะ
+            return m.group(0)
+        return f'typeface="{_FONT_REPLACE_TARGET}"'
+    xml = _re2.sub(r'typeface="([^"]*)"', _rep_typeface, xml)
+    return xml
+
+def _normalize_fonts_pptx(xml: str) -> str:
+    """แทนที่ font ใน PPTX XML (slides, layouts, masters, theme)
+    หมายเหตุ: แทนที่ค่าว่าง typeface="" ด้วย เพื่อ force CS/EA font ใน theme scheme
+    ให้ชี้ไปที่ TH SarabunPSK แทนการ fallback ไป OS default
+    """
+    import re as _re2
+    def _replace(m):
+        val = m.group(1)
+        if val.startswith('+'):   # +mn-lt, +mj-cs ฯลฯ = theme font ref → ไม่แตะ
+            return m.group(0)
+        # แทนที่ทุกค่า รวมถึงค่าว่าง (เพื่อ force <a:cs typeface="TH SarabunPSK"/>)
+        return f'typeface="{_FONT_REPLACE_TARGET}"'
+    xml = _re2.sub(r'typeface="([^"]*)"', _replace, xml)
+    return xml
+
+def _normalize_fonts_xlsx(xml: str) -> str:
+    """แทนที่ font ใน XLSX styles.xml"""
+    import re as _re2
+    xml = _re2.sub(r'(<name\s+val=")[^"]*(")', rf'\g<1>{_FONT_REPLACE_TARGET}\g<2>', xml)
+    return xml
+
+def _normalize_fonts(src_path: str, ext: str) -> str:
+    """สร้าง ZIP ใหม่ที่ font ทุกตัวถูกแทนที่ด้วย TH SarabunPSK
+    คืน path ของ temp file ที่ผู้เรียกต้องลบเอง
+    รองรับ .docx / .pptx / .xlsx เท่านั้น (.doc/.ppt/.xls → copy ผ่าน)
+    """
+    import zipfile as _zf
+    import tempfile as _tf2
+
+    out = _tf2.NamedTemporaryFile(delete=False, suffix=ext)
+    out.close()
+    out_path = out.name
+
+    if ext == '.docx':
+        prefix = 'word/'
+        fn_replace = _normalize_fonts_docx
+    elif ext == '.pptx':
+        prefix = 'ppt/'
+        fn_replace = _normalize_fonts_pptx
+    elif ext == '.xlsx':
+        prefix = 'xl/'
+        fn_replace = _normalize_fonts_xlsx
     else:
-        uname = request.user.username
+        # binary format (.doc/.ppt/.xls) — ไม่ parse ได้ ส่ง copy ผ่าน
+        import shutil as _sh2
+        _sh2.copy2(src_path, out_path)
+        return out_path
 
-    file_path = _os.path.join(base_dir, uname, safe_course, safe_fname)
-    if not _os.path.exists(file_path):
+    try:
+        with _zf.ZipFile(src_path, 'r') as zin, \
+             _zf.ZipFile(out_path, 'w', _zf.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename.startswith(prefix) and item.filename.endswith('.xml'):
+                    try:
+                        text = fn_replace(data.decode('utf-8'))
+                        data = text.encode('utf-8')
+                    except Exception:
+                        pass  # XML decode error → ใช้ต้นฉบับ
+                zout.writestr(item, data)
+    except Exception:
+        # ZIP error → คืน copy ต้นฉบับ
+        import shutil as _sh2
+        _sh2.copy2(src_path, out_path)
+
+    return out_path
+
+
+@_require_instructor
+def api_doc_subjects(request):
+    """GET/POST/PATCH/DELETE /military/api/v1/documents/subjects/ — หมวดหมู่เอกสาร (mirror วิดีโอ)"""
+    user_dir = _os.path.join(_get_doc_dir(), request.user.username)
+
+    if request.method == 'GET':
+        subjects = []
+        if _os.path.isdir(user_dir):
+            for name in sorted(_os.listdir(user_dir)):
+                sub_dir = _os.path.join(user_dir, name)
+                if _os.path.isdir(sub_dir):
+                    count = sum(1 for f in _os.listdir(sub_dir) if _os.path.isfile(_os.path.join(sub_dir, f)))
+                    subjects.append({'name': name, 'file_count': count})
+        return JsonResponse({'subjects': subjects})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        safe = _re.sub(r'[^\w\-ก-๙ ]', '_', data.get('name', '').strip()).strip()
+        if not safe:
+            return JsonResponse({'error': 'ชื่อไม่ถูกต้อง'}, status=400)
+        _os.makedirs(_os.path.join(user_dir, safe), exist_ok=True)
+        return JsonResponse({'success': True, 'name': safe})
+
+    if request.method == 'PATCH':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        old_name = _os.path.basename(data.get('old_name', '').strip())
+        new_name = _re.sub(r'[^\w\-ก-๙ ]', '_', data.get('new_name', '').strip()).strip()
+        if not old_name or not new_name:
+            return JsonResponse({'error': 'ระบุ old_name และ new_name'}, status=400)
+        old_dir = _os.path.join(user_dir, old_name)
+        new_dir = _os.path.join(user_dir, new_name)
+        if not _os.path.isdir(old_dir):
+            return JsonResponse({'error': f'ไม่พบหมวดหมู่ "{old_name}"'}, status=404)
+        if old_name == new_name:
+            return JsonResponse({'success': True, 'name': new_name})
+        if _os.path.isdir(new_dir):
+            return JsonResponse({'error': f'มีหมวดหมู่ "{new_name}" อยู่แล้ว'}, status=409)
+        _os.rename(old_dir, new_dir)
+        return JsonResponse({'success': True, 'name': new_name})
+
+    if request.method == 'DELETE':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        name = _os.path.basename(data.get('name', '').strip())
+        if not name:
+            return JsonResponse({'error': 'ระบุชื่อ subject'}, status=400)
+        sub_dir = _os.path.join(user_dir, name)
+        if not _os.path.isdir(sub_dir):
+            return JsonResponse({'error': 'ไม่พบ subject นี้'}, status=404)
+        import shutil as _shutil
+        _shutil.rmtree(sub_dir)
+        return JsonResponse({'success': True})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@_require_instructor
+def api_doc_list(request):
+    """GET /military/api/v1/documents/?course_slug=<slug>
+    ไฟล์ของตัวเอง + ทุกไฟล์ใน folder ที่คนอื่น share ให้ (is_shared_with_me=true)
+    Admin เห็นทุกคน
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        from .models import DocSharePermission
+        base_dir = _get_doc_dir()
+        base_url = _get_doc_base_url()
+        is_admin = request.user.is_staff or request.user.is_superuser
+        filter_course = request.GET.get('course_slug', '').strip()
+        files = []
+
+        own_share_counts = {}
+        if not is_admin:
+            for row in DocSharePermission.objects.filter(uploader=request.user).values('course_slug').annotate(
+                cnt=__import__('django.db.models', fromlist=['Count']).Count('id')
+            ):
+                own_share_counts[row['course_slug']] = row['cnt']
+
+        def _scan_folder(uname, course_slug, is_shared_with_me=False):
+            cdir = _os.path.join(base_dir, uname, course_slug)
+            if not _os.path.isdir(cdir):
+                return
+            share_count = own_share_counts.get(course_slug, 0) if not is_shared_with_me else 0
+            for fname in sorted(_os.listdir(cdir)):
+                fpath = _os.path.join(cdir, fname)
+                if not _os.path.isfile(fpath):
+                    continue
+                stat = _os.stat(fpath)
+                files.append({
+                    'name': fname,
+                    'size': stat.st_size,
+                    'url': _encode_video_url(base_url, uname, course_slug, fname),
+                    'modified': stat.st_mtime,
+                    'course_slug': course_slug,
+                    'uploader': uname,
+                    'is_shared_with_me': is_shared_with_me,
+                    'share_count': share_count,
+                })
+
+        if is_admin:
+            scan_users = [d for d in _os.listdir(base_dir)
+                          if _os.path.isdir(_os.path.join(base_dir, d))] if _os.path.exists(base_dir) else []
+            for uname in scan_users:
+                udir = _os.path.join(base_dir, uname)
+                for slug in sorted(_os.listdir(udir)):
+                    if filter_course and slug != filter_course:
+                        continue
+                    _scan_folder(uname, slug)
+        else:
+            udir = _os.path.join(base_dir, request.user.username)
+            if _os.path.isdir(udir):
+                for slug in sorted(_os.listdir(udir)):
+                    if filter_course and slug != filter_course:
+                        continue
+                    _scan_folder(request.user.username, slug)
+            shared_folders = DocSharePermission.objects.filter(
+                shared_with=request.user
+            ).values('uploader__username', 'course_slug')
+            for sf in shared_folders:
+                uname, slug = sf['uploader__username'], sf['course_slug']
+                if filter_course and slug != filter_course:
+                    continue
+                _scan_folder(uname, slug, is_shared_with_me=True)
+
+        return JsonResponse({'files': files})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@_require_instructor
+def api_doc_share(request):
+    """
+    GET  /military/api/v1/documents/share/?course_slug=X
+         คืนรายชื่อครูที่ folder นี้ถูก share ให้แล้ว + รายชื่อครูทั้งหมด
+    POST /military/api/v1/documents/share/
+         body: {course_slug, username} — แชร์ทั้ง folder
+    DELETE /military/api/v1/documents/share/
+         body: {course_slug, username} — ยกเลิกแชร์
+    """
+    from .models import DocSharePermission
+    User = get_user_model()
+
+    if request.method == 'GET':
+        course_slug = request.GET.get('course_slug', '').strip()
+        if not course_slug:
+            return JsonResponse({'error': 'ต้องระบุ course_slug'}, status=400)
+        shared = list(
+            DocSharePermission.objects.filter(
+                uploader=request.user, course_slug=course_slug
+            ).select_related('shared_with').values('shared_with__username', 'shared_with__id')
+        )
+        from .models import MilitaryUserProfile
+        instructors = list(
+            MilitaryUserProfile.objects.filter(role__in=('instructor',))
+            .exclude(user=request.user)
+            .select_related('user')
+            .values('user__id', 'user__username', 'full_name_th')
+        )
+        shared_ids = {s['shared_with__id'] for s in shared}
+        return JsonResponse({
+            'instructors': [
+                {
+                    'id': i['user__id'],
+                    'username': i['user__username'],
+                    'full_name': i['full_name_th'],
+                    'already_shared': i['user__id'] in shared_ids,
+                }
+                for i in instructors
+            ],
+        })
+
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    course_slug = (body.get('course_slug') or '').strip()
+    username    = (body.get('username') or '').strip()
+    if not course_slug or not username:
+        return JsonResponse({'error': 'ต้องระบุ course_slug และ username'}, status=400)
+    target = User.objects.filter(username=username).first()
+    if not target:
+        return JsonResponse({'error': f'ไม่พบผู้ใช้ {username}'}, status=404)
+    if target == request.user:
+        return JsonResponse({'error': 'ไม่สามารถแชร์ให้ตัวเองได้'}, status=400)
+
+    folder_path = _os.path.join(_get_doc_dir(), request.user.username, course_slug)
+    if not _os.path.isdir(folder_path):
+        return JsonResponse({'error': 'ไม่พบ folder'}, status=404)
+
+    if request.method == 'POST':
+        DocSharePermission.objects.get_or_create(
+            uploader=request.user, course_slug=course_slug, shared_with=target,
+        )
+        return JsonResponse({'success': True})
+
+    if request.method == 'DELETE':
+        DocSharePermission.objects.filter(
+            uploader=request.user, course_slug=course_slug, shared_with=target,
+        ).delete()
+        return JsonResponse({'success': True})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@_require_instructor
+def api_doc_upload(request):
+    """POST /military/api/v1/documents/upload/ — บันทึก PDF/เอกสารที่ documents/{user}/{slug}/
+    Office files (.doc .docx .ppt .pptx .xls .xlsx) จะถูกแปลงเป็น PDF ผ่าน Gotenberg อัตโนมัติ
+    """
+    import logging as _logging
+    import tempfile as _tempfile
+    import shutil as _shutil
+    _dlog = _logging.getLogger('military.doc_upload')
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if 'file' not in request.FILES:
+        return JsonResponse({'error': 'No file provided'}, status=400)
+
+    course_slug = request.POST.get('course_slug', '').strip()
+    if not course_slug:
+        return JsonResponse({'error': 'กรุณาระบุ course_slug'}, status=400)
+
+    user_dir = _os.path.join(_get_doc_dir(), request.user.username)
+    dest_dir = _os.path.join(user_dir, _os.path.basename(course_slug))
+    if not _os.path.isdir(dest_dir):
+        return JsonResponse({'error': f'ไม่พบหมวดหมู่ "{course_slug}" กรุณาสร้างก่อนอัปโหลด'}, status=400)
+
+    uploaded_file = request.FILES['file']
+    _ext = _os.path.splitext(uploaded_file.name)[1].lower()
+    if _ext not in _DOC_ALLOWED_EXTS:
+        return JsonResponse({'error': f'รองรับเฉพาะไฟล์ {", ".join(sorted(_DOC_ALLOWED_EXTS))}'}, status=400)
+
+    safe_name = _re.sub(r'[^\w\-_.]', '_', uploaded_file.name) or f"doc_{_uuid_mod.uuid4().hex}{_ext}"
+
+    # ถ้าเป็น Office file → แปลงเป็น PDF (เปลี่ยนนามสกุลเป็น .pdf)
+    need_convert = _ext in _OFFICE_EXTS
+    if need_convert:
+        safe_name = _os.path.splitext(safe_name)[0] + '.pdf'
+
+    base, final_ext = _os.path.splitext(safe_name)
+    file_path = _os.path.join(dest_dir, safe_name)
+    counter = 1
+    while _os.path.exists(file_path):
+        safe_name = f"{base}_{counter}{final_ext}"
+        file_path = _os.path.join(dest_dir, safe_name)
+        counter += 1
+
+    tmp_path = None
+    try:
+        # เขียนไฟล์ต้นฉบับลง temp ก่อนเสมอ
+        with _tempfile.NamedTemporaryFile(delete=False, suffix=_ext) as tmp:
+            tmp_path = tmp.name
+            for chunk in uploaded_file.chunks(chunk_size=4 * 1024 * 1024):
+                tmp.write(chunk)
+
+        if not _os.path.exists(tmp_path) or _os.path.getsize(tmp_path) == 0:
+            return JsonResponse({'error': 'บันทึกไฟล์ไม่สำเร็จ — ได้รับข้อมูล 0 bytes'}, status=500)
+
+        if need_convert:
+            work_ext  = _ext
+            work_path = tmp_path
+
+            # step 1: binary format (.ppt/.doc/.xls) → modern XML format ก่อน
+            if work_ext in _BINARY_TO_MODERN:
+                _dlog.info('doc convert: user=%s file=%s → upgrade binary→modern',
+                           request.user.username, uploaded_file.name)
+                modern_bytes, modern_ext = _convert_binary_to_modern(work_path, work_ext)
+                if modern_bytes:
+                    modern_tmp = _tempfile.NamedTemporaryFile(
+                        delete=False, suffix=modern_ext)
+                    modern_tmp.write(modern_bytes)
+                    modern_tmp.close()
+                    work_path = modern_tmp.name
+                    work_ext  = modern_ext
+                    _dlog.info('doc convert: upgraded %s→%s (%d bytes)',
+                               _ext, modern_ext, len(modern_bytes))
+                else:
+                    _dlog.warning('doc convert: binary upgrade failed, proceeding without font normalization')
+
+            # step 2: แทนที่ font ทุกตัวด้วย TH SarabunPSK
+            _dlog.info('doc convert: user=%s file=%s ext=%s → normalize fonts',
+                       request.user.username, uploaded_file.name, work_ext)
+            normalized_path = _normalize_fonts(work_path, work_ext)
+            if work_path != tmp_path:
+                _os.remove(work_path)   # ลบ temp modern file
+
+            try:
+                # step 3: ส่ง Gotenberg แปลงเป็น PDF
+                pdf_data = _convert_office_to_pdf(normalized_path, uploaded_file.name)
+            finally:
+                if normalized_path and _os.path.exists(normalized_path):
+                    _os.remove(normalized_path)
+
+            with open(file_path, 'wb') as f:
+                f.write(pdf_data)
+            actual_size = len(pdf_data)
+        else:
+            _shutil.move(tmp_path, file_path)
+            tmp_path = None
+            actual_size = _os.path.getsize(file_path)
+
+        _os.chmod(file_path, 0o644)
+        url = _encode_video_url(_get_doc_base_url(), request.user.username,
+                                _os.path.basename(course_slug), safe_name)
+        _dlog.info('doc upload: success user=%s file=%s size=%d converted=%s',
+                   request.user.username, safe_name, actual_size, need_convert)
+        return JsonResponse({
+            'success': True,
+            'filename': safe_name,
+            'url': url,
+            'size': actual_size,
+            'converted': need_convert,
+        })
+    except Exception as e:
+        if file_path and _os.path.exists(file_path):
+            _os.remove(file_path)
+        _dlog.error('doc upload: error file=%s: %s', file_path, e, exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+    finally:
+        if tmp_path and _os.path.exists(tmp_path):
+            _os.remove(tmp_path)
+
+
+@_require_instructor
+def api_doc_delete(request):
+    """DELETE /military/api/v1/documents/delete/  body:{course_slug, filename, uploader?}"""
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    course_slug = (data.get('course_slug', '') or '').strip()
+    fname = (data.get('filename', '') or '').strip()
+    if not course_slug or not fname:
+        return JsonResponse({'error': 'ระบุ course_slug และ filename'}, status=400)
+    is_admin = request.user.is_staff or request.user.is_superuser
+    uname = data.get('uploader', request.user.username) if is_admin else request.user.username
+    file_path, user_root, _sc, _fn = _resolve_video_path(_get_doc_dir(), uname, course_slug, fname)
+    if not file_path.startswith(user_root + _os.sep):
+        return JsonResponse({'error': 'path ไม่ถูกต้อง'}, status=400)
+    if not _os.path.isfile(file_path):
         return JsonResponse({'error': 'ไม่พบไฟล์'}, status=404)
     try:
         _os.remove(file_path)
@@ -2787,7 +3926,7 @@ def api_reports_compliance_overview(request):
     """GET /military/api/v1/reports/compliance/overview/"""
     from .compliance import bulk_compliance_stats
     from .models import MilitaryUserProfile
-    qs = MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user")
+    qs = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user")
     stats = bulk_compliance_stats(qs)
     return JsonResponse(stats)
 
@@ -2801,7 +3940,7 @@ def api_reports_compliance_by_region(request):
     results = []
     region_map = {v: label for v, label in ARMY_REGION_CHOICES if v}
     regions = (MilitaryUserProfile.objects
-               .filter(user__is_active=True)
+               .filter(user__is_active=True).exclude(role__in=("admin", "org_admin"))
                .values_list("army_region", flat=True)
                .distinct())
     for region in regions:
@@ -2829,7 +3968,7 @@ def api_reports_compliance_by_rank_class(request):
         if rc_code == "all":
             continue
         # Filter by computed rank_class property — need to do per-profile check
-        all_profiles = MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user")
+        all_profiles = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user")
         matching = [p for p in all_profiles if p.rank_class == rc_code]
         if not matching:
             continue
@@ -2865,7 +4004,7 @@ def api_reports_compliance_by_rank(request):
     from .models import MilitaryUserProfile, RANK_CHOICES, CIVILIAN_PREFIX_CHOICES
     # Group by display rank/prefix
     groups = {}
-    for profile in MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user"):
+    for profile in MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user"):
         if profile.personnel_type == "military":
             key = profile.rank or "ไม่ระบุ"
             label = dict(RANK_CHOICES).get(key, key)
@@ -2896,7 +4035,7 @@ def api_reports_compliance_by_unit(request):
     from .compliance import get_compliance_status
     from .models import MilitaryUserProfile
     filter_unit = request.GET.get("unit", "")
-    qs = MilitaryUserProfile.objects.filter(user__is_active=True)
+    qs = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin"))
     if filter_unit:
         qs = qs.filter(unit__icontains=filter_unit)
     groups = {}
@@ -2941,7 +4080,7 @@ def api_reports_compliance_not_passed(request):
     rank_display_map = dict(RANK_CHOICES)
     region_display_map = dict(ARMY_REGION_CHOICES)
 
-    qs = MilitaryUserProfile.objects.filter(user__is_active=True).select_related("user")
+    qs = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user")
     if filter_unit:
         qs = qs.filter(unit__icontains=filter_unit)
     if filter_region:
@@ -3051,3 +4190,235 @@ def api_reports_certificates_expired(request):
         })
     return JsonResponse({"count": len(results), "results": results})
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Organization Management (Super Admin)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@require_http_methods(["GET", "POST"])
+@_require_admin
+def api_admin_organizations(request):
+    """GET: รายการหน่วยงานทั้งหมด | POST: สร้างหน่วยงานใหม่"""
+    if request.method == "GET":
+        qs = Organization.objects.all()
+        if request.GET.get("active_only") == "1":
+            qs = qs.filter(is_active=True)
+        q = request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(name__icontains=q) | qs.filter(code__icontains=q)
+        results = [{
+            "id": o.id, "name": o.name, "code": o.code,
+            "is_active": o.is_active,
+            "member_count": o.members.count(),
+        } for o in qs.order_by("name")]
+        return JsonResponse({"count": len(results), "results": results})
+
+    # POST — create
+    data = json.loads(request.body)
+    name = data.get("name", "").strip()
+    code = data.get("code", "").strip()
+    if not name or not code:
+        return JsonResponse({"error": "name และ code จำเป็นต้องระบุ"}, status=400)
+    if Organization.objects.filter(name=name).exists():
+        return JsonResponse({"error": "ชื่อหน่วยงานซ้ำ"}, status=400)
+    if Organization.objects.filter(code=code).exists():
+        return JsonResponse({"error": "รหัสหน่วยงานซ้ำ"}, status=400)
+    org = Organization.objects.create(name=name, code=code, is_active=True)
+    return JsonResponse({"id": org.id, "name": org.name, "code": org.code, "is_active": org.is_active}, status=201)
+
+
+@require_http_methods(["PATCH", "DELETE"])
+@_require_admin
+def api_admin_organization_detail(request, org_id):
+    """PATCH: แก้ไขชื่อ/รหัส/สถานะ | DELETE: Soft-delete (is_active=False)"""
+    try:
+        org = Organization.objects.get(pk=org_id)
+    except Organization.DoesNotExist:
+        return JsonResponse({"error": "ไม่พบหน่วยงาน"}, status=404)
+
+    if request.method == "DELETE":
+        org.is_active = False
+        org.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse({"status": "deactivated"})
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    if "name" in data:
+        org.name = data["name"].strip()
+    if "code" in data:
+        org.code = data["code"].strip()
+    if "is_active" in data:
+        org.is_active = bool(data["is_active"])
+    try:
+        org.save()
+    except IntegrityError:
+        return JsonResponse({"error": "ชื่อหรือรหัสหน่วยงานซ้ำกับหน่วยอื่นในระบบ"}, status=409)
+    return JsonResponse({"id": org.id, "name": org.name, "code": org.code, "is_active": org.is_active})
+
+
+@require_POST
+@_require_admin
+def api_admin_organization_bulk_transfer(request, org_id):
+    """ย้ายกำลังพลทั้งหมดจาก org_id → target_org_id"""
+    try:
+        src = Organization.objects.get(pk=org_id)
+    except Organization.DoesNotExist:
+        return JsonResponse({"error": "ไม่พบหน่วยงานต้นทาง"}, status=404)
+    data = json.loads(request.body)
+    target_id = data.get("target_org_id")
+    if not target_id:
+        return JsonResponse({"error": "ต้องระบุ target_org_id"}, status=400)
+    try:
+        dst = Organization.objects.get(pk=target_id)
+    except Organization.DoesNotExist:
+        return JsonResponse({"error": "ไม่พบหน่วยงานปลายทาง"}, status=404)
+
+    if src.pk == dst.pk:
+        return JsonResponse({"error": "หน่วยงานต้นทางและปลายทางต้องไม่ใช่หน่วยเดียวกัน"}, status=400)
+    if not dst.is_active:
+        return JsonResponse({"error": "ไม่สามารถโอนย้ายไปยังหน่วยงานที่ปิดใช้งานแล้ว"}, status=400)
+
+    moved = MilitaryUserProfile.objects.filter(organization=src).update(
+        organization=dst,
+    )
+    return JsonResponse({"moved": moved, "from": src.name, "to": dst.name})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public org list — ใช้ใน Signup dropdown
+# ─────────────────────────────────────────────────────────────────────────────
+
+@require_GET
+def api_organizations_public(request):
+    """คืนรายชื่อหน่วยงาน Active ทั้งหมด สำหรับ Dropdown สมัครสมาชิก"""
+    orgs = Organization.objects.filter(is_active=True).order_by("name").values("id", "code", "name")
+    return JsonResponse({"results": list(orgs)})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Org Admin Dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+@require_GET
+@_require_org_admin
+def api_org_admin_dashboard(request):
+    """สรุปสถิติสำหรับ Org Admin — scoped ตาม organization ของตัวเอง"""
+    profile = getattr(request.user, 'military_profile', None)
+    if not profile:
+        return JsonResponse({"error": "ไม่พบข้อมูลผู้ใช้"}, status=403)
+    is_super = request.user.is_staff or profile.role == "admin"
+
+    if is_super:
+        org_id = request.GET.get("org_id")
+        if org_id:
+            members = MilitaryUserProfile.objects.filter(organization_id=org_id).exclude(role__in=("admin", "org_admin"))
+            org_name = Organization.objects.filter(pk=org_id).values_list("name", flat=True).first() or ""
+        else:
+            members = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin"))
+            org_name = "ทุกหน่วยงาน"
+    else:
+        if not profile.organization_id:
+            return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+        members = MilitaryUserProfile.objects.filter(organization_id=profile.organization_id).exclude(role__in=("admin", "org_admin"))
+        org_name = profile.organization.name if profile.organization else ""
+
+    user_ids = list(members.values_list("user_id", flat=True))
+    total = len(user_ids)
+
+    # ผู้ที่มีใบประกาศ active
+    today = date.today()
+    passed_ids = set(
+        UserCertificateExpiry.objects.filter(
+            user_id__in=user_ids,
+            expiry_date__gte=today,
+        ).values_list("user_id", flat=True)
+    )
+    expired_ids = set(
+        UserCertificateExpiry.objects.filter(
+            user_id__in=user_ids,
+            expiry_date__lt=today,
+        ).values_list("user_id", flat=True)
+    ) - passed_ids
+    not_tested_count = total - len(passed_ids) - len(expired_ids)
+
+    passed_count = len(passed_ids)
+    expired_count = len(expired_ids)
+
+    def pct(n):
+        return round(n / total * 100, 1) if total else 0
+
+    # รายชื่อผู้ผ่านและผู้หมดอายุ
+    def _user_rows(uid_set):
+        rows = []
+        for p in MilitaryUserProfile.objects.filter(user_id__in=uid_set).select_related("user", "organization"):
+            cert = UserCertificateExpiry.objects.filter(user_id=p.user_id).order_by("-expiry_date").first()
+            rows.append({
+                "user_id": p.user_id,
+                "full_name": p.display_full_name,
+                "rank": p.display_rank_name,
+                "unit": p.organization.name if p.organization else p.unit,
+                "expiry_date": cert.expiry_date.isoformat() if cert else None,
+                "course_name": cert.course_name if cert else None,
+            })
+        return rows
+
+    return JsonResponse({
+        "org_name": org_name,
+        "total": total,
+        "passed": passed_count,
+        "expired": expired_count,
+        "not_tested": not_tested_count,
+        "pct_passed": pct(passed_count),
+        "pct_expired": pct(expired_count),
+        "pct_not_tested": pct(not_tested_count),
+        "passed_list": _user_rows(passed_ids),
+        "expired_list": _user_rows(expired_ids),
+    })
+
+
+@require_GET
+@_require_org_admin
+def api_org_admin_users(request):
+    """รายชื่อกำลังพลในหน่วยงานของ Org Admin"""
+    profile = getattr(request.user, 'military_profile', None)
+    if not profile:
+        return JsonResponse({"error": "ไม่พบข้อมูลผู้ใช้"}, status=403)
+    is_super = request.user.is_staff or profile.role == "admin"
+
+    if is_super:
+        org_id = request.GET.get("org_id")
+        qs = MilitaryUserProfile.objects.filter(organization_id=org_id).exclude(role__in=("admin", "org_admin")) if org_id else MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin"))
+    else:
+        if not profile.organization_id:
+            return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+        qs = MilitaryUserProfile.objects.filter(organization_id=profile.organization_id).exclude(role__in=("admin", "org_admin"))
+
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(full_name_th__icontains=q)
+
+    today = date.today()
+    results = []
+    for p in qs.select_related("user", "organization").order_by("full_name_th"):
+        cert = UserCertificateExpiry.objects.filter(user_id=p.user_id).order_by("-expiry_date").first()
+        if cert:
+            if cert.expiry_date >= today:
+                cert_status = "passed"
+            else:
+                cert_status = "expired"
+        else:
+            cert_status = "not_tested"
+        results.append({
+            "user_id": p.user_id,
+            "username": p.user.username,
+            "full_name": p.display_full_name,
+            "rank": p.display_rank_name,
+            "unit": p.organization.name if p.organization else p.unit,
+            "cert_status": cert_status,
+            "expiry_date": cert.expiry_date.isoformat() if cert else None,
+        })
+
+    return JsonResponse({"count": len(results), "results": results})

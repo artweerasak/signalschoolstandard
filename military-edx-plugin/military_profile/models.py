@@ -137,6 +137,27 @@ FEMALE_RANK_SUFFIX_RANKS = {
 
 
 # ---------------------------------------------------------------------------
+# Organization (หน่วยงาน) — Soft Delete
+# ---------------------------------------------------------------------------
+
+class Organization(models.Model):
+    """หน่วยงานทหาร — Soft Delete ด้วย is_active แทนการลบจริง"""
+    name      = models.CharField(max_length=200, unique=True, verbose_name="ชื่อหน่วยงาน")
+    code      = models.CharField(max_length=50,  unique=True, verbose_name="รหัสหน่วยงาน")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="เปิดใช้งาน")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering        = ["name"]
+        verbose_name        = "หน่วยงาน"
+        verbose_name_plural = "หน่วยงาน"
+
+    def __str__(self):
+        return f"[{self.code}] {self.name}"
+
+
+# ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
 
@@ -224,9 +245,19 @@ class MilitaryUserProfile(models.Model):
         db_index=True,
     )
 
+    # FK → Organization (nullable เพื่อ backward-compat)
+    organization = models.ForeignKey(
+        "Organization",
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="members",
+        verbose_name="หน่วยงาน (FK)",
+    )
+
     # Role-based access control
     ROLE_CHOICES = [
         ("admin",      "ผู้ดูแลระบบ"),
+        ("org_admin",  "ผู้ดูแลหน่วย (ฝอ.1)"),
         ("instructor", "ครูอาจารย์"),
         ("student",    "กำลังพล"),
     ]
@@ -325,8 +356,10 @@ class MilitaryUserProfile(models.Model):
         if self.national_id_encrypted and not self.national_id_hmac:
             try:
                 self.national_id_hmac = hmac_field(self.national_id)
-            except Exception:
-                pass
+            except Exception as _e:
+                import logging as _log
+                _log.getLogger(__name__).error("Failed to compute national_id_hmac: %s", _e)
+                raise  # ไม่ swallow — ข้อมูลที่ไม่มี HMAC จะทำให้ unique check ล้มเหลว
         super().save(*args, **kwargs)
 
     # ------------------------------------------------------------------
@@ -350,17 +383,23 @@ class MilitaryUserProfile(models.Model):
 
     @property
     def service_years(self) -> int:
-        """คำนวณอายุการรับราชการ (ปี)"""
+        """คำนวณอายุการรับราชการ (ปี) — ใช้ relativedelta เพื่อความแม่นยำ"""
         from datetime import date
-        delta = date.today() - self.service_start_date
-        return delta.days // 365
+        try:
+            from dateutil.relativedelta import relativedelta
+            return relativedelta(date.today(), self.service_start_date).years
+        except ImportError:
+            return (date.today() - self.service_start_date).days // 365
 
     @property
     def age(self) -> int:
-        """คำนวณอายุ (ปี)"""
+        """คำนวณอายุ (ปี) — ใช้ relativedelta เพื่อความแม่นยำ"""
         from datetime import date
-        delta = date.today() - self.birth_date
-        return delta.days // 365
+        try:
+            from dateutil.relativedelta import relativedelta
+            return relativedelta(date.today(), self.birth_date).years
+        except ImportError:
+            return (date.today() - self.birth_date).days // 365
 
     def set_custom_password(self, raw_password: str) -> None:
         """Hash and store a custom password."""
@@ -423,6 +462,58 @@ class CourseRequirement(models.Model):
 
     def __str__(self):
         return f"{self.get_rank_class_display()} → {self.course_name}"
+
+
+# ---------------------------------------------------------------------------
+# CourseAccessPolicy — ประเภทหลักสูตร + การมองเห็น + วิชาบังคับก่อน
+# ---------------------------------------------------------------------------
+
+class CourseAccessPolicy(models.Model):
+    """
+    นโยบายการเข้าถึงต่อหลักสูตร:
+      - general     : ทุกระดับมองเห็น/เข้าเรียนได้ทันที (ไม่มีเงื่อนไข)
+      - conditional : บังคับ rank_class ที่มองเห็นได้ + วิชาบังคับก่อน
+    """
+
+    TYPE_GENERAL     = "general"
+    TYPE_CONDITIONAL = "conditional"
+    TYPE_CHOICES = [
+        (TYPE_GENERAL,     "หลักสูตรทั่วไป"),
+        (TYPE_CONDITIONAL, "หลักสูตรตามเงื่อนไข"),
+    ]
+
+    course_id = models.CharField(
+        max_length=255, unique=True, db_index=True, verbose_name="Course ID (edX)",
+    )
+    course_type = models.CharField(
+        max_length=20, choices=TYPE_CHOICES, default=TYPE_GENERAL,
+        db_index=True, verbose_name="ประเภทหลักสูตร",
+    )
+    # rank_class ที่มองเห็น/สมัครได้ (เฉพาะ conditional) — คั่นด้วย comma, ว่าง = ทุกระดับ
+    allowed_rank_classes = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="ระดับที่เข้าถึงได้",
+    )
+    # course_id วิชาบังคับก่อน (เฉพาะ conditional) — คั่นด้วย comma ต้องผ่านก่อนจึงปลดล็อก
+    prerequisite_course_ids = models.TextField(
+        blank=True, default="", verbose_name="วิชาบังคับก่อน",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "นโยบายการเข้าถึงหลักสูตร"
+        verbose_name_plural = "นโยบายการเข้าถึงหลักสูตร"
+
+    def __str__(self):
+        return f"{self.course_id} [{self.get_course_type_display()}]"
+
+    @property
+    def allowed_list(self):
+        return [s.strip() for s in (self.allowed_rank_classes or "").split(",") if s.strip()]
+
+    @property
+    def prereq_list(self):
+        return [s.strip() for s in (self.prerequisite_course_ids or "").split(",") if s.strip()]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -490,10 +581,11 @@ class CertificatePendingApproval(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
         related_name='cert_pending_approvals', verbose_name='ผู้เรียน'
     )
-    passed_at  = models.DateTimeField(verbose_name='วันที่ผ่าน')
-    score      = models.FloatField(null=True, blank=True, verbose_name='คะแนน (%)')
-    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
-    cert_uuid  = models.CharField(max_length=50, blank=True, verbose_name='UUID ใบประกาศ')
+    passed_at     = models.DateTimeField(verbose_name='วันที่ผ่าน')
+    score         = models.FloatField(null=True, blank=True, verbose_name='คะแนน (%)')
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    cert_uuid     = models.CharField(max_length=50, blank=True, verbose_name='UUID ใบประกาศ')
+    unit_snapshot = models.CharField(max_length=255, blank=True, verbose_name='หน่วยงาน ณ วันสอบ')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -505,3 +597,47 @@ class CertificatePendingApproval(models.Model):
 
     def __str__(self):
         return f'{self.user.username} → {self.batch.name} [{self.status}]'
+
+
+class VideoSharePermission(models.Model):
+    """แชร์ทั้ง folder วิดีโอ (course_slug) ให้ shared_with มองเห็นทุกไฟล์ในนั้น"""
+    uploader    = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='video_shares_given', verbose_name='ผู้อัปโหลด'
+    )
+    course_slug = models.CharField(max_length=255, verbose_name='หมวดหมู่')
+    shared_with = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='video_shares_received', verbose_name='ผู้รับสิทธิ์'
+    )
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('uploader', 'course_slug', 'shared_with')
+        verbose_name = 'สิทธิ์แชร์วิดีโอ'
+        verbose_name_plural = 'สิทธิ์แชร์วิดีโอ'
+
+    def __str__(self):
+        return f'{self.uploader.username}/{self.course_slug} → {self.shared_with.username}'
+
+
+class DocSharePermission(models.Model):
+    """แชร์ทั้ง folder เอกสาร (course_slug) ให้ shared_with มองเห็นทุกไฟล์ในนั้น"""
+    uploader    = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='doc_shares_given', verbose_name='ผู้อัปโหลด'
+    )
+    course_slug = models.CharField(max_length=255, verbose_name='หมวดหมู่')
+    shared_with = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='doc_shares_received', verbose_name='ผู้รับสิทธิ์'
+    )
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('uploader', 'course_slug', 'shared_with')
+        verbose_name = 'สิทธิ์แชร์เอกสาร'
+        verbose_name_plural = 'สิทธิ์แชร์เอกสาร'
+
+    def __str__(self):
+        return f'{self.uploader.username}/{self.course_slug} → {self.shared_with.username}'

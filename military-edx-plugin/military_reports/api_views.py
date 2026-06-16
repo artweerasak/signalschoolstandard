@@ -21,6 +21,10 @@ from military_profile.models import (
 from military_profile.compliance import get_compliance_status, bulk_compliance_stats
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 
+# กำลังพลจริง (ไม่นับ admin / org_admin)
+_PERSONNEL_QS = lambda: MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin"))
+
+
 
 def _require_login(view_func):
     """Decorator: return 401 JSON แทน redirect เมื่อยังไม่ login"""
@@ -69,7 +73,9 @@ def api_dashboard_summary(request):
     )
 
     data = {
-        "total_personnel": MilitaryUserProfile.objects.count(),
+        "total_personnel": MilitaryUserProfile.objects.exclude(
+            role__in=("admin", "org_admin")
+        ).count(),
         **cert_stats,
     }
     cache.set(CACHE_KEY, data, timeout=300)
@@ -170,7 +176,7 @@ def api_rank_stats(request):
     rank_lookup = dict(RANK_CHOICES)
     count_map = {
         row["rank"]: row["count"]
-        for row in MilitaryUserProfile.objects.values("rank").annotate(count=Count("id"))
+        for row in _PERSONNEL_QS().values("rank").annotate(count=Count("id"))
     }
     stats = [
         {"code": code, "label": label, "count": count_map[code]}
@@ -260,7 +266,7 @@ def api_compliance_overview(request):
     ภาพรวมสถานะผ่าน/ไม่ผ่านมาตรฐานทั้งระบบ
     """
     filters = _parse_filters(request)
-    qs = _apply_profile_filters(MilitaryUserProfile.objects.all(), filters)
+    qs = _apply_profile_filters(_PERSONNEL_QS(), filters)
     stats = bulk_compliance_stats(qs)
     return JsonResponse(stats)
 
@@ -274,7 +280,7 @@ def api_compliance_by_region(request):
     """
     results = []
     for code, label in ARMY_REGION_CHOICES:
-        qs = MilitaryUserProfile.objects.all()
+        qs = _PERSONNEL_QS()
         if code:
             qs = qs.filter(army_region=code)
         else:
@@ -300,7 +306,7 @@ def api_compliance_by_rank_class(request):
     ]
     results = []
     for code, label, rank_list in groups:
-        qs = MilitaryUserProfile.objects.filter(rank__in=rank_list)
+        qs = _PERSONNEL_QS().filter(rank__in=rank_list)
         if filters.get("army_region"):
             qs = qs.filter(army_region=filters["army_region"])
         stats = bulk_compliance_stats(qs)
@@ -319,7 +325,7 @@ def api_compliance_by_rank(request):
     filters = _parse_filters(request)
     results = []
     for code, label in RANK_CHOICES:
-        qs = MilitaryUserProfile.objects.filter(rank=code)
+        qs = _PERSONNEL_QS().filter(rank=code)
         qs = _apply_profile_filters(qs, {k: v for k, v in filters.items() if k != "rank_class"})
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
@@ -336,7 +342,7 @@ def api_compliance_by_unit(request):
     Optional filters: army_region, rank_class
     """
     filters = _parse_filters(request)
-    qs = _apply_profile_filters(MilitaryUserProfile.objects.all(), filters)
+    qs = _apply_profile_filters(_PERSONNEL_QS(), filters)
     units = qs.values_list("unit", flat=True).distinct().order_by("unit")
 
     results = []
@@ -363,7 +369,7 @@ def api_compliance_not_passed(request):
     import math
     filters = _parse_filters(request)
     want_passed = request.GET.get("passed", "false").lower() == "true"
-    qs = _apply_profile_filters(MilitaryUserProfile.objects.all(), filters)
+    qs = _apply_profile_filters(_PERSONNEL_QS(), filters)
 
     search = request.GET.get("search", "").strip()
     if search:
