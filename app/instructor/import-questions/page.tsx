@@ -95,12 +95,24 @@ export default function ImportQuestionsPage() {
     }
   }
 
+  const ACCEPTED_EXTS = [".docx", ".doc", ".txt"];
+  const ACCEPTED_MIME = [
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/plain",
+  ];
+
+  function isAccepted(f: File) {
+    const name = f.name.toLowerCase();
+    return ACCEPTED_EXTS.some((e) => name.endsWith(e));
+  }
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f && f.name.endsWith(".docx")) setFile(f);
-    else setError("รองรับเฉพาะไฟล์ .docx");
+    if (f && isAccepted(f)) { setFile(f); setError(""); }
+    else setError("รองรับเฉพาะ .docx / .doc / .txt");
   }, []);
 
   async function handleParse() {
@@ -157,9 +169,9 @@ export default function ImportQuestionsPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-2">📥 นำเข้าข้อสอบจาก Word</h1>
+      <h1 className="text-2xl font-bold mb-2">📥 นำเข้าข้อสอบจากเอกสาร</h1>
       <p className="text-gray-500 mb-6">
-        อัปโหลดไฟล์ .docx แล้วระบบจะ parse ข้อสอบอัตโนมัติ และนำเข้าสู่คลังข้อสอบ
+        อัปโหลดไฟล์ .docx / .doc / .txt แล้วระบบจะ parse ข้อสอบอัตโนมัติ และนำเข้าสู่คลังข้อสอบ
       </p>
 
       {/* Step indicator */}
@@ -282,40 +294,41 @@ export default function ImportQuestionsPage() {
               </div>
             ) : (
               <div>
-                <p className="font-medium text-gray-600">ลาก-วาง ไฟล์ .docx ที่นี่</p>
-                <p className="text-sm text-gray-400 mt-1">หรือคลิกเพื่อเลือกไฟล์</p>
+                <p className="font-medium text-gray-600">ลาก-วาง ไฟล์ที่นี่</p>
+                <p className="text-sm text-gray-400 mt-1">.docx · .doc · .txt</p>
+                <p className="text-sm text-gray-400">หรือคลิกเพื่อเลือกไฟล์</p>
               </div>
             )}
           </div>
           <input
             ref={fileRef}
             type="file"
-            accept=".docx"
+            accept=".docx,.doc,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain"
             className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f && isAccepted(f)) { setFile(f); setError(""); }
+              else if (f) setError("รองรับเฉพาะ .docx / .doc / .txt");
+            }}
           />
 
           {/* Format guide */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
-            <p className="font-semibold text-blue-800 mb-2">📋 รูปแบบข้อสอบใน Word</p>
+            <p className="font-semibold text-blue-800 mb-2">📋 รูปแบบข้อสอบ (ใช้ได้ทุกไฟล์)</p>
             <pre className="text-blue-700 whitespace-pre-wrap font-mono text-xs leading-relaxed">
-{`คีย์ลัดที่ใช้ ค้นหา ในเอกสารคือ?
-A) Ctrl+H
-B) Ctrl+G
-C) Ctrl+F
-D) Ctrl+R
-ANSWER C
+{`ข้อ 1 อาวุธประจำกายของทหารสื่อสารคืออะไร
+ก. ปืนเล็กยาว
+ข. ปืนพก
+ค. ระเบิดมือ
+ง. มีดปลายปืน
+เฉลย ข
 
-ถ้าต้องการทำให้ตัวอักษรหนา ควรกดปุ่มใด?
-ก. Ctrl+I
-ข. Ctrl+B
-ค. Ctrl+U
-ง. Ctrl+S
-เฉลย ข`}
+ข้อ 2 ...`}
             </pre>
-            <p className="text-blue-600 mt-2 text-xs">
-              รองรับ: ก./A) ข./B) ค./C) ง./D) • เฉลย/ตอบ/ANSWER • มี/ไม่มีเลขข้อก็ได้ • คั่นด้วยบรรทัดว่างระหว่างข้อ
-            </p>
+            <div className="mt-2 space-y-1 text-xs text-blue-600">
+              <p>รองรับ: ก/A ข/B ค/C ง/D จ/E • เฉลย/ตอบ/ANSWER • มี/ไม่มีเลขข้อนำก็ได้</p>
+              <p>ไฟล์ที่รองรับ: <strong>.docx</strong> (Word ใหม่) · <strong>.doc</strong> (Word เก่า) · <strong>.txt</strong> (ข้อความธรรมดา)</p>
+            </div>
           </div>
 
           <button

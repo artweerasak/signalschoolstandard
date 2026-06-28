@@ -14,11 +14,14 @@ function getDaysLeftColor(days: number): string {
   return "text-yellow-600"
 }
 
+interface ConcurrentStatus { active: number | null; limit: number; pct: number | null }
+
 export default function DashboardPage() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
-  const [expiring, setExpiring] = useState<ExpiringSoonItem[]>([])
-  const [rankStats, setRankStats] = useState<RankStat[]>([])
-  const [loadError, setLoadError] = useState("")
+  const [summary, setSummary]       = useState<DashboardSummary | null>(null)
+  const [expiring, setExpiring]     = useState<ExpiringSoonItem[]>([])
+  const [rankStats, setRankStats]   = useState<RankStat[]>([])
+  const [loadError, setLoadError]   = useState("")
+  const [concurrent, setConcurrent] = useState<ConcurrentStatus | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -32,6 +35,18 @@ export default function DashboardPage() {
         setRankStats(ranks.results)
       })
       .catch(() => setLoadError("ไม่สามารถโหลดข้อมูลได้"))
+  }, [])
+
+  useEffect(() => {
+    async function fetchConcurrent() {
+      try {
+        const res = await fetch("/military/api/v1/admin/concurrent-users/", { credentials: "include" })
+        if (res.ok) setConcurrent(await res.json())
+      } catch { }
+    }
+    fetchConcurrent()
+    const t = setInterval(fetchConcurrent, 10_000)
+    return () => clearInterval(t)
   }, [])
 
   if (loadError) {
@@ -89,6 +104,43 @@ export default function DashboardPage() {
           subtitle="ฉบับ"
         />
       </div>
+
+      {/* Concurrent Users Real-time Bar */}
+      {concurrent && (() => {
+        const active  = concurrent.active ?? 0
+        const limit   = concurrent.limit
+        const pct     = concurrent.pct ?? 0
+        const barColor = pct > 85 ? "bg-red-500" : pct > 60 ? "bg-yellow-500" : "bg-green-500"
+        const textColor = pct > 85 ? "text-red-600" : pct > 60 ? "text-yellow-600" : "text-green-600"
+        const bgColor   = pct > 85 ? "bg-red-50 border-red-200" : pct > 60 ? "bg-yellow-50 border-yellow-200" : "bg-green-50 border-green-200"
+        const label     = pct > 85 ? "โหลดสูง ⚠️" : pct > 60 ? "โหลดปานกลาง" : "ปกติ"
+        return (
+          <div className={`rounded-xl border px-5 py-4 ${bgColor}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${barColor}`} />
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${barColor}`} />
+                </span>
+                <span className="text-sm font-semibold text-gray-700">ผู้ใช้งานพร้อมกันขณะนี้</span>
+                <span className={`text-xs font-medium ${textColor}`}>{label}</span>
+              </div>
+              <span className={`text-lg font-black tabular-nums ${textColor}`}>
+                {concurrent.active !== null ? active : "—"} <span className="text-sm font-normal text-gray-400">/ {limit} คน</span>
+              </span>
+            </div>
+            <div className="w-full bg-white/70 rounded-full h-3">
+              <div className={`h-3 rounded-full transition-all duration-700 ${barColor}`}
+                style={{ width: `${Math.min(pct, 100)}%` }} />
+            </div>
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>0</span>
+              <span>{pct.toFixed(1)}% ของ {limit} คน · อัปเดตทุก 10 วินาที</span>
+              <span>{limit}</span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Main content grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

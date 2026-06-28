@@ -1,6 +1,6 @@
 "use client"
-import { useEffect, useState } from "react"
-import { api, AdminUser } from "@/lib/api"
+import { useEffect, useRef, useState } from "react"
+import { api, AdminUser, Organization } from "@/lib/api"
 
 const RANK_CHOICES = [
   ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
@@ -38,6 +38,7 @@ type FormData = {
   username: string; password: string; role: string;
   national_id: string; military_id: string;
   personnel_type: string; gender: string; civilian_prefix: string;
+  organization_id: number | null;
 }
 
 const emptyForm: FormData = {
@@ -47,6 +48,7 @@ const emptyForm: FormData = {
   username: "", password: "", role: "student",
   national_id: "", military_id: "",
   personnel_type: "military", gender: "M", civilian_prefix: "",
+  organization_id: null,
 }
 
 
@@ -102,6 +104,87 @@ function EyeIcon({ open }: { open: boolean }) {
     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
     </svg>
+  )
+}
+
+function UnitDropdown({ value, orgId, onSelect }: {
+  value: string
+  orgId: number | null
+  onSelect: (name: string, id: number | null) => void
+}) {
+  const [orgs, setOrgs]       = useState<Organization[]>([])
+  const [q, setQ]             = useState(value)
+  const [open, setOpen]       = useState(false)
+  const [focused, setFocused] = useState(-1)
+  const wrapRef               = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    api.organizationsPublic().then(r => setOrgs(r.results)).catch(() => {})
+  }, [])
+
+  useEffect(() => { setQ(value) }, [value])
+
+  const filtered = orgs.filter(o =>
+    o.name.toLowerCase().includes(q.toLowerCase()) ||
+    o.code.toLowerCase().includes(q.toLowerCase())
+  ).slice(0, 20)
+
+  function selectOrg(org: Organization) {
+    onSelect(org.name, org.id)
+    setQ(org.name)
+    setOpen(false)
+    setFocused(-1)
+  }
+
+  function handleKey(e: React.KeyboardEvent) {
+    if (!open) { if (e.key === "ArrowDown") setOpen(true); return }
+    if (e.key === "ArrowDown") setFocused(f => Math.min(f + 1, filtered.length - 1))
+    else if (e.key === "ArrowUp") setFocused(f => Math.max(f - 1, 0))
+    else if (e.key === "Enter" && focused >= 0) { e.preventDefault(); selectOrg(filtered[focused]) }
+    else if (e.key === "Escape") setOpen(false)
+  }
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClickOutside)
+    return () => document.removeEventListener("mousedown", onClickOutside)
+  }, [])
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <input
+        type="text"
+        value={q}
+        onChange={e => {
+          setQ(e.target.value)
+          onSelect(e.target.value, null)
+          setOpen(true)
+          setFocused(-1)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKey}
+        placeholder="พิมพ์ชื่อหรือรหัสหน่วยงาน..."
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+        autoComplete="off"
+      />
+      {orgId && (
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600 font-medium">✓ ยืนยัน</span>
+      )}
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-56 overflow-auto text-sm">
+          {filtered.map((o, i) => (
+            <li key={o.id}
+              onMouseDown={() => selectOrg(o)}
+              className={`px-3 py-2.5 cursor-pointer hover:bg-purple-50 ${i === focused ? "bg-purple-100" : ""}`}>
+              <span className="font-medium">{o.name}</span>
+              <span className="text-xs text-gray-400 ml-2">[{o.code}]</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -164,6 +247,7 @@ export default function UsersPage() {
       personnel_type: (u as any).personnel_type ?? "military",
       gender: (u as any).gender ?? "M",
       civilian_prefix: (u as any).civilian_prefix ?? "",
+      organization_id: u.organization_id ?? null,
     })
     setError("")
     setShowModal(true)
@@ -460,8 +544,11 @@ export default function UsersPage() {
               </Field>
 
               <Field label="หน่วยต้นสังกัด" required>
-                <input type="text" value={form.unit} onChange={e => setForm(f => ({...f, unit: e.target.value}))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                <UnitDropdown
+                  value={form.unit}
+                  orgId={form.organization_id}
+                  onSelect={(name, id) => setForm(f => ({ ...f, unit: name, organization_id: id }))}
+                />
               </Field>
 
               <div className="grid grid-cols-2 gap-4">

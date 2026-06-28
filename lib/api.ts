@@ -9,6 +9,14 @@ const API_URL = typeof window !== "undefined"
   ? ""   // browser: relative path (same-origin → Caddy → LMS)
   : (process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th")
 
+export const CAPACITY_EXCEEDED_EVENT = "military:capacity_exceeded"
+
+function dispatchCapacityExceeded(detail: { active: number; limit: number; message: string }) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(CAPACITY_EXCEEDED_EVENT, { detail }))
+  }
+}
+
 /** อ่าน CSRF token จาก cookie ที่ Open edX ตั้งค่าไว้หลัง login */
 function getCsrfToken(): string {
   if (typeof document === "undefined") return ""
@@ -22,6 +30,13 @@ async function fetchAPI<T>(path: string): Promise<T> {
     headers: { "Accept": "application/json" },
   })
   if (res.status === 401) throw new Error("UNAUTHORIZED")
+  if (res.status === 503) {
+    const body = await res.json().catch(() => ({}))
+    if (body.error === "capacity_exceeded") {
+      dispatchCapacityExceeded(body)
+      throw new Error("CAPACITY_EXCEEDED")
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? `API error: ${res.status}`)
@@ -37,12 +52,18 @@ async function fetchAPIPost<T>(path: string, body: unknown, method = "POST"): Pr
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
-      // ส่ง CSRF token เพื่อป้องกัน CSRF attack
       ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
     },
     body: JSON.stringify(body),
   })
   if (res.status === 401) throw new Error("UNAUTHORIZED")
+  if (res.status === 503) {
+    const body2 = await res.json().catch(() => ({}))
+    if (body2.error === "capacity_exceeded") {
+      dispatchCapacityExceeded(body2)
+      throw new Error("CAPACITY_EXCEEDED")
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? `API error: ${res.status}`)
@@ -200,6 +221,7 @@ export interface AdminUser {
   service_start_date: string
   birth_date: string
   created_at: string
+  organization_id: number | null
 }
 
 export interface AdminUserListResponse {
