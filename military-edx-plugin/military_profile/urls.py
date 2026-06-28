@@ -7,6 +7,7 @@ from .api_views import (
     api_my_certificate_download,
     api_my_notifications,
     api_system_health,
+    api_concurrent_status,
     api_audit_log,
     api_me,
     api_my_profile,
@@ -94,6 +95,7 @@ urlpatterns = [
     path("api/v1/my/certificates/<int:cert_id>/download/", api_my_certificate_download, name="api_my_certificate_download"),
     path("api/v1/my/notifications/", api_my_notifications, name="api_my_notifications"),
     path("api/v1/admin/system-health/", api_system_health, name="api_system_health"),
+    path("api/v1/admin/concurrent-users/", api_concurrent_status, name="api_concurrent_status"),
     path("api/v1/admin/audit-log/", api_audit_log, name="api_audit_log"),
 
     # Public

@@ -11,6 +11,9 @@ setup(
         "openpyxl>=3.0",
         "WeasyPrint>=53.0",
         "cryptography>=3.4",
+        "pdfminer.six>=20221105",
+        "olefile>=0.47",
+        "mammoth>=1.6",
     ],
     entry_points={
         "lms.djangoapp": [

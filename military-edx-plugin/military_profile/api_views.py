@@ -1630,6 +1630,29 @@ def api_system_health(request):
     })
 
 
+@require_GET
+@_require_admin
+def api_concurrent_status(request):
+    """
+    GET /military/api/v1/admin/concurrent-users/
+    ส่งกลับจำนวน active users ปัจจุบันจาก Redis sorted set
+    """
+    import time as _time
+    from django.conf import settings as _djsettings
+    limit = getattr(_djsettings, "CONCURRENT_USER_LIMIT", 300)
+    try:
+        from django_redis import get_redis_connection
+        r = get_redis_connection("default")
+        cutoff = _time.time() - 300   # 5 นาที inactivity = ออกจากระบบ
+        r.zremrangebyscore("mil:active_users", 0, cutoff)
+        active = int(r.zcard("mil:active_users"))
+    except Exception:
+        active = None
+
+    pct = round(active / limit * 100, 1) if active is not None else None
+    return JsonResponse({"active": active, "limit": limit, "pct": pct})
+
+
 # --- Admin Course Management ---
 
 @require_GET
@@ -1914,14 +1937,88 @@ def _is_admin_or_instructor(user):
     return CourseAccessRole.objects.filter(user=user, role__in=["instructor", "staff"]).exists()
 
 # ============================================================
-# Import Questions from Word/Docx API
+# Import Questions from Word/Docx/Txt/Pdf API
 # ============================================================
 
-def _parse_docx_questions(file_bytes):
-    import io, re
-    from docx import Document
+_SUPPORTED_EXTS = {".txt", ".docx", ".doc"}
 
-    doc = Document(io.BytesIO(file_bytes))
+
+def _extract_lines_from_file(file_bytes, filename):
+    """Convert any supported document to a list of text lines for the question parser."""
+    import io, re, subprocess, tempfile, os
+
+    ext = os.path.splitext(filename.lower())[1]
+    raw_text = None
+
+    if ext == ".txt":
+        for enc in ("utf-8-sig", "utf-8", "cp874", "tis-620", "latin-1"):
+            try:
+                raw_text = file_bytes.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+
+    elif ext == ".docx":
+        from docx import Document
+        doc = Document(io.BytesIO(file_bytes))
+        parts = []
+        for para in doc.paragraphs:
+            t = para.text.strip()
+            if t:
+                parts.append(t)
+            else:
+                parts.append("")
+        raw_text = "\n".join(parts)
+
+    elif ext == ".doc":
+        # antiword first (installed); fallback to catdoc
+        with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+        try:
+            for cmd in [["antiword", "-t", tmp_path], ["catdoc", tmp_path]]:
+                try:
+                    result = subprocess.run(
+                        cmd, capture_output=True, timeout=30
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        for enc in ("utf-8", "cp874", "latin-1"):
+                            try:
+                                raw_text = result.stdout.decode(enc)
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        if raw_text:
+                            break
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    continue
+        finally:
+            os.unlink(tmp_path)
+
+        # Last resort: try opening as docx (some .doc are actually OOXML)
+        if not raw_text:
+            try:
+                from docx import Document
+                doc = Document(io.BytesIO(file_bytes))
+                parts = [para.text.strip() for para in doc.paragraphs]
+                raw_text = "\n".join(parts)
+            except Exception:
+                pass
+
+    if not raw_text:
+        return []
+
+    # Normalise line endings and split
+    lines = []
+    for line in raw_text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        sl = line.strip()
+        lines.append(sl if sl else "")
+    return lines
+
+
+def _parse_questions_from_lines(all_lines):
+    """Parse question data from a flat list of text lines."""
+    import re
     questions = []
     errors = []
     CHOICE_MAP = {"ก": "A", "ข": "B", "ค": "C", "ง": "D", "จ": "E"}
@@ -1929,9 +2026,6 @@ def _parse_docx_questions(file_bytes):
     def normalize_letter(s):
         s = s.strip().upper()
         return CHOICE_MAP.get(s, s)
-
-    current = None
-    line_num = 0
 
     def flush(q, ln):
         if not q:
@@ -1950,19 +2044,8 @@ def _parse_docx_questions(file_bytes):
     def is_complete(q):
         return q and q.get("question") and len(q.get("choices", [])) >= 2 and q.get("answer")
 
-    all_lines = []
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if not text:
-            all_lines.append("")
-        else:
-            # handle paragraph with embedded newlines (all in one paragraph)
-            for subline in text.split("\n"):
-                sl = subline.strip()
-                if sl:
-                    all_lines.append(sl)
-                else:
-                    all_lines.append("")
+    current = None
+    line_num = 0
 
     for line in all_lines:
         line_num += 1
@@ -2085,10 +2168,15 @@ def api_import_parse(request):
         if "file" not in request.FILES:
             return JsonResponse({"error": "ไม่พบไฟล์"}, status=400)
         f = request.FILES["file"]
-        if not f.name.lower().endswith(".docx"):
-            return JsonResponse({"error": "รองรับเฉพาะไฟล์ .docx"}, status=400)
+        import os
+        ext = os.path.splitext(f.name.lower())[1]
+        if ext not in _SUPPORTED_EXTS:
+            return JsonResponse({"error": f"รองรับไฟล์: {', '.join(sorted(_SUPPORTED_EXTS))}"}, status=400)
         file_bytes = f.read()
-        questions, errors = _parse_docx_questions(file_bytes)
+        lines = _extract_lines_from_file(file_bytes, f.name)
+        if not lines:
+            return JsonResponse({"error": "ไม่สามารถอ่านเนื้อหาไฟล์ได้ กรุณาตรวจสอบรูปแบบไฟล์"}, status=400)
+        questions, errors = _parse_questions_from_lines(lines)
         return JsonResponse({
             "total": len(questions),
             "questions": questions[:20],
@@ -2115,8 +2203,15 @@ def api_import_execute(request):
             return JsonResponse({"error": "ไม่พบไฟล์"}, status=400)
 
         f = request.FILES["file"]
+        import os
+        ext = os.path.splitext(f.name.lower())[1]
+        if ext not in _SUPPORTED_EXTS:
+            return JsonResponse({"error": f"รองรับไฟล์: {', '.join(sorted(_SUPPORTED_EXTS))}"}, status=400)
         file_bytes = f.read()
-        questions, parse_errors = _parse_docx_questions(file_bytes)
+        lines = _extract_lines_from_file(file_bytes, f.name)
+        if not lines:
+            return JsonResponse({"error": "ไม่สามารถอ่านเนื้อหาไฟล์ได้"}, status=400)
+        questions, parse_errors = _parse_questions_from_lines(lines)
 
         if not questions:
             return JsonResponse({"error": "ไม่พบข้อสอบในไฟล์", "parse_errors": parse_errors}, status=400)

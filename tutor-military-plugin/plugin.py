@@ -35,7 +35,11 @@ RUN pip install --no-cache-dir \\
     openpyxl>=3.1 \\
     WeasyPrint>=60.0 \\
     python-dateutil>=2.8 \\
-    openedx-authz>=1.0.0
+    openedx-authz>=1.0.0 \\
+    pdfminer.six>=20221105 \\
+    olefile>=0.47 \\
+    mammoth>=1.6
+RUN apt-get update -qq && apt-get install -y --no-install-recommends antiword catdoc && rm -rf /var/lib/apt/lists/*
 """,
     ),
 
@@ -62,7 +66,9 @@ MIDDLEWARE += [
     "military_auth.middleware.LoginRateLimitMiddleware",
     "military_auth.middleware.AuditLogMiddleware",
     "military_auth.middleware.ApiRateLimitMiddleware",
+    "military_profile.concurrent_limit.ConcurrentUserLimitMiddleware",
 ]
+CONCURRENT_USER_LIMIT = 300
 
 # ── Performance: DB Connection Pooling ──────────────────────────
 # CONN_MAX_AGE=0 (default) เปิด connection ใหม่ทุก request → ช้า
@@ -80,6 +86,8 @@ CSRF_COOKIE_DOMAIN = ".rta.mi.th"
 # in lms/envs/production.py BEFORE tutor/production.py overrides SESSION_COOKIE_DOMAIN, so we must
 # also override SHARED_COOKIE_DOMAIN explicitly here)
 SHARED_COOKIE_DOMAIN = ".rta.mi.th"
+SESSION_COOKIE_AGE = 28800          # 8 ชั่วโมง (8 * 60 * 60)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 MILITARY_HR_EMAILS = {{ MILITARY_HR_EMAILS | tojson }}
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = {{ LOGIN_RATE_LIMIT_MAX_ATTEMPTS }}
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = {{ LOGIN_RATE_LIMIT_WINDOW_SECONDS }}
@@ -136,6 +144,11 @@ CORS_ALLOW_CREDENTIALS = True
 # Video storage settings
 MILITARY_VIDEO_DIR = "/openedx/media/videos"
 MILITARY_VIDEO_BASE_URL = "/media/videos"
+# Document/PDF storage settings (เสิร์ฟผ่าน nginx-videos location /media/documents/)
+MILITARY_DOC_DIR = "/openedx/media/documents"
+MILITARY_DOC_BASE_URL = "/media/documents"
+# Gotenberg — Office→PDF converter (ดู docker-compose.media.yml)
+GOTENBERG_URL = "http://gotenberg:3000"
 DATA_UPLOAD_MAX_MEMORY_SIZE = None        # ไม่จำกัด — จัดการโดย Caddy
 FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB temp buffer
 FILE_UPLOAD_HANDLERS = [
@@ -173,6 +186,14 @@ SESSION_COOKIE_DOMAIN = ".rta.mi.th"
 CSRF_COOKIE_DOMAIN = ".rta.mi.th"
 SHARED_COOKIE_DOMAIN = ".rta.mi.th"
 MEILISEARCH_PUBLIC_URL = "https://meilisearch-signalstandard.rta.mi.th"
+
+# ── อัปโหลดตำราเรียน/PDF ขนาดใหญ่ใน Studio (Files & Uploads) ───────────
+MAX_ASSET_UPLOAD_FILE_SIZE_IN_MB = 100
+DATA_UPLOAD_MAX_MEMORY_SIZE = None                 # ปิด guard ขนาด request (กันตัดเงียบ)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024      # ไฟล์เกิน 5MB เขียนลง disk ทันที ไม่อม RAM
+FILE_UPLOAD_HANDLERS = [
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
 """,
     ),
 
@@ -277,6 +298,15 @@ hooks.Filters.ENV_PATCHES.add_items([
 handle /military/api/v1/videos/upload/ {
     request_body {
         max_size 10GB
+    }
+    reverse_proxy lms:8000 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
+}
+handle /military/api/v1/documents/upload/ {
+    request_body {
+        max_size 1GB
     }
     reverse_proxy lms:8000 {
         header_up X-Forwarded-Port 443
@@ -436,8 +466,18 @@ handle /profile* {
     }
 }
 
-# ── Video files ────────────────────────────────────────────────────────────
-handle /media/videos/* {
+# ── Video files — handle_path ตัด /media/videos prefix ก่อนส่งให้ nginx ──
+# nginx-videos mount: openedx-media/videos/ → /usr/share/nginx/html
+# URI ที่ nginx รับต้องเป็น /{username}/{subject}/{file} (ไม่มี /media/videos นำหน้า)
+handle_path /media/videos/* {
+    reverse_proxy nginx-videos:80 {
+        header_up X-Forwarded-Port 443
+        header_up X-Forwarded-Proto https
+    }
+}
+
+# ── Document/PDF files — ไม่ strip (nginx มี location /media/documents/ ตรงๆ) ──
+handle /media/documents/* {
     reverse_proxy nginx-videos:80 {
         header_up X-Forwarded-Port 443
         header_up X-Forwarded-Proto https
@@ -453,7 +493,7 @@ handle /media/videos/* {
     path /my /my/*
     path /certificate /certificate/*
     path /_next/*
-    path /favicon.ico /signal_logo.png
+    path /favicon.ico /signal_logo.png /ssc_shield_logo.png /ssc_emblem.png /signature_commander.png
 }
 handle @nextjs {
     encode gzip
