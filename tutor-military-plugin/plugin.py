@@ -68,7 +68,11 @@ MIDDLEWARE += [
     "military_auth.middleware.ApiRateLimitMiddleware",
     "military_profile.concurrent_limit.ConcurrentUserLimitMiddleware",
 ]
-CONCURRENT_USER_LIMIT = 300
+# 2026-07-17: ย้ายมาจากการแก้มือใน env/apps/openedx/settings/lms/production.py
+# ค่าที่รันจริงมาตลอดคือ 450 (ปลั๊กอินเขียน 300 แต่ไม่เคยมีผลเพราะไม่ได้ config save)
+# หมายเหตุ: middleware นับเฉพาะ path /military/api/ -> นับได้ ~27% ของผู้ใช้จริง
+#           เพดานนี้จึงแทบไม่เคยเด้ง ดูรายละเอียดใน military_profile/concurrent_limit.py
+CONCURRENT_USER_LIMIT = 450
 
 # ── Performance: DB Connection Pooling ──────────────────────────
 # CONN_MAX_AGE=0 (default) เปิด connection ใหม่ทุก request → ช้า
@@ -86,7 +90,8 @@ CSRF_COOKIE_DOMAIN = ".rta.mi.th"
 # in lms/envs/production.py BEFORE tutor/production.py overrides SESSION_COOKIE_DOMAIN, so we must
 # also override SHARED_COOKIE_DOMAIN explicitly here)
 SHARED_COOKIE_DOMAIN = ".rta.mi.th"
-SESSION_COOKIE_AGE = 28800          # 8 ชั่วโมง (8 * 60 * 60)
+# 2026-07-17: ย้ายมาจากการแก้มือใน env/.../lms/production.py — ค่าที่รันจริงคือ 3600
+SESSION_COOKIE_AGE = 3600           # 1 ชั่วโมง (1 * 60 * 60)
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 MILITARY_HR_EMAILS = {{ MILITARY_HR_EMAILS | tojson }}
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = {{ LOGIN_RATE_LIMIT_MAX_ATTEMPTS }}
@@ -156,14 +161,18 @@ FILE_UPLOAD_HANDLERS = [
 ]
 
 from celery.schedules import crontab
+# 2026-07-17: ย้ายมาจากการแก้มือใน env/.../lms/production.py
+# เวลาในนี้เป็น UTC — ตั้งให้รันตอนดึก/เช้ามืดเวลาไทย (UTC+7) เพื่อไม่ให้
+# งาน background ไปแย่ง CPU กับนักเรียนช่วงกลางวันที่คนใช้งานเยอะที่สุด
+# (พีคจริงวัดได้ 13:00-14:00 น. เวลาไทย = 06:00-07:00 UTC — ห้ามตั้งชนช่วงนี้)
 CELERYBEAT_SCHEDULE.update({
     "military-daily-expiry-check": {
         "task": "certificate_expiry.tasks.daily_expiry_check",
-        "schedule": crontab(hour=6, minute=0),
+        "schedule": crontab(hour=19, minute=0),  # 19:00 UTC = 02:00 น. เวลาไทย
     },
     "military-weekly-hr-summary": {
         "task": "expiry_notifications.tasks.weekly_hr_summary",
-        "schedule": crontab(hour=8, minute=0, day_of_week=1),
+        "schedule": crontab(hour=19, minute=30, day_of_week=1),  # 19:30 UTC จันทร์ = 02:30 น. อังคารเวลาไทย
     },
 })
 """,
@@ -194,6 +203,24 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024      # ไฟล์เกิน 5M
 FILE_UPLOAD_HANDLERS = [
     "django.core.files.uploadhandler.TemporaryFileUploadHandler",
 ]
+
+# ── Add military plugin root to sys.path (2026-07-17) ─────────────
+# บล็อกนี้มีอยู่ใน openedx-lms-common-settings มาตลอด แต่ขาดหายไปฝั่ง CMS
+# ทำให้ import โมดูลที่ finder ของ editable-install ไม่รู้จัก (เพราะถูกเพิ่ม
+# เข้ามาหลัง image build 2026-04-25) จะพังใน Studio แต่ใช้ได้ใน LMS
+# ใส่ไว้ให้สมมาตรกัน + กันปัญหาเดิมซ้ำถ้ามีการเพิ่มโมดูลใหม่โดยไม่ rebuild
+#
+# ⚠️ บล็อกนี้ "ไม่ได้" แก้ error ของ XBlock military-pdf-viewer:
+#     ERROR: "military-pdf-viewer" is an unknown component type
+#   นั่นเป็นคนละกลไก — XBlock registry อ่าน entry point กลุ่ม xblock.v1
+#   จาก dist-info/ ใน venv (อบไว้ตอน pip install -e เมื่อ 2026-04-25)
+#   ซึ่งไม่มีหมวด [xblock.v1] เลย ส่วน egg-info/ ในซอร์สที่มีมัน ไม่มีใครอ่าน
+#   sys.path ช่วยให้ "import ได้" แต่ไม่ทำให้ "ถูกลงทะเบียน"
+#   วิธีแก้เดียวคือรัน pip install -e ใหม่ => tutor images build openedx
+import sys as _sys
+_military_plugin_path = "/mnt/military-edx-plugin"
+if _military_plugin_path not in _sys.path:
+    _sys.path.insert(0, _military_plugin_path)
 """,
     ),
 
@@ -566,11 +593,17 @@ XBLOCK_SETTINGS.setdefault("military-pdf-viewer", {})
 
 ########################################################################
 # MILITARY_PATCH: Performance — เพิ่ม uWSGI workers LMS/CMS          #
-# Server: 4 CPU cores, 16GB RAM — optimal workers = 6                 #
+# 2026-07-17 แก้: เดิมคอมเมนต์เขียนว่า "4 CPU cores — optimal = 6"    #
+#   แต่เครื่องมี 8 vCPU มาตลอด เพียงแต่ cpu4-7 ถูกปิดไว้ (offline)    #
+#   เปิดครบแล้วเมื่อ 2026-07-17 -> nproc = 8                          #
+#   ค่าที่รันจริงคือ 8 (จาก env ที่ render ไว้ 2026-04-25) ไม่ใช่ 6    #
+#   จึงตั้งเป็น 8 ให้ตรงกับของจริง + จำนวน core ที่มี                 #
+# หมายเหตุ: CMS (Studio) วัดได้ 0.88% CPU / 1.6GB RAM — แทบไม่ทำงาน   #
+#   ลด CMS ลงได้อีกถ้าต้องการคืน RAM (นักเรียนไม่ใช้ Studio)          #
 ########################################################################
 hooks.Filters.CONFIG_DEFAULTS.add_items([
-    ("OPENEDX_LMS_UWSGI_WORKERS", 6),
-    ("OPENEDX_CMS_UWSGI_WORKERS", 6),
+    ("OPENEDX_LMS_UWSGI_WORKERS", 8),
+    ("OPENEDX_CMS_UWSGI_WORKERS", 8),
 ])
 
 ########################################################################
@@ -588,6 +621,47 @@ listen = 512
 buffer-size = 32768
 http-timeout = 3600
 socket-timeout = 3600
+""",
+    ),
+])
+
+########################################################################
+# MILITARY_PATCH 2026-07-17: กู้การแก้ด้วยมือกลับเข้าปลั๊กอิน           #
+#                                                                      #
+# ที่มา: ตรวจ config drift แล้วพบว่ามีการแก้ไฟล์ที่ Tutor generate     #
+#   ขึ้นมา (env/apps/openedx/settings/...) ด้วยมือโดยตรง               #
+#   ไฟล์พวกนั้นถูกเขียนทับทุกครั้งที่ `tutor config save`               #
+#   ของจริงรอดมาได้เพราะไม่มีใครรัน config save เลยตั้งแต่ 2026-04-25  #
+#   (config.yml แก้ 2026-06-11 แต่ env/ ยังเป็นของ 2026-04-25)         #
+#                                                                      #
+# ย้ายมาไว้ที่นี่แล้วจะ generate ออกมาเองทุกครั้ง ไม่หายอีก             #
+########################################################################
+hooks.Filters.ENV_PATCHES.add_items([
+    (
+        "openedx-lms-production-settings",
+        """
+# ── ใบประกาศนียบัตร (ย้ายมาจากการแก้มือ 2026-07-17) ────────────────
+# เดิมถูกเขียนต่อท้าย env/.../lms/production.py ด้วยมือ
+# ถ้าหายไป ระบบจะกลับไปใช้ template ใบประกาศมาตรฐานของ Open edX
+FEATURES['CUSTOM_CERTIFICATE_TEMPLATES_ENABLED'] = True
+CERTIFICATE_DATE_FORMAT = '%Y-%m-%d'
+""",
+    ),
+    (
+        "openedx-cms-production-settings",
+        """
+# ── ใช้ session cookie ร่วมกับ LMS (ย้ายมาจากการแก้มือ 2026-07-17) ──
+# Tutor ตั้ง SESSION_COOKIE_NAME = "studio_session_id" ให้ CMS
+# แต่เดิมมีคน "คอมเมนต์ทิ้ง" ในไฟล์ที่ generate ออกมา พร้อมเหตุผลว่า:
+#
+#   "Share session cookie with LMS — same SECRET_KEY means LMS sessions
+#    are valid in CMS, eliminating the OAuth2 SSO redirect that breaks
+#    CORS for Course Authoring MFE."
+#
+# ในปลั๊กอินเราคอมเมนต์บรรทัดของ Tutor ทิ้งไม่ได้ จึง override ทับ
+# ด้วยค่า default ของ Django แทน ซึ่งให้ผลเหมือนกันทุกประการ
+# ⚠️ ถ้าลบบรรทัดนี้ Course Authoring MFE จะพังด้วย CORS error
+SESSION_COOKIE_NAME = "sessionid"
 """,
     ),
 ])

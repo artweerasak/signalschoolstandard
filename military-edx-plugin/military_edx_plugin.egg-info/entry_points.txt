@@ -9,3 +9,9 @@ expiry_notifications = expiry_notifications.apps:ExpiryNotificationsConfig
 military_auth = military_auth.apps:MilitaryAuthConfig
 military_profile = military_profile.apps:MilitaryProfileConfig
 military_reports = military_reports.apps:MilitaryReportsConfig
+
+[openedx.block_structure_transformer]
+military_itembank_grading = military_profile.itembank_grading_transformer:ItemBankGradingTransformer
+
+[xblock.v1]
+military-pdf-viewer = military_pdf_viewer.xblock:MilitaryPdfViewerXBlock

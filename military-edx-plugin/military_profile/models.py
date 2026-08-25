@@ -73,6 +73,7 @@ RANK_CHOICES = [
     ("SSGT", "จ่าสิบตรี"),
     ("MSGT", "จ่าสิบโท"),
     ("CSGT", "จ่าสิบเอก"),
+    ("CSGT_S", "จ่าสิบเอกพิเศษ"),
     ("WO1", "พันจ่าตรี"),
     ("WO2", "พันจ่าโท"),
     ("WO3", "พันจ่าเอก"),
@@ -82,16 +83,17 @@ RANK_CHOICES = [
     ("MAJ", "พันตรี"),
     ("LTCOL", "พันโท"),
     ("COL", "พันเอก"),
+    ("COL_S", "พันเอกพิเศษ"),
     ("BGEN", "พลตรี"),
     ("MGEN", "พลโท"),
     ("GEN", "พลเอก"),
 ]
 
 # ยศที่อยู่ในระดับ นายทหารประทวน (Non-Commissioned Officers)
-NCO_RANKS = {"CPL", "SGT3", "SGT2", "SSGT", "MSGT", "CSGT", "WO1", "WO2", "WO3"}
+NCO_RANKS = {"CPL", "SGT3", "SGT2", "SSGT", "MSGT", "CSGT", "CSGT_S", "WO1", "WO2", "WO3"}
 
 # ยศที่อยู่ในระดับ นายทหารสัญญาบัตร (Commissioned Officers)
-OFFICER_RANKS = {"2LT", "1LT", "CPT", "MAJ", "LTCOL", "COL", "BGEN", "MGEN", "GEN"}
+OFFICER_RANKS = {"2LT", "1LT", "CPT", "MAJ", "LTCOL", "COL", "COL_S", "BGEN", "MGEN", "GEN"}
 
 RANK_CLASS_CHOICES = [
     ("nco",        "นายทหารประทวน"),
@@ -103,11 +105,12 @@ RANK_CLASS_CHOICES = [
 ]
 
 ARMY_REGION_CHOICES = [
-    ("",    "ไม่ระบุ"),
-    ("1",   "กองทัพภาคที่ 1"),
-    ("2",   "กองทัพภาคที่ 2"),
-    ("3",   "กองทัพภาคที่ 3"),
-    ("4",   "กองทัพภาคที่ 4"),
+    ("",        "ไม่ระบุ"),
+    ("1",       "กองทัพภาคที่ 1"),
+    ("2",       "กองทัพภาคที่ 2"),
+    ("3",       "กองทัพภาคที่ 3"),
+    ("4",       "กองทัพภาคที่ 4"),
+    ("central", "ส่วนกลาง"),
 ]
 
 PERSONNEL_TYPE_CHOICES = [
@@ -141,9 +144,19 @@ FEMALE_RANK_SUFFIX_RANKS = {
 # ---------------------------------------------------------------------------
 
 class Organization(models.Model):
-    """หน่วยงานทหาร — Soft Delete ด้วย is_active แทนการลบจริง"""
+    """หน่วยงานทหาร — Soft Delete ด้วย is_active แทนการลบจริง
+
+    army_region อยู่ที่นี่ (ระดับหน่วย) ไม่ใช่ที่ MilitaryUserProfile เพราะ
+    ทัพภาคเป็นคุณสมบัติของ "หน่วย" (ที่ตั้ง/สังกัด) ไม่ใช่ของตัวบุคคล — แก้ที่
+    หน่วยครั้งเดียว สมาชิกทุกคนในหน่วยนั้นได้ทัพภาคที่ถูกต้องทันที ไม่ต้องไล่
+    แก้รายบุคคล (ดู MilitaryUserProfile.effective_army_region)
+    """
     name      = models.CharField(max_length=200, unique=True, verbose_name="ชื่อหน่วยงาน")
     code      = models.CharField(max_length=50,  unique=True, verbose_name="รหัสหน่วยงาน")
+    army_region = models.CharField(
+        max_length=10, choices=ARMY_REGION_CHOICES, blank=True, default="",
+        verbose_name="กองทัพภาค", db_index=True,
+    )
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="เปิดใช้งาน")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -216,10 +229,13 @@ class MilitaryUserProfile(models.Model):
     )
 
     rank = models.CharField(max_length=10, choices=RANK_CHOICES, blank=True, default="", verbose_name="ชั้นยศ")
+    position = models.CharField(max_length=255, blank=True, default="", verbose_name="ตำแหน่ง")
     unit = models.CharField(max_length=255, verbose_name="หน่วยต้นสังกัด")
     sub_unit = models.CharField(max_length=255, blank=True, default="", verbose_name="หน่วยรอง")
-    service_start_date = models.DateField(verbose_name="วันเริ่มรับราชการ")
-    birth_date = models.DateField(verbose_name="วันเกิด")
+    address = models.CharField(max_length=500, blank=True, default="", verbose_name="ที่อยู่ตามบัตรประชาชน")
+    thaid_verified = models.BooleanField(default=False, verbose_name="ยืนยันตัวตนผ่าน ThaID")
+    service_start_date = models.DateField(null=True, blank=True, verbose_name="วันเริ่มรับราชการ")
+    birth_date = models.DateField(null=True, blank=True, verbose_name="วันเกิด")
 
     # Contact information — สำหรับ admin ใช้ติดต่อ/ประชาสัมพันธ์
     contact_email = models.EmailField(
@@ -237,7 +253,7 @@ class MilitaryUserProfile(models.Model):
 
     # สังกัดกองทัพภาค
     army_region = models.CharField(
-        max_length=1,
+        max_length=10,
         choices=ARMY_REGION_CHOICES,
         blank=True,
         default="",
@@ -282,6 +298,16 @@ class MilitaryUserProfile(models.Model):
 
     def __str__(self):
         return f"{self.display_prefix} {self.full_name_th}".strip()
+
+    @property
+    def effective_army_region(self) -> str:
+        """ทัพภาคที่ใช้จริง — ยึดตามหน่วย (organization.army_region) เป็นหลัก
+        เพราะทัพภาคเป็นคุณสมบัติของหน่วย ไม่ใช่ของบุคคล ถ้าหน่วยยังไม่ได้ตั้ง
+        ทัพภาคไว้ (หรือยังไม่ผูกกับ Organization) จึง fallback ไปที่ army_region
+        เดิมของตัวบุคคล (เผื่อข้อมูลเก่าก่อนมีระบบนี้)"""
+        if self.organization_id and self.organization.army_region:
+            return self.organization.army_region
+        return self.army_region
 
     @property
     def display_rank_name(self) -> str:
@@ -382,8 +408,9 @@ class MilitaryUserProfile(models.Model):
         return hmac.compare_digest(stored, provided)
 
     @property
-    def service_years(self) -> int:
-        """คำนวณอายุการรับราชการ (ปี) — ใช้ relativedelta เพื่อความแม่นยำ"""
+    def service_years(self):
+        if not self.service_start_date:
+            return None
         from datetime import date
         try:
             from dateutil.relativedelta import relativedelta
@@ -392,14 +419,20 @@ class MilitaryUserProfile(models.Model):
             return (date.today() - self.service_start_date).days // 365
 
     @property
-    def age(self) -> int:
-        """คำนวณอายุ (ปี) — ใช้ relativedelta เพื่อความแม่นยำ"""
+    def age(self):
+        if not self.birth_date:
+            return None
         from datetime import date
         try:
             from dateutil.relativedelta import relativedelta
             return relativedelta(date.today(), self.birth_date).years
         except ImportError:
             return (date.today() - self.birth_date).days // 365
+
+    @property
+    def profile_complete(self) -> bool:
+        """True เมื่อข้อมูลสำคัญครบถ้วน"""
+        return bool(self.birth_date and self.service_start_date)
 
     def set_custom_password(self, raw_password: str) -> None:
         """Hash and store a custom password."""

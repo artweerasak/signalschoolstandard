@@ -14,6 +14,7 @@ setup(
         "pdfminer.six>=20221105",
         "olefile>=0.47",
         "mammoth>=1.6",
+        "python-docx>=1.0",
     ],
     entry_points={
         "lms.djangoapp": [
@@ -30,6 +31,9 @@ setup(
         ],
         "xblock.v1": [
             "military-pdf-viewer = military_pdf_viewer.xblock:MilitaryPdfViewerXBlock",
+        ],
+        "openedx.block_structure_transformer": [
+            "military_itembank_grading = military_profile.itembank_grading_transformer:ItemBankGradingTransformer",
         ],
     },
 )

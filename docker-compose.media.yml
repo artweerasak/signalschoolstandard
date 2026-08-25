@@ -1,9 +1,30 @@
 services:
+  gotenberg:
+    # ตัด build: ออก 2026-08-01 — ใช้ image ที่ build ไว้แล้ว (build directive ทำ docker compose up แฮงค์)
+    image: military-gotenberg:latest
+    restart: always
+    command:
+      - "gotenberg"
+      - "--api-timeout=120s"
+      - "--libreoffice-auto-start=true"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
+    networks:
+      tutor_local_default:
+        aliases:
+          - gotenberg
+
   nginx-videos:
     image: nginx:alpine
     restart: always
     volumes:
       - /home/adminrta/.local/share/tutor/data/openedx-media/videos:/usr/share/nginx/html:ro
+      - /home/adminrta/.local/share/tutor/data/openedx-media/documents:/usr/share/nginx/docs:ro
+      - /opt/signalstandard/nginx-media.conf:/etc/nginx/conf.d/default.conf:ro
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }   # nginx-videos เคยโต 2GB
     networks:
       tutor_local_default:
         aliases:

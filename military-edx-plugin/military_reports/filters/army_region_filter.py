@@ -18,7 +18,8 @@ class ArmyRegionFilter(BaseSearchFilter):
         }
 
     def apply(self, queryset, params):
+        from military_profile.compliance import army_region_q
         region = params.get("army_region", "").strip()
         if region:
-            queryset = queryset.filter(army_region=region)
+            queryset = queryset.filter(army_region_q(region))
         return queryset

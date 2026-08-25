@@ -42,3 +42,28 @@ class MilitaryProfileConfig(AppConfig):
                 _ash.update_asset = _patched_update_asset
         except Exception:
             pass
+
+        # ── แก้คะแนนเต็มของ "คลังข้อสอบ" (itembank/Content Libraries V2) แบบสุ่ม ──
+        # Open edX เวอร์ชันนี้มี transformer กรอง "เฉพาะข้อที่ถูกสุ่มเลือก" ให้แค่
+        # library_content (คลังแบบเก่า) เท่านั้น ทำให้ itembank ถูกคิดคะแนนเต็มจาก
+        # ข้อทั้งหมดในคลัง แทนที่จะเป็นจำนวนที่สุ่มมาจริง (เช่น 20 แทน 5)
+        # เติม ItemBankGradingTransformer (เทียบเท่า ContentLibraryTransformer แต่
+        # สำหรับ itembank) เข้าไปใน default access-transformers ที่ใช้ทั้งตอนคำนวณ
+        # คะแนนและตอนแสดงผลหน้าเรียน — ใช้ได้เฉพาะฝั่ง LMS เท่านั้น
+        try:
+            from lms.djangoapps.course_blocks import api as _course_blocks_api
+            from military_profile.itembank_grading_transformer import ItemBankGradingTransformer
+
+            if not getattr(_course_blocks_api.get_course_block_access_transformers, "_military_patched", False):
+                _orig_get_transformers = _course_blocks_api.get_course_block_access_transformers
+
+                def _patched_get_transformers(user):
+                    transformers = _orig_get_transformers(user)
+                    transformers.append(ItemBankGradingTransformer())
+                    return transformers
+
+                _patched_get_transformers._military_patched = True
+                _course_blocks_api.get_course_block_access_transformers = _patched_get_transformers
+        except Exception:
+            # CMS / สภาพแวดล้อมที่ไม่มี lms.djangoapps.course_blocks — ข้ามได้
+            pass

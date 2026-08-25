@@ -188,43 +188,6 @@ def api_rank_stats(request):
     return JsonResponse(data)
 
 
-@require_GET
-@_require_login
-def api_me(request):
-    """
-    GET /military/api/v1/me/
-    Returns: ข้อมูลผู้ใช้ปัจจุบัน (สำหรับ header/nav ของ Next.js)
-    Cache per-user 2 นาที — ถูกเรียกทุก page load
-    """
-    CACHE_KEY = f"api_me_{request.user.id}"
-    cached = cache.get(CACHE_KEY)
-    if cached:
-        return JsonResponse(cached)
-
-    user = request.user
-    profile = getattr(user, "military_profile", None)
-
-    if user.is_staff:
-        role = "admin"
-    elif profile and profile.role == "instructor":
-        role = "instructor"
-    else:
-        role = profile.role if profile else "student"
-
-    data = {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "is_staff": user.is_staff,
-        "role": role,
-        "full_name": profile.full_name_th if profile else user.get_full_name() or user.username,
-        "rank": profile.get_rank_display() if profile else None,
-        "unit": profile.unit if profile else None,
-    }
-    cache.set(CACHE_KEY, data, timeout=120)
-    return JsonResponse(data)
-
-
 # ===========================================================================
 # Compliance Report Endpoints
 # ===========================================================================
@@ -242,7 +205,8 @@ def _parse_filters(request):
 def _apply_profile_filters(queryset, filters: dict):
     """Apply army_region, rank_class, rank, unit filters to MilitaryUserProfile queryset."""
     if filters.get("army_region"):
-        queryset = queryset.filter(army_region=filters["army_region"])
+        from military_profile.compliance import army_region_q
+        queryset = queryset.filter(army_region_q(filters["army_region"]))
     if filters.get("rank_class"):
         rc = filters["rank_class"]
         if rc == "nco":
@@ -278,13 +242,11 @@ def api_compliance_by_region(request):
     GET /military/api/v1/reports/compliance/by-region/
     สถิติแยกตามกองทัพภาค
     """
+    from military_profile.compliance import army_region_q
+
     results = []
     for code, label in ARMY_REGION_CHOICES:
-        qs = _PERSONNEL_QS()
-        if code:
-            qs = qs.filter(army_region=code)
-        else:
-            qs = qs.filter(army_region="")
+        qs = _PERSONNEL_QS().filter(army_region_q(code))
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
             results.append({"key": code, "label": label, **stats})
@@ -308,7 +270,8 @@ def api_compliance_by_rank_class(request):
     for code, label, rank_list in groups:
         qs = _PERSONNEL_QS().filter(rank__in=rank_list)
         if filters.get("army_region"):
-            qs = qs.filter(army_region=filters["army_region"])
+            from military_profile.compliance import army_region_q
+            qs = qs.filter(army_region_q(filters["army_region"]))
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
             results.append({"key": code, "label": label, **stats})
@@ -357,6 +320,7 @@ def api_compliance_by_unit(request):
 
 @require_GET
 @_require_admin
+# ORPHAN 2026-08-05: URL moved to military_profile (not-passed) - function no longer routed
 def api_compliance_not_passed(request):
     """
     GET /military/api/v1/reports/compliance/not-passed/
@@ -381,11 +345,13 @@ def api_compliance_not_passed(request):
         )
 
     # Compute compliance for all matching profiles first, then paginate
+    region_display_map = dict(ARMY_REGION_CHOICES)
     all_results = []
-    for profile in qs.select_related("user").order_by("full_name_th"):
+    for profile in qs.select_related("user", "organization").order_by("full_name_th"):
         result = get_compliance_status(profile.user)
         is_passed = result["status"] in ("passed", "no_requirements")
         if (want_passed and is_passed) or (not want_passed and not is_passed):
+            eff_region = profile.effective_army_region
             all_results.append({
                 "user_id": profile.user.id,
                 "username": profile.user.username,
@@ -396,8 +362,8 @@ def api_compliance_not_passed(request):
                 "rank_class_display": profile.rank_class_display,
                 "unit": profile.unit,
                 "sub_unit": profile.sub_unit,
-                "army_region": profile.army_region,
-                "army_region_display": profile.get_army_region_display(),
+                "army_region": eff_region,
+                "army_region_display": region_display_map.get(eff_region, "ไม่ระบุ") or "ไม่ระบุ",
                 "contact_email": profile.contact_email,
                 "phone_number": profile.phone_number,
                 "missing_courses": [c["course_name"] for c in result.get("missing", [])],
@@ -436,10 +402,11 @@ def api_certificates_expiring(request):
     records = (
         UserCertificateExpiry.objects
         .filter(status="active", expiry_date__lte=soon, expiry_date__gte=today)
-        .select_related("user__military_profile")
+        .select_related("user__military_profile", "user__military_profile__organization")
         .order_by("expiry_date")
     )
 
+    region_display_map = dict(ARMY_REGION_CHOICES)
     results = []
     for cert in records:
         profile = getattr(cert.user, "military_profile", None)
@@ -448,7 +415,7 @@ def api_certificates_expiring(request):
             "full_name": profile.full_name_th if profile else cert.user.username,
             "rank": profile.get_rank_display() if profile else "-",
             "unit": profile.unit if profile else "-",
-            "army_region": profile.get_army_region_display() if profile else "-",
+            "army_region": (region_display_map.get(profile.effective_army_region, "ไม่ระบุ") or "ไม่ระบุ") if profile else "-",
             "course_id": cert.course_id,
             "expiry_date": cert.expiry_date.isoformat(),
             "days_left": cert.days_until_expiry,
@@ -465,13 +432,16 @@ def api_certificates_expired(request):
     ใบประกาศที่หมดอายุแล้ว
     """
     filters = _parse_filters(request)
-    qs = UserCertificateExpiry.objects.filter(status="expired").select_related("user__military_profile")
+    qs = (UserCertificateExpiry.objects.filter(status="expired")
+          .select_related("user__military_profile", "user__military_profile__organization"))
     if filters.get("army_region"):
-        qs = qs.filter(user__military_profile__army_region=filters["army_region"])
+        from military_profile.compliance import army_region_q
+        qs = qs.filter(army_region_q(filters["army_region"], prefix="user__military_profile"))
     if filters.get("unit"):
         qs = qs.filter(user__military_profile__unit__icontains=filters["unit"])
     records = qs.order_by("-expiry_date")
 
+    region_display_map = dict(ARMY_REGION_CHOICES)
     results = []
     for cert in records:
         profile = getattr(cert.user, "military_profile", None)
@@ -482,7 +452,7 @@ def api_certificates_expired(request):
             "full_name": profile.full_name_th,
             "rank": profile.get_rank_display(),
             "unit": profile.unit,
-            "army_region": profile.get_army_region_display(),
+            "army_region": region_display_map.get(profile.effective_army_region, "ไม่ระบุ") or "ไม่ระบุ",
             "course_id": cert.course_id,
             "expiry_date": cert.expiry_date.isoformat(),
             "days_overdue": -cert.days_until_expiry,

@@ -8,14 +8,13 @@ from .api_views import (
     api_dashboard_chart,
     api_expiring_soon,
     api_rank_stats,
-    api_me,
     # Compliance reports
     api_compliance_overview,
     api_compliance_by_region,
     api_compliance_by_rank_class,
     api_compliance_by_rank,
     api_compliance_by_unit,
-    api_compliance_not_passed,
+    # api_compliance_not_passed — ย้ายไปใช้ military_profile (มี file-cache+pagination+logic ถูก) 2026-08-05
     # Certificate alerts
     api_certificates_expiring,
     api_certificates_expired,
@@ -32,7 +31,6 @@ urlpatterns = [
     path("reports/", ReportSearchView.as_view(), name="search"),
 
     # JSON API — สำหรับ Next.js frontend
-    path("api/v1/me/", api_me, name="api_me"),
     path("api/v1/dashboard/summary/", api_dashboard_summary, name="api_dashboard_summary"),
     path("api/v1/dashboard/chart/", api_dashboard_chart, name="api_dashboard_chart"),
     path("api/v1/dashboard/expiring-soon/", api_expiring_soon, name="api_expiring_soon"),
@@ -44,7 +42,7 @@ urlpatterns = [
     path("api/v1/reports/compliance/by-rank-class/", api_compliance_by_rank_class, name="api_compliance_by_rank_class"),
     path("api/v1/reports/compliance/by-rank/", api_compliance_by_rank, name="api_compliance_by_rank"),
     path("api/v1/reports/compliance/by-unit/", api_compliance_by_unit, name="api_compliance_by_unit"),
-    path("api/v1/reports/compliance/not-passed/", api_compliance_not_passed, name="api_compliance_not_passed"),
+    # not-passed ให้ military_profile จัดการ (file-cache + per_page 10000 + enrolled_only) — 2026-08-05
 
     # Certificate alerts
     path("api/v1/reports/certificates/expiring/", api_certificates_expiring, name="api_certificates_expiring"),

@@ -7,3 +7,7 @@ Requires-Dist: celery>=5.0
 Requires-Dist: openpyxl>=3.0
 Requires-Dist: WeasyPrint>=53.0
 Requires-Dist: cryptography>=3.4
+Requires-Dist: pdfminer.six>=20221105
+Requires-Dist: olefile>=0.47
+Requires-Dist: mammoth>=1.6
+Requires-Dist: python-docx>=1.0

@@ -6,6 +6,9 @@ JSON API endpoints สำหรับ student portal (กำลังพลท�
 + Instructor course/student/grade views
 """
 import json
+import logging
+import threading
+import uuid
 from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
@@ -14,10 +17,11 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from django.utils.cache import patch_vary_headers
 
 from .models import MilitaryUserProfile, Organization, RANK_CHOICES, ARMY_REGION_CHOICES, encrypt_field, decrypt_field, hmac_field
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
-from military_auth.models import PendingRegistration
+from military_auth.models import PendingRegistration, RegistrationWhitelist, RegistrationConfig
 
 try:
     from common.djangoapps.student.models import UserProfile as EdxUserProfile
@@ -30,13 +34,68 @@ User = get_user_model()
 _SYSTEM_ROLES = ("admin", "org_admin")  # system accounts ไม่ใช่กำลังพล
 _PERSONNEL_ROLES = ("instructor", "student")  # บทบาทกำลังพลจริง
 
-def _parse_date(value) -> date:
-    """Parse a date string ('YYYY-MM-DD') or date object to datetime.date."""
+def _parse_date(value):
+    """Parse a date string ('YYYY-MM-DD') or date object to datetime.date. Returns None for blank/null."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
     if isinstance(value, date):
         return value
     if isinstance(value, datetime):
         return value.date()
-    return date.fromisoformat(str(value).strip())
+    try:
+        return date.fromisoformat(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _reindex_library_search(library_key_str: str) -> None:
+    """
+    Trigger a Meilisearch reindex for a content library, routed to the CMS worker.
+
+    openedx.core.djangoapps.content.search (the app that owns Studio's library/
+    course search index) is CMS-only by Open edX design -- it's absent from LMS's
+    INSTALLED_APPS. This plugin's library-import/delete endpoints run on the LMS
+    process (military/* is proxied to lms:8000), so lib_api.publish_changes()
+    persists content correctly but its own indexing step silently no-ops there:
+    there is no LMS-side receiver to update the search index. Explicitly routing
+    the reindex task to the CMS celery queue (edx.cms.core.default) lets the CMS
+    worker -- which does have content.search installed -- do the indexing.
+    """
+    from celery import current_app
+    try:
+        current_app.send_task(
+            "openedx.core.djangoapps.content.search.tasks.update_content_library_index_docs",
+            args=[library_key_str],
+            kwargs={"full_index": False},
+            queue="edx.cms.core.default",
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to queue search reindex for library %s", library_key_str
+        )
+
+
+def _deindex_library_blocks(usage_key_strs) -> None:
+    """
+    Remove deleted library blocks from the Meilisearch index, routed to the CMS worker.
+
+    update_content_library_index_docs only upserts current blocks -- it never prunes
+    documents for blocks that no longer exist, so a deleted question would otherwise
+    stay searchable/selectable forever. See _reindex_library_search for why this must
+    be routed to the CMS queue instead of run in-process from LMS.
+    """
+    from celery import current_app
+    for usage_key_str in usage_key_strs:
+        try:
+            current_app.send_task(
+                "openedx.core.djangoapps.content.search.tasks.delete_library_block_index_doc",
+                args=[usage_key_str],
+                queue="edx.cms.core.default",
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to queue search de-index for block %s", usage_key_str
+            )
 
 
 def _grant_course_creator(user) -> None:
@@ -83,24 +142,37 @@ def _revoke_course_creator(user) -> None:
         pass
 
 
+def _apply_private_no_cache(resp):
+    """กัน shared cache (proxy/CDN) เก็บ response รายบุคคลแล้วเสิร์ฟข้ามผู้ใช้
+    อาการ: มือถือ/แท็บเล็ต (วิ่งผ่าน proxy) เห็นชื่อ/หน่วย/ใบประกาศของคนอื่น
+    ส่วนคอม (LAN ตรง ไม่ผ่าน cache) ปกติ — บังคับ per-user ไม่ให้แคชร่วม"""
+    try:
+        resp['Cache-Control'] = 'no-store, no-cache, private, max-age=0'
+        resp['Pragma'] = 'no-cache'
+        patch_vary_headers(resp, ('Cookie',))
+    except Exception:
+        pass
+    return resp
+
+
 def _require_login(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Unauthorized"}, status=401)
-        return view_func(request, *args, **kwargs)
+            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
+        return _apply_private_no_cache(view_func(request, *args, **kwargs))
     return wrapper
 
 
 def _require_admin(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Unauthorized"}, status=401)
+            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
         # ต้องเป็น staff หรือมี role=admin ใน military profile — ป้องกัน non-military staff เข้าถึง API
         profile = getattr(request.user, "military_profile", None)
         is_military_admin = profile and profile.role == "admin"
         if not (request.user.is_staff or is_military_admin):
-            return JsonResponse({"error": "Forbidden"}, status=403)
-        return view_func(request, *args, **kwargs)
+            return _apply_private_no_cache(JsonResponse({"error": "Forbidden"}, status=403))
+        return _apply_private_no_cache(view_func(request, *args, **kwargs))
     return wrapper
 
 
@@ -108,22 +180,22 @@ def _require_org_admin(view_func):
     """ต้องเป็น admin หรือ org_admin เท่านั้น"""
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Unauthorized"}, status=401)
+            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
         profile = getattr(request.user, "military_profile", None)
         if not (request.user.is_staff or (profile and profile.role in ("admin", "org_admin"))):
-            return JsonResponse({"error": "Forbidden"}, status=403)
-        return view_func(request, *args, **kwargs)
+            return _apply_private_no_cache(JsonResponse({"error": "Forbidden"}, status=403))
+        return _apply_private_no_cache(view_func(request, *args, **kwargs))
     return wrapper
 
 
 def _require_instructor(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Unauthorized"}, status=401)
+            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
         profile = getattr(request.user, "military_profile", None)
         if not (request.user.is_staff or (profile and profile.role in ("admin", "instructor"))):
-            return JsonResponse({"error": "Forbidden"}, status=403)
-        return view_func(request, *args, **kwargs)
+            return _apply_private_no_cache(JsonResponse({"error": "Forbidden"}, status=403))
+        return _apply_private_no_cache(view_func(request, *args, **kwargs))
     return wrapper
 
 
@@ -132,6 +204,29 @@ def _ensure_edx_user_profile(user, full_name: str = "") -> None:
     if EdxUserProfile is None:
         return
     EdxUserProfile.objects.get_or_create(user=user, defaults={"name": full_name or user.get_full_name() or user.username})
+
+
+def _unit_display(profile) -> str:
+    """Return unit full name: prefer organization.name (FK) over raw unit string."""
+    if profile and profile.organization_id and profile.organization:
+        return profile.organization.name
+    return profile.unit if profile else ""
+
+
+def _course_signatory(course_id):
+    """(ชื่อ, ตำแหน่ง) ผู้ลงนามจาก cert config ของคอร์ส — normalize ช่องว่าง
+    ใช้กับหน้า viewer ให้ตรงกับ PDF (เดิม frontend hardcode)"""
+    try:
+        from opaque_keys.edx.keys import CourseKey as _CK
+        from xmodule.modulestore.django import modulestore as _ms
+        _course = _ms().get_course(_CK.from_string(str(course_id)))
+        for _c in (getattr(_course, "certificates", None) or {}).get("certificates", []):
+            for _s in (_c.get("signatories") or []):
+                if _s.get("name"):
+                    return " ".join(str(_s.get("name")).split()), " ".join(str(_s.get("title") or "").split())
+    except Exception:
+        pass
+    return "", ""
 
 
 def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
@@ -146,13 +241,16 @@ def _profile_to_dict(profile: MilitaryUserProfile) -> dict:
         "role": profile.role,
         "full_name": profile.full_name_th,
         "rank": profile.rank,
-        "rank_display": profile.get_rank_display(),
+        "rank_display": profile.display_rank_name,
+        "gender": profile.gender,
+        "gender_display": profile.get_gender_display(),
         "rank_class": profile.rank_class,
         "rank_class_display": profile.rank_class_display,
-        "unit": profile.unit,
+        "position": profile.position,
+        "unit": _unit_display(profile),
         "sub_unit": profile.sub_unit,
-        "army_region": profile.army_region,
-        "army_region_display": profile.get_army_region_display(),
+        "army_region": profile.effective_army_region,
+        "army_region_display": dict(ARMY_REGION_CHOICES).get(profile.effective_army_region, "ไม่ระบุ") or "ไม่ระบุ",
         "contact_email": profile.contact_email,
         "phone_number": profile.phone_number,
         "service_start_date": ssd.isoformat() if hasattr(ssd, "isoformat") else str(ssd),
@@ -191,8 +289,11 @@ def api_me(request):
         "role": role,
         "full_name": (profile.full_name_th if profile else None) or user.get_full_name() or user.username,
         "rank": profile.rank if profile else None,
-        "unit": profile.unit if profile else None,
+        "position": profile.position if profile else None,
+        "unit": _unit_display(profile),
         "organization_id": profile.organization_id if profile else None,
+        "birth_date": profile.birth_date.isoformat() if profile and profile.birth_date else None,
+        "service_start_date": profile.service_start_date.isoformat() if profile and hasattr(profile.service_start_date, "isoformat") else None,
     })
 
 
@@ -214,6 +315,7 @@ def api_my_profile(request):
             "full_name": user.get_full_name() or user.username,
             "rank": None,
             "rank_display": None,
+            "position": None,
             "unit": None,
             "sub_unit": None,
             "service_start_date": None,
@@ -228,13 +330,73 @@ def api_my_profile(request):
         "email": user.email,
         "full_name": profile.full_name_th,
         "rank": profile.rank,
-        "rank_display": profile.get_rank_display(),
-        "unit": profile.unit,
+        "rank_display": profile.display_rank_name,
+        "gender": profile.gender,
+        "gender_display": profile.get_gender_display(),
+        "position": profile.position,
+        "unit": _unit_display(profile),
         "sub_unit": profile.sub_unit,
         "service_start_date": profile.service_start_date.isoformat() if hasattr(profile.service_start_date, "isoformat") else str(profile.service_start_date),
         "service_years": profile.service_years,
-        "birth_date": profile.birth_date.isoformat() if hasattr(profile.birth_date, "isoformat") else str(profile.birth_date),
+        "birth_date": profile.birth_date.isoformat() if profile.birth_date and hasattr(profile.birth_date, "isoformat") else None,
         "age": profile.age,
+        "thaid_verified": profile.thaid_verified,
+        "profile_complete": profile.profile_complete,
+    })
+
+
+@require_http_methods(["PATCH", "POST"])
+@_require_login
+def api_my_profile_complete(request):
+    """
+    PATCH /military/api/v1/my/profile/complete/
+    ให้กำลังพลกรอก/แก้ไขข้อมูลที่ขาดหายไป:
+    birth_date, service_start_date (เฉพาะเมื่อยังไม่มี), position, contact_email, phone_number
+    """
+    user = request.user
+    profile = getattr(user, "military_profile", None)
+    if not profile:
+        return JsonResponse({"error": "ไม่พบข้อมูลกำลังพล"}, status=404)
+
+    import json
+    body = json.loads(request.body)
+
+    updated = []
+    if body.get("birth_date"):
+        d = _parse_date(body["birth_date"])
+        if d:
+            profile.birth_date = d
+            updated.append("birth_date")
+
+    if body.get("service_start_date"):
+        d = _parse_date(body["service_start_date"])
+        if d:
+            profile.service_start_date = d
+            updated.append("service_start_date")
+
+    if body.get("gender") in ("M", "F"):
+        profile.gender = body["gender"]
+        updated.append("gender")
+
+    if "position" in body:
+        profile.position = body["position"].strip()
+        updated.append("position")
+
+    if "contact_email" in body:
+        profile.contact_email = body["contact_email"].strip()
+        updated.append("contact_email")
+
+    if "phone_number" in body:
+        profile.phone_number = body["phone_number"].strip()
+        updated.append("phone_number")
+
+    if updated:
+        profile.save(update_fields=updated)
+
+    return JsonResponse({
+        "success": True,
+        "updated": updated,
+        "profile_complete": profile.profile_complete,
     })
 
 
@@ -289,9 +451,10 @@ def api_admin_users(request):
     """
     GET /military/api/v1/admin/users/
     รายการ user ทั้งหมด (paginated, search)
-    Query params: ?search=&unit=&role=&page=1&page_size=20
+    Query params: ?search=&unit=&role=&army_region=&page=1&page_size=20
+      army_region = 1|2|3|4|central  หรือ  none (= ไม่ระบุทัพภาค)
     """
-    qs = MilitaryUserProfile.objects.select_related("user").order_by("-created_at")
+    qs = MilitaryUserProfile.objects.select_related("user", "organization").order_by("-created_at")
     # ค่าเริ่มต้น: ยกเว้น org_admin system accounts — แสดงได้ด้วย ?role=org_admin
     if not request.GET.get("role"):
         qs = qs.exclude(role__in=("admin", "org_admin"))
@@ -307,6 +470,20 @@ def api_admin_users(request):
     role = request.GET.get("role", "").strip()
     if role:
         qs = qs.filter(role=role)
+
+    # กรองตามกองทัพภาค — ยึด effective_army_region (org ก่อน แล้ว fallback profile.army_region)
+    # army_region=1|2|3|4|central ; army_region=none = "ไม่ระบุ" (คนที่เลือกหน่วยไม่ตรงระบบ)
+    region = request.GET.get("army_region", "").strip()
+    if region:
+        _org_empty = Q(organization__isnull=True) | Q(organization__army_region="")
+        if region in ("none", "unspecified"):
+            qs = qs.filter(_org_empty & Q(army_region=""))
+        elif region in {"1", "2", "3", "4", "central"}:
+            qs = qs.filter(
+                Q(organization__army_region=region)
+                | (_org_empty & Q(army_region=region))
+            )
+        # ค่าอื่นที่ไม่รู้จัก: ไม่กรอง (คืนทั้งหมด)
 
     try:
         page = max(1, int(request.GET.get("page", 1)))
@@ -338,7 +515,7 @@ def api_admin_create_user(request):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     personnel_type = body.get("personnel_type", "military")
-    required_fields = ["national_id", "full_name_th", "unit", "service_start_date", "birth_date", "username"]
+    required_fields = ["national_id", "full_name_th", "unit", "username"]
     if personnel_type == "military":
         required_fields.append("rank")
     required = required_fields
@@ -379,10 +556,11 @@ def api_admin_create_user(request):
             military_id_encrypted=encrypt_field(body.get("military_id", "")),
             full_name_th=body["full_name_th"],
             rank=body.get("rank", ""),
+            position=body.get("position", ""),
             unit=body["unit"],
             sub_unit=body.get("sub_unit", ""),
-            service_start_date=_parse_date(body["service_start_date"]),
-            birth_date=_parse_date(body["birth_date"]),
+            service_start_date=_parse_date(body["service_start_date"]) if body.get("service_start_date") else None,
+            birth_date=_parse_date(body["birth_date"]) if body.get("birth_date") else None,
             role=body.get("role", "student"),
             contact_email=body.get("contact_email", ""),
             phone_number=body.get("phone_number", ""),
@@ -406,6 +584,27 @@ def api_admin_create_user(request):
         return JsonResponse({"error": str(exc)}, status=400)
 
 
+@require_GET
+@_require_admin
+def api_admin_user_sensitive(request, user_id: int):
+    """
+    GET /military/api/v1/admin/users/<user_id>/sensitive/
+    คืนเลขบัตรประชาชน + เลขประจำตัวทหาร (ถอดรหัสแล้ว) ของ user คนเดียว —
+    แยกออกจาก _profile_to_dict()/รายการผู้ใช้ตั้งใจ เพื่อไม่ให้ข้อมูลอ่อนไหว
+    หลุดไปกับ response ของหน้ารายชื่อ (bulk list) ดึงเฉพาะตอนแอดมินเปิดแก้ไข
+    รายคนจริงๆ เท่านั้น
+    """
+    try:
+        profile = MilitaryUserProfile.objects.get(user_id=user_id)
+    except MilitaryUserProfile.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    return JsonResponse({
+        "national_id": profile.national_id,
+        "military_id": profile.military_id,
+    })
+
+
 @require_http_methods(["PATCH", "PUT"])
 @_require_admin
 def api_admin_update_user(request, user_id: int):
@@ -414,7 +613,7 @@ def api_admin_update_user(request, user_id: int):
     แก้ไขข้อมูล user
     """
     try:
-        profile = MilitaryUserProfile.objects.select_related("user").get(user_id=user_id)
+        profile = MilitaryUserProfile.objects.select_related("user", "organization").get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
@@ -424,9 +623,46 @@ def api_admin_update_user(request, user_id: int):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     # อัปเดต profile fields
-    for field in ("full_name_th", "rank", "unit", "sub_unit", "contact_email", "phone_number", "army_region", "gender", "personnel_type", "civilian_prefix"):
+    from .unit_aliases import normalize_unit
+    for field in ("full_name_th", "rank", "position", "unit", "sub_unit", "contact_email", "phone_number", "army_region", "gender", "personnel_type", "civilian_prefix"):
         if field in body:
-            setattr(profile, field, body[field])
+            val = body[field]
+            if field in ("unit", "sub_unit"):
+                val = normalize_unit(val)
+            setattr(profile, field, val)
+
+    # ── แก้เลขบัตรประชาชน / เลขประจำตัวทหาร — เผื่อเจ้าหน้าที่กรอกผิดตอนสมัคร ──
+    if "national_id" in body:
+        from military_auth.validators import validate_national_id
+        new_national_id = (body["national_id"] or "").strip()
+        if not validate_national_id(new_national_id):
+            return JsonResponse({"error": "เลขบัตรประชาชนไม่ถูกต้อง (ต้องเป็นตัวเลข 13 หลัก และผ่านการตรวจสอบ checksum)"}, status=400)
+        new_hmac = MilitaryUserProfile.hmac_value(new_national_id)
+        conflict = MilitaryUserProfile.objects.filter(national_id_hmac=new_hmac).exclude(user_id=user_id).exists()
+        if conflict:
+            return JsonResponse({"error": "เลขบัตรประชาชนนี้มีอยู่ในระบบแล้ว (ซ้ำกับผู้ใช้อื่น)"}, status=409)
+        profile.national_id_encrypted = encrypt_field(new_national_id)
+        profile.national_id_hmac = new_hmac
+        # username ของระบบนี้ควรตรงกับเลขบัตร (ใช้ login) — sync ให้ตรงถ้า
+        # username เดิมยังไม่ถูกคนอื่นใช้อยู่ (กันชนกรณีมีคนอื่นถือ username นั้นแล้ว)
+        if profile.user.username != new_national_id:
+            username_taken = User.objects.filter(username=new_national_id).exclude(id=user_id).exists()
+            if not username_taken:
+                profile.user.username = new_national_id
+                profile.user.save(update_fields=["username"])
+
+    if "military_id" in body:
+        from military_auth.validators import validate_military_id
+        new_military_id = (body["military_id"] or "").strip()
+        if not validate_military_id(new_military_id):
+            return JsonResponse({"error": "เลขประจำตัวทหารไม่ถูกต้อง (ต้องเป็นตัวเลข 10 หลัก)"}, status=400)
+        profile.military_id_encrypted = encrypt_field(new_military_id)
+    # sync organization FK when unit changes
+    if "unit" in body:
+        unit_val = profile.unit
+        org = (Organization.objects.filter(name=unit_val).first()
+               or Organization.objects.filter(code=unit_val).first())
+        profile.organization = org
     # Auto-derive gender from civilian_prefix for non-military
     new_personnel_type = body.get("personnel_type", profile.personnel_type)
     if new_personnel_type != "military" and "civilian_prefix" in body:
@@ -469,7 +705,7 @@ def api_admin_deactivate_user(request, user_id: int):
     ปิดใช้งาน user (ไม่ลบจริง)
     """
     try:
-        profile = MilitaryUserProfile.objects.select_related("user").get(user_id=user_id)
+        profile = MilitaryUserProfile.objects.select_related("user", "organization").get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
@@ -491,7 +727,7 @@ def api_admin_hard_delete_user(request, user_id: int):
     if request.GET.get("force") != "1":
         return JsonResponse({"error": "ต้องระบุ ?force=1 เพื่อยืนยันการลบถาวร"}, status=400)
     try:
-        profile = MilitaryUserProfile.objects.select_related("user").get(user_id=user_id)
+        profile = MilitaryUserProfile.objects.select_related("user", "organization").get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
@@ -501,6 +737,44 @@ def api_admin_hard_delete_user(request, user_id: int):
     username = profile.user.username
     profile.user.delete()  # cascade deletes profile via FK
     return JsonResponse({"success": True, "message": f"User {username} deleted permanently"})
+
+
+# ============================================================================
+# Public: Check National ID (ใช้ตอน login ผิดพลาด เพื่อบอกว่า "ไม่มีในระบบ"
+# แยกจาก "รหัสผ่านผิด" — Open edX เองตั้งใจไม่แยกสองกรณีนี้ในข้อความ error
+# เพื่อกันการเดา username แต่ระบบนี้ปิด ไม่ได้เปิดสมัครสาธารณะแบบเว็บทั่วไป
+# (มีแค่กำลังพลที่มีเลขบัตร ปชช.จริงเท่านั้น) จึงบอกตรงๆ ได้ปลอดภัยกว่า และ
+# ช่วยผู้ใช้ไปสมัครสมาชิกถูกจุด ไม่ต้องเดาว่าทำไม login ไม่ได้
+# ============================================================================
+
+@csrf_exempt
+@require_GET
+def api_check_national_id(request):
+    """
+    GET /military/api/v1/auth/check-national-id/?national_id=<13 หลัก>
+    คืน {"exists": true/false} — ไม่เปิดเผยข้อมูลอื่นใดของบัญชี
+    จำกัด rate ต่อ IP กันการใช้ enumerate เลขบัตรจำนวนมาก
+    """
+    import hashlib
+    from django.core.cache import cache
+    from military_auth.validators import validate_national_id
+    from .models import MilitaryUserProfile
+
+    national_id = request.GET.get("national_id", "").strip()
+    if not validate_national_id(national_id):
+        return JsonResponse({"error": "invalid_format"}, status=400)
+
+    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")).split(",")[0].strip()
+    cache_key = f"check_national_id:{hashlib.sha256(ip.encode()).hexdigest()}"
+    attempts = cache.get(cache_key, 0)
+    if attempts >= 20:
+        return JsonResponse({"error": "rate_limited"}, status=429)
+    cache.set(cache_key, attempts + 1, timeout=300)
+
+    exists = MilitaryUserProfile.objects.filter(
+        national_id_hmac=MilitaryUserProfile.hmac_value(national_id)
+    ).exists()
+    return JsonResponse({"exists": exists})
 
 
 # ============================================================================
@@ -519,7 +793,12 @@ def api_register(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    required = ["national_id", "military_id", "full_name_th", "rank", "unit", "birth_date"]
+    # ประเภทบุคลากร: ทหาร บังคับเลขทหาร+ยศ ; พลเรือน/ข้าราชการ บังคับคำนำหน้า
+    personnel_type = body.get("personnel_type", "military")
+    is_military = personnel_type == "military"
+
+    required = ["national_id", "full_name_th", "unit", "birth_date"]
+    required += ["military_id", "rank"] if is_military else ["civilian_prefix"]
     for field in required:
         if not body.get(field):
             return JsonResponse({"error": f"กรุณากรอก {field}"}, status=400)
@@ -529,14 +808,34 @@ def api_register(request):
     if not national_id.isdigit() or len(national_id) != 13:
         return JsonResponse({"error": "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก"}, status=400)
 
-    # Validate military_id — 10 ตัวอักษร (อักษรนำหน้า + ตัวเลข)
+    # Validate military_id — ทหารต้องเป็นตัวเลข 10 หลักพอดี (ใช้ validator กลางให้ตรงทั้งระบบ)
     military_id = body.get("military_id", "").strip()
-    if len(military_id) < 6 or len(military_id) > 15:
-        return JsonResponse({"error": "เลขประจำตัวทหารต้องมี 6-15 ตัวอักษร"}, status=400)
+    if is_military:
+        from military_auth.validators import validate_military_id
+        if not validate_military_id(military_id):
+            return JsonResponse({"error": "เลขประจำตัวทหารต้องเป็นตัวเลข 10 หลัก"}, status=400)
+    else:
+        military_id = ""  # พลเรือน/ข้าราชการ ไม่มีเลขประจำตัวทหาร
 
     # ป้องกัน duplicate — ใช้ HMAC (deterministic) ไม่ใช่ AES-GCM (random nonce)
     enc_national_id = encrypt_field(national_id)
     national_id_hmac = hmac_field(national_id)
+
+    # Pre-whitelist: ถ้าเปิดบังคับ เลขบัตรต้องอยู่ในรายชื่อที่หน่วยเตรียมไว้
+    if RegistrationConfig.get_solo().whitelist_enabled:
+        if not RegistrationWhitelist.objects.filter(national_id_hmac=national_id_hmac, is_active=True).exists():
+            return JsonResponse({"error": "เลขบัตรประชาชนนี้ยังไม่อยู่ในรายชื่อที่ได้รับอนุญาตให้สมัคร กรุณาติดต่อหน่วยต้นสังกัด"}, status=403)
+
+    # ปฏิเสธถ้าเลขบัตรประชาชนนี้มี "บัญชีอยู่ในระบบแล้ว" (MilitaryUserProfile)
+    # แก้ปัญหาผู้ที่มีข้อมูลอยู่แล้วสมัครซ้ำเข้ามาอีก — เพิ่มเมื่อ 2026-07-20
+    # ใช้ hmac_field ตัวเดียวกับ check-national-id endpoint และ save() ของโมเดล
+    if MilitaryUserProfile.objects.filter(national_id_hmac=national_id_hmac).exists():
+        return JsonResponse(
+            {"error": "มีข้อมูลผู้สมัครในระบบแล้ว กรุณาติดต่อผู้ดูแลระบบ"},
+            status=409,
+        )
+
+    # ป้องกันคำขอ pending/approved ซ้ำ (เลขบัตรเดียวกันส่งซ้ำก่อนได้รับอนุมัติ)
     dup = PendingRegistration.objects.filter(
         national_id_hmac=national_id_hmac,
         status__in=("pending", "approved"),
@@ -556,18 +855,35 @@ def api_register(request):
         except Organization.DoesNotExist:
             _org_obj = None
 
+    # ThaID: ตั้ง flag เฉพาะเมื่อลายเซ็น assertion ถูกต้อง และ pid ตรงเลขบัตรที่กรอก (ปลอมฝั่ง client ไม่ได้)
+    thaid_verified = False
+    _assertion = body.get("thaid_assertion", "")
+    if _assertion:
+        from .thaid_views import verify_assertion as _verify_thaid
+        _claims = _verify_thaid(str(_assertion))
+        if _claims and str(_claims.get("pid", "")).strip() == national_id:
+            thaid_verified = True
+
     pending = PendingRegistration.objects.create(
         full_name_th=body["full_name_th"],
-        rank=body["rank"],
+        rank=body.get("rank", ""),
         unit=body["unit"],
         birth_date=body["birth_date"],
         email=body.get("email", ""),
         phone_number=body.get("phone_number", ""),
+        address=body.get("address", ""),
+        gender=body.get("gender", ""),
+        personnel_type=personnel_type,
+        civilian_prefix=body.get("civilian_prefix", ""),
         national_id_encrypted=enc_national_id,
         national_id_hmac=national_id_hmac,
         military_id_encrypted=encrypt_field(military_id),
         organization=_org_obj,
+        thaid_verified=thaid_verified,
     )
+
+    from django.utils import timezone as _tz
+    RegistrationWhitelist.objects.filter(national_id_hmac=national_id_hmac, used_at__isnull=True).update(used_at=_tz.now())
 
     return JsonResponse({
         "id": pending.id,
@@ -586,15 +902,31 @@ def api_admin_registrations(request):
     """
     GET /military/api/v1/admin/registrations/
     รายการคำขอสมัครสมาชิก
-    Query params: ?status=pending (default), ?status=all
+    Query params: ?status=pending (default) | approved | rejected | all
+                  ?search=ชื่อ/หน่วย/อีเมล  ?page=1  ?page_size=20 (สูงสุด 100)
     """
+    from django.db.models import Q
+
     status_filter = request.GET.get("status", "pending")
     qs = PendingRegistration.objects.order_by("-submitted_at")
     if status_filter != "all":
         qs = qs.filter(status=status_filter)
 
-    page = max(1, int(request.GET.get("page", 1)))
-    page_size = min(100, int(request.GET.get("page_size", 20)))
+    search = request.GET.get("search", "").strip()
+    if search:
+        qs = qs.filter(
+            Q(full_name_th__icontains=search)
+            | Q(unit__icontains=search)
+            | Q(sub_unit__icontains=search)
+            | Q(email__icontains=search)
+        )
+
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(100, max(1, int(request.GET.get("page_size", 20))))
+    except (TypeError, ValueError):
+        page, page_size = 1, 20
+
     total = qs.count()
     items = qs[(page - 1) * page_size: page * page_size]
 
@@ -615,9 +947,10 @@ def api_admin_registrations(request):
             "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
             "reject_reason": r.reject_reason,
             "reviewed_by": r.reviewed_by.username if r.reviewed_by else None,
+            "thaid_verified": r.thaid_verified,
         })
 
-    return JsonResponse({"count": total, "page": page, "results": results})
+    return JsonResponse({"count": total, "page": page, "page_size": page_size, "results": results})
 
 
 @require_http_methods(["PATCH"])
@@ -687,6 +1020,11 @@ def api_admin_registration_action(request, registration_id: int):
             role="student",
             contact_email=reg.email,
             phone_number=reg.phone_number,
+            address=reg.address,
+            gender=(reg.gender or "M"),
+            thaid_verified=reg.thaid_verified,
+            personnel_type=reg.personnel_type or "military",
+            civilian_prefix=reg.civilian_prefix,
             army_region=body.get("army_region", ""),
             organization=reg.organization,  # สืบทอด FK จากขั้นตอนสมัคร
         )
@@ -825,8 +1163,8 @@ def api_instructor_course_students(request, course_id: str):
                 results.append({
                     "username": username,
                     "full_name": profile.full_name_th if profile else username,
-                    "rank": profile.get_rank_display() if profile else "-",
-                    "unit": profile.unit if profile else "-",
+                    "rank": profile.display_rank_name if profile else "-",
+                    "unit": _unit_display(profile) if profile else "-",
                     "is_active": enroll.get("is_active", True),
                     "created": enroll.get("created"),
                 })
@@ -843,27 +1181,222 @@ def api_instructor_course_students(request, course_id: str):
 def api_instructor_course_grades(request, course_id: str):
     """
     GET /military/api/v1/instructor/courses/<course_id>/grades/
-    คะแนนนักเรียนใน course นี้ (ผ่าน Grades API ของ Open edX)
+    คะแนนนักเรียนใน course นี้
+
+    หมายเหตุ: เดิม endpoint นี้ proxy ไปที่ Open edX Gradebook API
+    (/api/grades/v1/gradebook/) ซึ่งต้องเปิด waffle flag "Writable Gradebook"
+    เป็นรายคอร์สก่อนถึงจะใช้ได้ (ไม่งั้นได้ 403 แล้วโค้ดเดิมกลืน error ทิ้งเงียบๆ
+    กลายเป็นหน้าว่างเปล่า) แถมข้อมูลที่ได้ก็ไม่มีฟิลด์ passed/letter_grade ที่
+    หน้าเว็บต้องใช้อยู่ดี — เปลี่ยนมาคำนวณตรงผ่าน CourseGradeFactory ของ
+    Open edX เองแทน ไม่ต้องพึ่ง waffle flag และควบคุมรูปแบบข้อมูลได้เต็มที่
     """
-    import urllib.request as urlreq
-    import urllib.parse
-    lms_url = "http://localhost:8000"
-    encoded_id = urllib.parse.quote(course_id, safe="")
-    api_url = f"{lms_url}/api/grades/v1/gradebook/{encoded_id}/?page_size=100"
+    from opaque_keys.edx.keys import CourseKey
+    from django.db.models import Q, Avg
+    from common.djangoapps.student.models import CourseEnrollment
+    from lms.djangoapps.grades.course_grade_factory import CourseGradeFactory
+    from lms.djangoapps.grades.models import PersistentCourseGrade
 
     try:
-        from django.conf import settings as _dj_settings
-        _session_key = _dj_settings.SESSION_COOKIE_NAME
-        _session_val = request.COOKIES.get(_session_key, "")
-        _cookie_str = f"{_session_key}={_session_val}" if _session_val else ""
-        headers = {"Cookie": _cookie_str}
-        req = urlreq.Request(api_url, headers=headers)
-        with urlreq.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-        return JsonResponse(data)
-    except Exception as exc:
-        return JsonResponse({"error": str(exc), "results": [], "count": 0}, status=200)
+        course_key = CourseKey.from_string(course_id)
+    except Exception:
+        return JsonResponse({"error": "Invalid course_id", "results": [], "count": 0}, status=400)
 
+    enrollments = (
+        CourseEnrollment.objects.filter(course_id=course_key, is_active=True)
+        .select_related("user", "user__military_profile")
+        .order_by("user__username")
+    )
+
+    search = request.GET.get("search", "").strip()
+    if search:
+        enrollments = enrollments.filter(
+            Q(user__military_profile__full_name_th__icontains=search)
+            | Q(user__username__icontains=search)
+        )
+
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(100, max(1, int(request.GET.get("page_size", 20))))
+    except (TypeError, ValueError):
+        page, page_size = 1, 20
+
+    total = enrollments.count()
+    page_enrollments = enrollments[(page - 1) * page_size: page * page_size]
+
+    # คำนวณเกรดจริง (CourseGradeFactory) เฉพาะคนในหน้านี้เท่านั้น — ไม่ใช่ทุกคน
+    # ในวิชา ถึงจะเร็วพอสำหรับวิชาที่มีคนเรียนเป็นพันคน
+    results = []
+    for enrollment in page_enrollments:
+        user = enrollment.user
+        try:
+            course_grade = CourseGradeFactory().read(user, course_key=course_key)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "api_instructor_course_grades: failed to read grade for user=%s course=%s",
+                user.id, course_id,
+            )
+            continue
+        profile = getattr(user, "military_profile", None)
+        results.append({
+            "username": user.username,
+            "full_name": profile.display_full_name if profile else user.username,
+            "email": user.email,
+            "percent": round(course_grade.percent, 4) if course_grade else 0.0,  # 0-1 fraction ให้ตรงกับที่หน้าเว็บคูณ 100 เอง
+            "letter_grade": course_grade.letter_grade if course_grade else None,
+            "passed": bool(course_grade.passed) if course_grade else False,
+        })
+
+    # สรุปยอดผ่าน/ไม่ผ่าน/เฉลี่ยทั้งวิชา (ไม่ใช่แค่หน้านี้) — ดึงจากตารางเกรดที่
+    # cache ไว้แล้วโดยตรง (PersistentCourseGrade) แทนการวน CourseGradeFactory
+    # ทีละคนทั้งวิชา เร็วกว่ามากสำหรับวิชาที่มีคนเรียนเยอะ
+    summary_qs = PersistentCourseGrade.objects.filter(course_id=course_key)
+    summary_total = summary_qs.count()
+    summary_passed = summary_qs.filter(passed_timestamp__isnull=False).count()
+    avg_percent = summary_qs.aggregate(avg=Avg("percent_grade"))["avg"] or 0.0
+
+    return JsonResponse({
+        "results": results,
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": {
+            "total": summary_total,
+            "passed": summary_passed,
+            "not_passed": summary_total - summary_passed,
+            "average_percent": round(avg_percent, 4),
+        },
+    })
+
+
+@require_GET
+@_require_instructor
+def api_instructor_exceeded_attempts(request, course_id: str):
+    """
+    GET /military/api/v1/instructor/courses/<course_id>/exceeded-attempts/
+    รายชื่อนักเรียนที่ทำข้อสอบ (problem) ครบจำนวนครั้งที่ครูตั้งไว้ (Maximum
+    Attempts ใน Studio) แล้ว แต่ยังตอบไม่ถูก/ไม่ได้คะแนนเต็มในข้อนั้น — คนกลุ่ม
+    นี้ทำข้อนั้นซ้ำไม่ได้อีกแล้ว ต้องให้ครู/แอดมินช่วยแก้ไข (reset attempts,
+    ให้คะแนนพิเศษ ฯลฯ)
+    """
+    import json as _json
+    from opaque_keys.edx.keys import CourseKey
+    from django.db.models import Q
+    from xmodule.modulestore.django import modulestore
+    from lms.djangoapps.courseware.models import StudentModule
+    from lms.djangoapps.grades.models import PersistentCourseGrade
+
+    try:
+        course_key = CourseKey.from_string(course_id)
+    except Exception:
+        return JsonResponse({"error": "Invalid course_id", "results": [], "count": 0}, status=400)
+
+    # เดินโครงสร้างคอร์สหาข้อสอบทุกข้อที่ตั้ง Maximum Attempts ไว้ (>0)
+    store = modulestore()
+    problem_max_attempts = {}   # str(usage_key) -> (max_attempts, display_name)
+
+    def _walk(item):
+        if item.category == "problem":
+            ma = getattr(item, "max_attempts", None)
+            if ma and ma > 0:
+                problem_max_attempts[str(item.location)] = (ma, item.display_name or "")
+        if hasattr(item, "get_children"):
+            for child in item.get_children():
+                _walk(child)
+
+    try:
+        course = store.get_course(course_key, depth=None)
+        _walk(course)
+    except Exception:
+        return JsonResponse({"error": "Course not found", "results": [], "count": 0}, status=404)
+
+    if not problem_max_attempts:
+        return JsonResponse({"results": [], "count": 0, "has_attempt_limits": False})
+
+    # หา StudentModule ทุกแถวของข้อสอบเหล่านี้ที่ attempts >= max_attempts และยังไม่ได้คะแนนเต็ม
+    stuck_by_user = {}   # user_id -> list of problem display_names
+    rows = (
+        StudentModule.objects
+        .filter(course_id=course_key, module_type="problem",
+                module_state_key__in=list(problem_max_attempts.keys()))
+        .exclude(state="{}")
+        .values("student_id", "module_state_key", "state", "grade", "max_grade")
+    )
+    for row in rows.iterator():
+        max_att, name = problem_max_attempts.get(str(row["module_state_key"]), (None, ""))
+        if not max_att:
+            continue
+        try:
+            state = _json.loads(row["state"])
+        except Exception:
+            continue
+        attempts = state.get("attempts") or 0
+        if attempts < max_att:
+            continue
+        max_grade = row["max_grade"] or 0
+        grade = row["grade"] or 0
+        if max_grade and grade >= max_grade:
+            continue  # ได้คะแนนเต็มแล้ว ไม่นับว่า "ไม่ผ่าน"
+        stuck_by_user.setdefault(row["student_id"], []).append(name)
+
+    if not stuck_by_user:
+        return JsonResponse({"results": [], "count": 0, "has_attempt_limits": True})
+
+    users = (User.objects.filter(id__in=stuck_by_user.keys())
+             .select_related("military_profile"))
+
+    # ดึงคะแนน/สถานะผ่านจากตารางเกรดที่ cache ไว้แล้ว (PersistentCourseGrade)
+    # แทนการเรียก CourseGradeFactory ทีละคน — คนติดค้างมีได้เป็นร้อยเป็นพัน
+    # ถ้าคำนวณสดทุกคนทุกครั้งจะช้ามาก รายงานนี้ใช้ค่า cache ล่าสุดพอ
+    grade_map = {
+        row["user_id"]: (row["percent_grade"], row["passed_timestamp"] is not None)
+        for row in PersistentCourseGrade.objects
+            .filter(course_id=course_key, user_id__in=stuck_by_user.keys())
+            .values("user_id", "percent_grade", "passed_timestamp")
+    }
+
+    all_results = []
+    for user in users:
+        profile = getattr(user, "military_profile", None)
+        percent, passed = grade_map.get(user.id, (0.0, False))
+        all_results.append({
+            "username": user.username,
+            "full_name": profile.display_full_name if profile else user.username,
+            "stuck_problems": stuck_by_user[user.id],
+            "stuck_count": len(stuck_by_user[user.id]),
+            "course_percent": round(percent, 4),
+            "passed": passed,
+        })
+
+    # เรียงคนที่ยังไม่ผ่านคอร์สโดยรวมขึ้นก่อน (กลุ่มที่ต้องช่วยเหลือด่วนที่สุด)
+    all_results.sort(key=lambda r: (r["passed"], -r["stuck_count"]))
+    not_passed_count = sum(1 for r in all_results if not r["passed"])
+
+    search = request.GET.get("search", "").strip()
+    filtered = all_results
+    if search:
+        search_lower = search.lower()
+        filtered = [
+            r for r in filtered
+            if search_lower in r["full_name"].lower() or search_lower in r["username"].lower()
+        ]
+
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(100, max(1, int(request.GET.get("page_size", 20))))
+    except (TypeError, ValueError):
+        page, page_size = 1, 20
+
+    list_count = len(filtered)
+    page_results = filtered[(page - 1) * page_size: page * page_size]
+
+    return JsonResponse({
+        "results": page_results,
+        "count": list_count,
+        "page": page,
+        "page_size": page_size,
+        "not_passed_count": not_passed_count,
+        "has_attempt_limits": True,
+    })
 
 
 # ── Password Management ────────────────────────────────────────────────────
@@ -985,7 +1518,7 @@ def api_reset_password_request(request):
                     message=(
                         f"มีคำขอรีเซ็ตรหัสผ่านจาก:\n"
                         f"ชื่อ: {profile.full_name_th}\n"
-                        f"ยศ: {profile.get_rank_display()}\n"
+                        f"ยศ: {profile.display_rank_name}\n"
                         f"หน่วย: {profile.unit}\n\n"
                         f"กรุณาเข้าระบบ Admin เพื่อรีเซ็ตรหัสผ่านให้กับบุคลากรท่านนี้"
                     ),
@@ -1210,13 +1743,16 @@ def api_enroll_course(request):
                 if unmet:
                     return JsonResponse({"error": "ต้องผ่านหลักสูตรบังคับก่อนจึงจะลงทะเบียนหลักสูตรนี้ได้"}, status=403)
 
-        # Auto-create audit mode if course has no modes (required for enrollment to work)
+        # Auto-create honor mode if course has no modes (required for enrollment to work).
+        # ใช้ honor แทน audit เพราะ audit ไม่มีสิทธิ์รับใบประกาศ (ดู
+        # CourseMode.is_eligible_for_certificate) — คอร์สเหล่านี้ทุกคอร์สต้องออก
+        # ใบประกาศได้เมื่อผ่าน จึงห้ามลงทะเบียนด้วย audit
         from common.djangoapps.course_modes.models import CourseMode
-        if not CourseMode.objects.filter(course_id=course_key).exists():
-            CourseMode.objects.create(course_id=course_key, mode_slug='audit',
-                                      mode_display_name='Audit', min_price=0)
+        if not CourseMode.objects.filter(course_id=course_key, mode_slug='honor').exists():
+            CourseMode.objects.create(course_id=course_key, mode_slug='honor',
+                                      mode_display_name='Honor', min_price=0)
 
-        result = CourseEnrollment.enroll(request.user, course_key, check_access=False)
+        result = CourseEnrollment.enroll(request.user, course_key, mode='honor', check_access=False)
         if isinstance(result, tuple):
             enrollment, created = result
         else:
@@ -1271,15 +1807,15 @@ def api_goto_course_as_student(request):
     if not is_course_staff:
         return HttpResponseRedirect(courseware_url)
 
-    # Auto-enroll if needed so grades are recorded
+    # Auto-enroll if needed so grades are recorded — ใช้ honor เพื่อให้มีสิทธิ์รับใบประกาศ (ดูเหตุผลเดียวกับ api_enroll)
     if not CourseEnrollment.is_enrolled(request.user, course_key):
         from common.djangoapps.course_modes.models import CourseMode
-        if not CourseMode.objects.filter(course_id=course_key).exists():
+        if not CourseMode.objects.filter(course_id=course_key, mode_slug='honor').exists():
             CourseMode.objects.create(
-                course_id=course_key, mode_slug='audit',
-                mode_display_name='Audit', min_price=0,
+                course_id=course_key, mode_slug='honor',
+                mode_display_name='Honor', min_price=0,
             )
-        CourseEnrollment.enroll(request.user, course_key, check_access=False)
+        CourseEnrollment.enroll(request.user, course_key, mode='honor', check_access=False)
 
     import logging as _log
     from django.conf import settings as _djsettings
@@ -1342,18 +1878,19 @@ def api_my_certificate_detail(request, cert_id):
     # ดึง profile ผู้รับ
     try:
         from military_profile.models import MilitaryUserProfile
-        profile = MilitaryUserProfile.objects.get(user=request.user)
-        rank      = profile.get_rank_display()
+        profile = MilitaryUserProfile.objects.select_related("organization").get(user=request.user)
+        rank      = profile.display_rank_name
         full_name = profile.full_name_th
-        unit      = profile.unit
+        unit      = _unit_display(profile)
         sub_unit  = profile.sub_unit or ''
-        position  = profile.get_rank_display()  # ใช้ยศแทน ถ้าไม่มี position field
+        position  = profile.position or ''
     except Exception:
         rank = full_name = unit = sub_unit = position = ''
 
     today = date.today()
     days_left = (cert.expiry_date - today).days if cert.expiry_date else None
 
+    _sig_name, _sig_title = _course_signatory(cert.course_id)
     return JsonResponse({
         'id':          cert.id,
         'cert_no':     f'สส.{cert.issued_date.year + 543 if cert.issued_date else ""}-{cert.id:04d}',
@@ -1367,6 +1904,8 @@ def api_my_certificate_detail(request, cert_id):
         'full_name':   full_name,
         'unit':        unit,
         'sub_unit':    sub_unit,
+        'signatory_name':  _sig_name or 'พลโท',
+        'signatory_title': _sig_title or 'ผู้บัญชาการโรงเรียนทหารสื่อสาร กรมการทหารสื่อสาร',
     })
 
 
@@ -1425,6 +1964,68 @@ def api_my_notifications(request):
     return JsonResponse({"notifications": notifications, "unread": len(notifications)})
 
 
+_THAI_MONTHS = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+_THAI_DIGITS = str.maketrans('0123456789', '๐๑๒๓๔๕๖๗๘๙')
+
+
+def _thai_month_year(d):
+    """แปลงวันที่เป็น '{วัน} {เดือนไทย} พ.ศ. {ปี พ.ศ. เลขไทย}' (เลขไทยทั้งหมด) ตามรูปแบบใบประกาศ"""
+    if not d:
+        return '-'
+    be_year = d.year + 543
+    day_th = str(d.day).translate(_THAI_DIGITS)
+    return f"{day_th} {_THAI_MONTHS[d.month]} พ.ศ. {str(be_year).translate(_THAI_DIGITS)}"
+
+
+_BUNDLED_ASSET_CACHE = {}
+
+
+def _bundled_asset_data_uri(filename):
+    """อ่านไฟล์ภาพประจำแบรนด์ (โลโก้/watermark) ที่แถมมากับปลั๊กอินเอง
+    (military_profile/static/certificate/) แปลงเป็น data URI — ใช้ไฟล์คงที่ตัว
+    เดียวกันทุกใบประกาศทุกคอร์ส ต่างจากลายเซ็นต์ผู้บังคับบัญชาที่ต้องดึงจาก
+    Files & Uploads ของแต่ละคอร์ส (เผื่อคอร์สต่างกันมีผู้ลงนามต่างกัน)"""
+    if filename in _BUNDLED_ASSET_CACHE:
+        return _BUNDLED_ASSET_CACHE[filename]
+    try:
+        import base64
+        import mimetypes
+        import os
+        path = os.path.join(os.path.dirname(__file__), 'static', 'certificate', filename)
+        with open(path, 'rb') as f:
+            data = f.read()
+        content_type = mimetypes.guess_type(filename)[0] or 'image/png'
+        uri = f"data:{content_type};base64,{base64.b64encode(data).decode('ascii')}"
+        _BUNDLED_ASSET_CACHE[filename] = uri
+        return uri
+    except Exception:
+        logging.getLogger(__name__).exception("certificate: bundled asset lookup failed for %s", filename)
+        return None
+
+
+def _course_asset_data_uri(course_key, name_predicate):
+    """หาไฟล์ใน Files & Uploads ของคอร์สที่ชื่อไฟล์ตรงเงื่อนไข แล้วคืนเป็น data URI
+    (base64) สำหรับฝังลง <img> ตรงๆ ใน HTML ที่ WeasyPrint จะ render — ฝังตรงๆ
+    แทนการอ้าง URL เพราะ WeasyPrint รัน server-side ไม่มี session ของผู้ใช้ที่จะ
+    ไปดึงไฟล์ที่ล็อกสิทธิ์ใน Studio ได้"""
+    try:
+        import base64
+        from xmodule.contentstore.django import contentstore
+        from xmodule.contentstore.content import StaticContent
+        assets, _count = contentstore().get_all_content_for_course(course_key)
+        match = next((a for a in assets if name_predicate(a.get('displayname', ''))), None)
+        if not match:
+            return None
+        loc = StaticContent.compute_location(course_key, match['displayname'])
+        content = contentstore().find(loc)
+        b64 = base64.b64encode(content.data).decode('ascii')
+        return f"data:{content.content_type};base64,{b64}"
+    except Exception:
+        logging.getLogger(__name__).exception("certificate: asset lookup failed for %s", course_key)
+        return None
+
+
 @require_GET
 @_require_login
 def api_my_certificate_download(request, cert_id):
@@ -1433,6 +2034,8 @@ def api_my_certificate_download(request, cert_id):
     สร้าง PDF ใบประกาศแล้วส่งกลับ (ใช้ WeasyPrint)
     """
     from django.http import HttpResponse
+    from opaque_keys.edx.keys import CourseKey
+    from military_profile.models import CourseRequirement, RANK_CLASS_CHOICES
     try:
         cert = UserCertificateExpiry.objects.get(id=cert_id, user=request.user)
     except UserCertificateExpiry.DoesNotExist:
@@ -1448,51 +2051,120 @@ def api_my_certificate_download(request, cert_id):
     try:
         from military_profile.models import MilitaryUserProfile
         profile = MilitaryUserProfile.objects.get(user=request.user)
-        rank = _html.escape(profile.get_rank_display())
+        rank = _html.escape(profile.display_rank_name)
         full_name = _html.escape(profile.full_name_th)
-        unit = _html.escape(profile.unit)
+        unit = _html.escape(_unit_display(profile))   # ใช้ organization.name (ตรงเมนูจัดการหน่วยงาน) แทน profile.unit ดิบ — 2026-08-03
     except Exception:
         rank = full_name = unit = ''
 
-    issued_str = cert.issued_date.strftime('%d/%m/%Y') if cert.issued_date else '-'
-    expiry_str = cert.expiry_date.strftime('%d/%m/%Y') if cert.expiry_date else 'ไม่มีวันหมดอายุ'
+    req = CourseRequirement.objects.filter(course_id=cert.course_id, is_active=True).first()
+    rank_class_label = dict(RANK_CLASS_CHOICES).get(req.rank_class, '') if req else ''
+
+    issued_th = _thai_month_year(cert.issued_date)
+    # แสดง "มีผลถึง" ลบ 1 วัน (แสดงผลบนใบเท่านั้น — ไม่แตะ cert.expiry_date จริงในฐานข้อมูล)
+    from datetime import timedelta as _td
+    expiry_th = _thai_month_year(cert.expiry_date - _td(days=1) if cert.expiry_date else None)
     _cert_year = cert.issued_date.year + 543 if cert.issued_date and 1900 < cert.issued_date.year < 2100 else 'xxxx'
     cert_no = f"สส.{_cert_year}-{cert.id:04d}"
     course_name = _html.escape(course_name)
+    rank_class_label = _html.escape(rank_class_label)
 
+    logo_uri = _bundled_asset_data_uri('logo.png')
+    watermark_uri = _bundled_asset_data_uri('watermark.png')
+    try:
+        course_key = CourseKey.from_string(cert.course_id)
+        sig_uri = _course_asset_data_uri(course_key, lambda n: n.strip().startswith('จก'))
+    except Exception:
+        sig_uri = None
+    logo_img_tag = f'<img class="logo" src="{logo_uri}">' if logo_uri else ''
+    sig_img_tag = f'<img class="sig-img" src="{sig_uri}">' if sig_uri else ''
+    watermark_tag = f'<img class="watermark" src="{watermark_uri}">' if watermark_uri else ''
+
+    # ผู้ลงนาม (ผบ.): ดึงชื่อจาก signatory ของ cert config ของคอร์ส — เดิม hardcode "พลโท" (ไม่มีชื่อ)
+    # แก้เฉพาะ "ข้อความ" ยศ -> ชื่อเต็ม (เช่น "พลโท พรเทพ ยังรักษา) รูปแบบ/ตำแหน่ง/CSS ของใบคงเดิมทุกอย่าง
+    sig_name = "พลโท"
+    try:
+        from opaque_keys.edx.keys import CourseKey as _CK
+        from xmodule.modulestore.django import modulestore as _ms
+        _course = _ms().get_course(_CK.from_string(str(cert.course_id)))
+        _cfgs = (getattr(_course, "certificates", None) or {}).get("certificates", [])
+        for _c in _cfgs:
+            for _s in (_c.get("signatories") or []):
+                if _s.get("name"):
+                    sig_name = _s["name"]
+                    break
+            if sig_name != "พลโท":
+                break
+    except Exception:
+        pass
+    sig_name = _html.escape(" ".join(sig_name.split()))   # normalize ช่องว่าง (ยุบเว้นวรรคซ้ำ/หัวท้าย) 2026-08-03
+
+    _sp = sig_name.split(" ", 1)
+    sig_rank_only = _sp[0]
+    sig_person = _sp[1] if len(_sp) > 1 else ""
     html_content = f"""<!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
-  body {{ font-family: 'Sarabun', sans-serif; margin: 0; padding: 40px; background: #fff; }}
-  .cert {{ border: 8px double #4A1A6B; padding: 40px; max-width: 700px; margin: auto; text-align: center; }}
-  .logo {{ font-size: 48px; margin-bottom: 8px; }}
-  .org {{ color: #4A1A6B; font-size: 22px; font-weight: 700; }}
-  .title {{ font-size: 28px; font-weight: 700; color: #2D0F42; margin: 24px 0 8px; }}
-  .subtitle {{ color: #666; margin-bottom: 32px; }}
-  .recipient {{ font-size: 20px; font-weight: 600; color: #1a1a1a; margin: 8px 0; }}
-  .course {{ font-size: 18px; color: #4A1A6B; font-weight: 600; margin: 16px 0; }}
-  .detail {{ color: #555; font-size: 14px; margin: 4px 0; }}
-  .cert-no {{ color: #888; font-size: 13px; margin-top: 32px; border-top: 1px solid #eee; padding-top: 16px; }}
-  .gold {{ color: #C9A84C; }}
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap');
+  @page {{ size: A4 landscape; margin: 0; }}
+  body {{ font-family: 'Sarabun', sans-serif; margin: 0; padding: 0; background: #fff; }}
+  .cert {{ box-sizing: border-box; width: 100%; height: 100vh; padding: 16px; }}
+  .frame {{ box-sizing: border-box; border: 3px solid #C9A84C; padding: 5px; height: 100%; }}
+  .frame-inner {{
+    box-sizing: border-box; border: 1px solid #C9A84C; height: 100%;
+    padding: 22px 60px 150px; text-align: center; position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  }}
+  .watermark {{
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 480px; opacity: 0.08; z-index: 0;
+  }}
+  .content {{ position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }}
+  .logo {{ width: 200px; height: auto; margin-bottom: 4px; }}
+  .school {{ font-size: 60px; font-weight: 500; color: #1a1a1a; }}
+  .dept {{ font-size: 34px; font-weight: 500; color: #1a1a1a; margin-top: 2px; }}
+  .subtitle {{ font-size: 30px; color: #333; margin-top: 2px; margin-bottom: 8px; }}
+  .rule {{ width: 60%; margin: 10px auto 10px; border: none; border-top: 2px solid #C9A84C; }}
+  .recipient {{ font-size: 33px; font-weight: 500; color: #1a1a1a; margin: 4px 0 4px; }}
+  .unit {{ font-size: 16px; color: #555; margin-bottom: 8px; }}
+  .body-line {{ font-size: 22px; color: #1a1a1a; font-weight: 500; line-height: 1.4; margin: 2px 0; }}
+  .course {{ font-size: 22px; color: #4A1A6B; font-weight: 500; margin: 6px 0 4px; }}
+  .dates {{ font-size: 17px; color: #333; margin-top: 2px; }}
+  .sigblock {{ position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); text-align: center; width: 300px; }}
+  .sig-img {{ height: 64px; margin-bottom: 2px; }}
+  .sig-rank {{ font-size: 15px; font-weight: 700; color: #1a1a1a; }}
+  .sig-line {{ display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 20px; font-weight: 500; color: #1a1a1a; transform: translateX(-30px); }}
+  .sig-name {{ font-size: 18px; font-weight: 400; color: #1a1a1a; margin-top: 4px; }}
+  .sig-title {{ font-size: 12px; color: #444; margin-top: 2px; }}
+  .cert-no {{ position: absolute; left: 60px; bottom: 24px; font-size: 11px; color: #999; }}
 </style>
 </head>
 <body>
 <div class="cert">
-  <div class="logo">🏆</div>
-  <div class="org">กรมการทหารสื่อสาร</div>
-  <div class="title">ใบประกาศนียบัตร</div>
-  <div class="subtitle">CERTIFICATE OF COMPLETION</div>
-  <p class="detail">ขอมอบให้แก่</p>
-  <p class="recipient">{rank} {full_name}</p>
-  <p class="detail">สังกัด {unit}</p>
-  <p class="detail" style="margin-top:16px">ได้ผ่านการศึกษาหลักสูตร</p>
-  <p class="course">"{course_name}"</p>
-  <p class="detail">วันที่ออกใบประกาศ: {issued_str}</p>
-  <p class="detail">วันที่หมดอายุ: {expiry_str}</p>
-  <div class="cert-no">เลขที่ใบประกาศ: {cert_no}</div>
+  <div class="frame">
+    <div class="frame-inner">
+      {watermark_tag}
+      <div class="content">
+        {logo_img_tag}
+        <div class="school">โรงเรียนทหารสื่อสาร</div>
+        <div class="dept">กรมการทหารสื่อสาร</div>
+        <div class="subtitle">ประกาศนียบัตรฉบับนี้เพื่อแสดงว่า</div>
+        <p class="recipient">{rank} {full_name}</p>
+        <hr class="rule">
+        <p class="body-line">ได้ผ่านการประเมินและรับรองมาตรฐานความรู้เหล่าทหารสื่อสาร</p>
+        <p class="body-line">สำหรับ {rank_class_label}</p>
+        <p class="dates">ให้ไว้ ณ วันที่ {issued_th} &nbsp;&nbsp;&nbsp; มีผลถึง {expiry_th}</p>
+      </div>
+      <div class="sigblock">
+        <div class="sig-line">{sig_rank_only}&nbsp;{sig_img_tag}</div>
+        <div class="sig-name">({sig_person})</div>
+        <div class="sig-title">ผู้บัญชาการโรงเรียนทหารสื่อสาร กรมการทหารสื่อสาร</div>
+      </div>
+      <div class="cert-no">เลขที่ใบประกาศ: {cert_no}</div>
+    </div>
+  </div>
 </div>
 </body>
 </html>"""
@@ -1508,6 +2180,65 @@ def api_my_certificate_download(request, cert_id):
         response = HttpResponse(html_content, content_type='text/html; charset=utf-8')
         response['Content-Disposition'] = f'inline; filename="certificate_{cert_no}.html"'
         return response
+
+
+@require_GET
+@_require_admin
+def api_locked_accounts(request):
+    """
+    GET /military/api/v1/admin/locked-accounts/
+    รายชื่อบัญชีที่ถูกล็อกชั่วคราวอยู่ตอนนี้ (กรอกรหัสผ่านผิดเกินจำนวนครั้งที่
+    Open edX กำหนด) — ให้แอดมินดูได้ว่าเป็นใคร แล้วเลือกปลดล็อกเองได้ทันที
+    ไม่ต้องรอครบเวลาล็อกอัตโนมัติ (ปกติ 30 นาที)
+    """
+    from django.utils import timezone
+    from common.djangoapps.student.models import LoginFailures
+
+    now = timezone.now()
+    rows = (
+        LoginFailures.objects
+        .filter(lockout_until__gt=now)
+        .select_related("user", "user__military_profile")
+        .order_by("-lockout_until")
+    )
+
+    results = []
+    for row in rows:
+        profile = getattr(row.user, "military_profile", None)
+        remaining_seconds = int((row.lockout_until - now).total_seconds())
+        results.append({
+            "id": row.id,
+            "user_id": row.user_id,
+            "username": row.user.username,
+            "full_name": profile.display_full_name if profile else row.user.username,
+            "unit": _unit_display(profile) if profile else "",
+            "failure_count": row.failure_count,
+            "lockout_until": row.lockout_until.isoformat(),
+            "remaining_seconds": max(remaining_seconds, 0),
+        })
+
+    return JsonResponse({"results": results, "count": len(results)})
+
+
+@require_POST
+@_require_admin
+def api_unlock_account(request, user_id: int):
+    """
+    POST /military/api/v1/admin/locked-accounts/<user_id>/unlock/
+    ปลดล็อกบัญชีที่ถูกจำกัดจากการกรอกรหัสผิดเกินจำนวนครั้ง — ลบตัวนับ/เวลาล็อก
+    ทิ้ง ผู้ใช้ล็อกอินได้ทันทีในครั้งถัดไปถ้ากรอกถูก (ไม่ได้ปลดล็อกแบบเปิดให้
+    กรอกผิดได้ไม่จำกัดอีกต่อไป — ตัวนับใหม่จะเริ่มนับใหม่ตามปกติ)
+    """
+    from common.djangoapps.student.models import LoginFailures
+
+    deleted, _ = LoginFailures.objects.filter(user_id=user_id).delete()
+    if not deleted:
+        return JsonResponse({"error": "ไม่พบบัญชีที่ถูกล็อกอยู่ (อาจปลดล็อกไปแล้ว หรือหมดเวลาล็อกเองแล้ว)"}, status=404)
+
+    logging.getLogger(__name__).info(
+        "api_unlock_account: admin=%s unlocked user_id=%s", request.user.username, user_id
+    )
+    return JsonResponse({"message": "ปลดล็อกบัญชีสำเร็จ"})
 
 
 @require_GET
@@ -1593,7 +2324,8 @@ def api_system_health(request):
         mem_total_gb = mem_used_gb = mem_avail_gb = mem_pct = 0
 
     # Video storage
-    from .api_views_helpers import _get_video_dir_safe
+    # (ลบ dead import 'from .api_views_helpers import _get_video_dir_safe' 2026-07-30 —
+    #  โมดูลนั้นไม่มีอยู่จริงและฟังก์ชันไม่ได้ถูกใช้ ทำให้ endpoint นี้ 500 ทั้งตัว)
     video_dir = getattr(__import__("django.conf", fromlist=["settings"]).settings,
                         "MILITARY_VIDEO_DIR", "/openedx/media/videos")
     try:
@@ -1658,6 +2390,28 @@ def api_concurrent_status(request):
 @require_GET
 @_require_admin
 def api_admin_courses(request):
+    # ?search=xxx&minimal=1 — lightweight mode for course picker
+    search = request.GET.get("search", "").strip()
+    minimal = request.GET.get("minimal", "")
+    if minimal or search:
+        try:
+            from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+            from certificate_expiry.models import CourseCertificateConfig
+            cert_names = {c.course_id: c.course_name for c in CourseCertificateConfig.objects.exclude(course_name="")}
+            qs = CourseOverview.objects.all()
+            if search:
+                qs = qs.filter(display_name__icontains=search) | CourseOverview.objects.filter(id__icontains=search)
+            results = []
+            for c in qs.order_by("display_name")[:50]:
+                cid = str(c.id)
+                name = cert_names.get(cid) or c.display_name or cid
+                if search and search.lower() not in name.lower() and search.lower() not in cid.lower():
+                    continue
+                results.append({"id": cid, "name": name})
+            return JsonResponse({"results": results})
+        except Exception as ex:
+            return JsonResponse({"error": str(ex)}, status=500)
+
     try:
         from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
         from common.djangoapps.student.models import CourseAccessRole, CourseEnrollment
@@ -2235,7 +2989,16 @@ def api_import_execute(request):
         try:
             lib_api.publish_changes(library_key, user_id=request.user.id)
         except Exception:
-            pass
+            # publish_all_drafts() (the actual DB publish) already ran and committed
+            # inside publish_changes() before its own post-publish event/index-wait
+            # step -- which is what usually raises here (e.g. PublishLog.DoesNotExist
+            # race between the LMS worker and the just-committed transaction). The
+            # content is already published either way, so always reindex below
+            # rather than skipping it because this specific step errored.
+            logging.getLogger(__name__).exception(
+                "publish_changes failed for library %s during import", library_key_str
+            )
+        _reindex_library_search(library_key_str)
 
         return JsonResponse({
             "success": True,
@@ -2444,12 +3207,14 @@ def api_bulk_delete_blocks(request):
                 return JsonResponse({"error": "Forbidden"}, status=403)
 
         deleted = 0
+        deleted_keys = []
         errors = []
         for key_str in usage_keys:
             try:
                 usage_key = LibraryUsageLocatorV2.from_string(key_str)
                 lib_api.delete_library_block(usage_key)
                 deleted += 1
+                deleted_keys.append(key_str)
             except Exception as ex:
                 errors.append({"key": key_str, "error": str(ex)})
 
@@ -2457,7 +3222,12 @@ def api_bulk_delete_blocks(request):
         try:
             lib_api.publish_changes(library_key, user_id=request.user.id)
         except Exception:
-            pass
+            # See comment in api_import_execute: the DB-level publish already
+            # committed before this step, so always de-index below regardless.
+            logging.getLogger(__name__).exception(
+                "publish_changes failed for library %s during bulk delete", library_key
+            )
+        _deindex_library_blocks(deleted_keys)
 
         return JsonResponse({
             "success": True,
@@ -2495,13 +3265,14 @@ def _parse_excel_users(file_bytes):
         "username": ["username", "ชื่อผู้ใช้", "user"],
         "full_name_th": ["full_name_th", "ชื่อ-นามสกุล", "ชื่อเต็ม", "full_name"],
         "rank": ["rank", "ยศ", "ชั้นยศ"],
+        "position": ["position", "ตำแหน่ง", "job_title"],
         "national_id": ["national_id", "เลขบัตรประชาชน", "หมายเลขประจำตัวประชาชน"],
         "military_id": ["military_id", "เลขประจำตัวทหาร", "รหัสทหาร"],
         "unit": ["unit", "หน่วย", "หน่วยงาน"],
         "sub_unit": ["sub_unit", "หน่วยรอง"],
         "birth_date": ["birth_date", "วันเกิด", "วันเดือนปีเกิด"],
         "service_start_date": ["service_start_date", "วันเข้ารับราชการ", "วันบรรจุ"],
-        "role": ["role", "บทบาท", "ตำแหน่ง"],
+        "role": ["role", "บทบาท"],
         "army_region": ["army_region", "ภาค"],
         "contact_email": ["contact_email", "email", "อีเมล"],
         "phone_number": ["phone_number", "เบอร์โทร", "โทร"],
@@ -2518,7 +3289,7 @@ def _parse_excel_users(file_bytes):
                 col_index[field] = header.index(alias)
                 break
 
-    required = ["username", "full_name_th", "national_id", "unit", "birth_date", "service_start_date"]
+    required = ["username", "full_name_th", "national_id", "unit"]
     missing = [f for f in required if f not in col_index]
     if missing:
         return [], [f"ไม่พบคอลัมน์ที่จำเป็น: {', '.join(missing)}"]
@@ -2540,9 +3311,13 @@ def _parse_excel_users(file_bytes):
         national_id = get("national_id")
         military_id = get("military_id")
 
+        # ถ้าไม่มี username → ใช้เลขบัตรประชาชนแทน
         if not username:
-            errors.append(f"แถว {row_num}: ไม่มี username")
-            continue
+            if not national_id:
+                errors.append(f"แถว {row_num}: ไม่มีทั้ง username และเลขบัตรประชาชน")
+                continue
+            username = national_id
+
         if not full_name:
             errors.append(f"แถว {row_num}: ไม่มีชื่อ-นามสกุล (username={username})")
             continue
@@ -2550,14 +3325,16 @@ def _parse_excel_users(file_bytes):
             errors.append(f"แถว {row_num}: ไม่มีเลขบัตรประชาชน (username={username})")
             continue
 
+        from .unit_aliases import normalize_unit
         users.append({
             "username": username,
             "full_name_th": full_name,
             "rank": get("rank") or "PVT",
+            "position": get("position") or "",
             "national_id": national_id,
             "military_id": military_id or national_id,
-            "unit": get("unit"),
-            "sub_unit": get("sub_unit"),
+            "unit": normalize_unit(get("unit")),
+            "sub_unit": normalize_unit(get("sub_unit")),
             "birth_date": get("birth_date"),
             "service_start_date": get("service_start_date"),
             "role": get("role") or "student",
@@ -2592,13 +3369,14 @@ def api_admin_bulk_import_template(request):
     ws.title = "นำเข้าผู้ใช้"
 
     headers = [
-        "username", "full_name_th", "rank", "national_id", "military_id",
+        "username", "full_name_th", "rank", "position", "national_id", "military_id",
         "unit", "sub_unit", "birth_date", "service_start_date",
         "role", "army_region", "contact_email", "phone_number", "password",
         "gender", "personnel_type", "civilian_prefix",
     ]
     notes = [
         "ชื่อผู้ใช้ (ภาษาอังกฤษ/ตัวเลข)*", "ชื่อ-นามสกุล*", "ยศ (เช่น CPT, MAJ) - ทหารเท่านั้น",
+        "ตำแหน่ง (เช่น ผบ.ร้อย, ฝอ.1, นายทหารสื่อสาร)",
         "เลขบัตรประชาชน 13 หลัก*", "เลขประจำตัวทหาร 10 หลัก - ทหารเท่านั้น",
         "หน่วยงาน*", "หน่วยรอง", "วันเกิด (DD/MM/YYYY)*", "วันเข้ารับราชการ (DD/MM/YYYY)*",
         "บทบาท: student/instructor", "ภาค (เช่น 1,2,3,4)", "อีเมล", "เบอร์โทร",
@@ -2608,13 +3386,13 @@ def api_admin_bulk_import_template(request):
         "คำนำหน้า (พลเรือน): นาย / นาง / นางสาว",
     ]
     sample_military = [
-        "artsgt001", "วีระศักดิ์ มัจฉา", "SGT2", "1234567890123", "1234567890",
+        "artsgt001", "วีระศักดิ์ มัจฉา", "SGT2", "นายทหารสื่อสาร", "1234567890123", "1234567890",
         "กรมทหารสื่อสาร", "กองพัน 1", "15/03/2000", "01/04/2020",
         "student", "1", "art@example.com", "0812345678", "",
         "M", "military", "",
     ]
     sample_civilian = [
-        "civ001", "สมศรี ใจดี", "", "9876543210123", "",
+        "civ001", "สมศรี ใจดี", "", "เจ้าหน้าที่ธุรการ", "9876543210123", "",
         "กรมทหารสื่อสาร", "", "20/05/1990", "01/06/2018",
         "student", "", "ssc@example.com", "0898765432", "",
         "", "civilian", "นาง",
@@ -2654,6 +3432,113 @@ def api_admin_bulk_import_template(request):
     return response
 
 
+# ─── Bulk import background task store ───────────────────────
+_import_tasks: dict = {}
+_import_task_lock = threading.Lock()
+
+
+def _resolve_org(unit_val: str):
+    """ค้นหา Organization จาก unit string (match name ก่อน แล้ว code)"""
+    if not unit_val:
+        return None
+    return (Organization.objects.filter(name=unit_val).first()
+            or Organization.objects.filter(code=unit_val).first())
+
+
+def _run_import_task(task_id: str, users: list, parse_errors: list) -> None:
+    """Run bulk user import in a background thread."""
+    import django.db
+    from django.contrib.auth.hashers import PBKDF2PasswordHasher
+
+    # Use fewer iterations for bulk import — Django upgrades on first login
+    _fast_hasher = PBKDF2PasswordHasher()
+    _fast_hasher.iterations = 50_000
+
+    def _make_fast_password(raw: str) -> str:
+        salt = _fast_hasher.salt()
+        return _fast_hasher.encode(raw, salt)
+
+    created = []
+    skipped = []
+    errors = list(parse_errors)
+    total = len(users)
+
+    with _import_task_lock:
+        _import_tasks[task_id]["status"] = "running"
+
+    try:
+        for i, u in enumerate(users):
+            row = u.pop("_row", "?")
+            username = u["username"]
+            national_id = u["national_id"]
+            military_id = u["military_id"]
+
+            try:
+                if User.objects.filter(username=username).exists():
+                    skipped.append({"username": username, "reason": "username ซ้ำ"})
+                    continue
+                if User.objects.filter(email=national_id).exists():
+                    skipped.append({"username": username, "reason": "เลขบัตรประชาชนซ้ำ"})
+                    continue
+
+                raw_password = u.get("password") or military_id
+                user_obj = User(
+                    username=username,
+                    email=national_id,
+                    first_name=u["full_name_th"],
+                    is_active=True,
+                    is_staff=False,
+                )
+                user_obj.password = _make_fast_password(raw_password)
+                user_obj.save()
+
+                _allowed_import_roles = {"student", "instructor", "org_admin"}
+                _import_role = u.get("role", "student")
+                if _import_role not in _allowed_import_roles:
+                    _import_role = "student"
+
+                profile = MilitaryUserProfile.objects.create(
+                    user=user_obj,
+                    national_id_encrypted=encrypt_field(national_id),
+                    military_id_encrypted=encrypt_field(military_id),
+                    full_name_th=u["full_name_th"],
+                    rank=u["rank"],
+                    position=u.get("position", ""),
+                    unit=u["unit"],
+                    organization=_resolve_org(u["unit"]),
+                    sub_unit=u.get("sub_unit", ""),
+                    service_start_date=_parse_date(u["service_start_date"]) if u.get("service_start_date") else None,
+                    birth_date=_parse_date(u["birth_date"]) if u.get("birth_date") else None,
+                    role=_import_role,
+                    contact_email=u.get("contact_email", ""),
+                    phone_number=u.get("phone_number", ""),
+                    army_region=u.get("army_region", ""),
+                )
+                _ensure_edx_user_profile(user_obj, u["full_name_th"])
+                if profile.role == "instructor":
+                    _grant_course_creator(user_obj)
+
+                created.append(username)
+
+            except Exception as ex:
+                errors.append(f"แถว {row} ({username}): {str(ex)}")
+
+            finally:
+                with _import_task_lock:
+                    _import_tasks[task_id]["progress"] = i + 1
+
+    finally:
+        django.db.connection.close()
+        with _import_task_lock:
+            _import_tasks[task_id].update({
+                "status": "done",
+                "created": len(created),
+                "skipped": len(skipped),
+                "skipped_list": skipped[:50],
+                "errors": errors[:100],
+            })
+
+
 @require_http_methods(["POST"])
 @_require_admin
 def api_admin_bulk_import_users(request):
@@ -2681,71 +3566,43 @@ def api_admin_bulk_import_users(request):
             "parse_errors": parse_errors,
         })
 
-    # Actual import
-    created = []
-    skipped = []
-    errors = list(parse_errors)
+    # Start background import task
+    task_id = str(uuid.uuid4())
+    with _import_task_lock:
+        _import_tasks[task_id] = {
+            "status": "pending",
+            "progress": 0,
+            "total": len(users),
+            "created": 0,
+            "skipped": 0,
+            "skipped_list": [],
+            "errors": list(parse_errors),
+        }
 
-    for u in users:
-        row = u.pop("_row", "?")
-        username = u["username"]
-        national_id = u["national_id"]
-        military_id = u["military_id"]
-
-        if User.objects.filter(username=username).exists():
-            skipped.append({"username": username, "reason": "username ซ้ำ"})
-            continue
-        if User.objects.filter(email=national_id).exists():
-            skipped.append({"username": username, "reason": "เลขบัตรประชาชนซ้ำ"})
-            continue
-
-        try:
-            password = u.get("password") or military_id
-            user = User.objects.create_user(
-                username=username,
-                email=national_id,
-                password=password,
-                first_name=u["full_name_th"],
-            )
-            _allowed_import_roles = {"student", "instructor", "org_admin"}
-            _import_role = u.get("role", "student")
-            if _import_role not in _allowed_import_roles:
-                _import_role = "student"
-            user.is_active = True
-            user.is_staff = False  # bulk import ห้ามสร้าง admin — ต้องตั้งผ่าน admin panel
-            user.save()
-
-            profile = MilitaryUserProfile.objects.create(
-                user=user,
-                national_id_encrypted=encrypt_field(national_id),
-                military_id_encrypted=encrypt_field(military_id),
-                full_name_th=u["full_name_th"],
-                rank=u["rank"],
-                unit=u["unit"],
-                sub_unit=u.get("sub_unit", ""),
-                service_start_date=_parse_date(u["service_start_date"]),
-                birth_date=_parse_date(u["birth_date"]),
-                role=_import_role,
-                contact_email=u.get("contact_email", ""),
-                phone_number=u.get("phone_number", ""),
-                army_region=u.get("army_region", ""),
-            )
-            _ensure_edx_user_profile(user, u["full_name_th"])
-            if profile.role == "instructor":
-                _grant_course_creator(user)
-
-            created.append(username)
-        except Exception as ex:
-            errors.append(f"แถว {row} ({username}): {str(ex)}")
+    t = threading.Thread(
+        target=_run_import_task,
+        args=(task_id, users, parse_errors),
+        daemon=True,
+    )
+    t.start()
 
     return JsonResponse({
-        "success": True,
-        "created": len(created),
-        "skipped": len(skipped),
-        "skipped_list": skipped,
-        "errors": errors,
+        "task_id": task_id,
         "total": len(users),
+        "status": "started",
     })
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_admin_bulk_import_status(request):
+    """GET /military/api/v1/admin/users/bulk-import/status/?task_id=... — poll import progress"""
+    task_id = request.GET.get("task_id", "")
+    with _import_task_lock:
+        task = _import_tasks.get(task_id)
+    if task is None:
+        return JsonResponse({"error": "ไม่พบ task"}, status=404)
+    return JsonResponse(task)
 
 # ─────────────────────────────────────────────────────────────
 # API: ระบบอนุมัติใบประกาศ Batch
@@ -2821,12 +3678,13 @@ def api_cert_batches(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-@require_http_methods(["GET", "POST", "DELETE"])
+@require_http_methods(["GET", "POST", "PATCH", "DELETE"])
 @_require_admin
 def api_cert_batch_detail(request, batch_id):
     """
     GET    /military/api/v1/cert/batches/<id>/  — รายชื่อรออนุมัติ
     POST   /military/api/v1/cert/batches/<id>/  — อนุมัติทั้งหมด
+    PATCH  /military/api/v1/cert/batches/<id>/  — แก้ไขรายละเอียดรอบ
     DELETE /military/api/v1/cert/batches/<id>/  — ลบรอบ
     """
 
@@ -2838,16 +3696,39 @@ def api_cert_batch_detail(request, batch_id):
         return JsonResponse({'error': 'Not found'}, status=404)
 
     if request.method == 'GET':
-        pendings = batch.pending_approvals.select_related('user').order_by('user__last_name')
+        from django.db.models import Q
+
+        pendings = (batch.pending_approvals
+                    .select_related('user', 'user__military_profile')
+                    .order_by('user__last_name'))
+
+        search = request.GET.get('search', '').strip()
+        if search:
+            pendings = pendings.filter(
+                Q(user__military_profile__full_name_th__icontains=search)
+                | Q(user__username__icontains=search)
+                | Q(user__first_name__icontains=search)
+                | Q(user__last_name__icontains=search)
+            )
+
+        try:
+            page = max(1, int(request.GET.get('page', 1)))
+            page_size = min(100, max(1, int(request.GET.get('page_size', 20))))
+        except (TypeError, ValueError):
+            page, page_size = 1, 20
+
+        list_count = pendings.count()
+        page_items = pendings[(page - 1) * page_size: page * page_size]
+
         data = []
-        for p in pendings:
+        for p in page_items:
             profile = getattr(p.user, 'military_profile', None)
             data.append({
                 'id': p.id,
                 'username': p.user.username,
                 'full_name': p.user.get_full_name() or p.user.username,
                 'rank': profile.rank if profile else '',
-                'unit': profile.unit if profile else '',
+                'unit': _unit_display(profile) if profile else '',
                 'passed_at': p.passed_at.strftime('%Y-%m-%d %H:%M'),
                 'score': p.score,
                 'status': p.status,
@@ -2859,11 +3740,16 @@ def api_cert_batch_detail(request, batch_id):
                 'name': batch.name,
                 'course_id': batch.course_id,
                 'course_name': batch.course_name,
-                'approve_date': str(batch.approve_date),
+                'enrollment_start': str(batch.enrollment_start),
                 'enrollment_end': str(batch.enrollment_end),
+                'approve_date': str(batch.approve_date),
                 'status': batch.status,
+                'note': batch.note,
             },
             'pending': data,
+            'pending_page': page,
+            'pending_page_size': page_size,
+            'pending_count': list_count,
             'counts': {
                 'pending': batch.pending_approvals.filter(status='pending').count(),
                 'approved': batch.pending_approvals.filter(status='approved').count(),
@@ -2906,11 +3792,102 @@ def api_cert_batch_detail(request, batch_id):
             'errors': errors,
         })
 
+    elif request.method == 'PATCH':
+        try:
+            body = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        old_approve_date = batch.approve_date
+
+        if 'name' in body:
+            batch.name = body['name']
+        if 'enrollment_start' in body:
+            batch.enrollment_start = body['enrollment_start']
+        if 'enrollment_end' in body:
+            batch.enrollment_end = body['enrollment_end']
+        if 'approve_date' in body:
+            batch.approve_date = body['approve_date']
+        if 'note' in body:
+            batch.note = body['note']
+
+        try:
+            batch.save()
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+        # ถ้าแก้ "วันที่อนุมัติ" ของรอบที่อนุมัติไปแล้ว ต้อง sync วันออก/หมดอายุ
+        # ใบประกาศของทุกคนที่อนุมัติในรอบนี้ใหม่ ให้ตรงกับวันที่แก้ไข — คงเจตนา
+        # เดิมที่ต้องการให้กำลังพลทั้งรอบหมดอายุพร้อมกัน
+        synced = 0
+        if batch.status == 'approved' and str(old_approve_date) != str(batch.approve_date):
+            from datetime import date as _date
+            from dateutil.relativedelta import relativedelta
+            from certificate_expiry.models import CourseCertificateConfig, UserCertificateExpiry
+
+            try:
+                config = CourseCertificateConfig.objects.get(course_id=batch.course_id)
+                validity_years = config.validity_years
+            except CourseCertificateConfig.DoesNotExist:
+                validity_years = 3
+
+            approve_date = batch.approve_date
+            if isinstance(approve_date, str):
+                approve_date = _date.fromisoformat(approve_date)
+            new_expiry = approve_date + relativedelta(years=validity_years)
+
+            approved_user_ids = list(
+                batch.pending_approvals.filter(status='approved').values_list('user_id', flat=True)
+            )
+            synced = UserCertificateExpiry.objects.filter(
+                user_id__in=approved_user_ids, course_id=batch.course_id,
+            ).update(issued_date=approve_date, expiry_date=new_expiry)
+
+        return JsonResponse({'message': 'แก้ไขรอบสำเร็จ', 'synced_certificates': synced})
+
     elif request.method == 'DELETE':
         batch.delete()
         return JsonResponse({'message': 'ลบรอบสำเร็จ'})
 
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@require_http_methods(["DELETE"])
+@_require_admin
+def api_cert_pending_detail(request, batch_id, pending_id):
+    """
+    DELETE /military/api/v1/cert/batches/<batch_id>/pending/<pending_id>/
+    เอาคนออกจากรอบ
+
+    - ถ้ายังไม่อนุมัติ (pending/rejected): ลบแถวออกจากรอบเฉยๆ
+    - ถ้าอนุมัติไปแล้ว (approved): ยกเลิกใบประกาศจริงด้วย (invalidate
+      GeneratedCertificate + เปลี่ยนสถานะ UserCertificateExpiry เป็น revoked
+      แทนการลบทิ้ง เพื่อให้ยังตรวจสอบย้อนหลังได้ว่าเคยมีการอนุมัติแล้วถูกถอน)
+      แล้วค่อยลบแถวออกจากรอบ
+    """
+    from military_profile.models import CertificatePendingApproval
+
+    try:
+        p = CertificatePendingApproval.objects.get(id=pending_id, batch_id=batch_id)
+    except CertificatePendingApproval.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if p.status == 'approved':
+        try:
+            from opaque_keys.edx.keys import CourseKey
+            from lms.djangoapps.certificates.api import invalidate_certificate
+            from certificate_expiry.models import UserCertificateExpiry
+
+            ck = CourseKey.from_string(p.batch.course_id)
+            invalidate_certificate(p.user_id, ck, source=f'military_admin:{request.user.username}')
+            UserCertificateExpiry.objects.filter(
+                user_id=p.user_id, course_id=p.batch.course_id,
+            ).update(status=UserCertificateExpiry.STATUS_REVOKED)
+        except Exception as e:
+            return JsonResponse({'error': f'ยกเลิกใบประกาศไม่สำเร็จ: {e}'}, status=400)
+
+    p.delete()
+    return JsonResponse({'message': 'ลบออกจากรอบสำเร็จ'})
 
 
 @require_http_methods(["POST"])
@@ -4012,145 +4989,291 @@ def api_doc_delete(request):
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Admin — CourseRequirement CRUD
+# ─────────────────────────────────────────────────────────────────────
+
+@require_http_methods(["GET", "POST"])
+@_require_admin
+def api_admin_course_requirements(request):
+    """
+    GET  /military/api/v1/admin/course-requirements/  — list all
+    POST /military/api/v1/admin/course-requirements/  — create new
+    """
+    from .models import CourseRequirement, RANK_CLASS_CHOICES
+
+    rank_class_labels = dict(RANK_CLASS_CHOICES)
+
+    if request.method == "GET":
+        qs = CourseRequirement.objects.all().order_by("rank_class", "course_name")
+        results = [
+            {
+                "id": r.id,
+                "rank_class": r.rank_class,
+                "rank_class_display": rank_class_labels.get(r.rank_class, r.rank_class),
+                "course_id": r.course_id,
+                "course_name": r.course_name,
+                "is_active": r.is_active,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in qs
+        ]
+        return JsonResponse({"count": len(results), "results": results})
+
+    # POST — create
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "JSON ไม่ถูกต้อง"}, status=400)
+
+    rank_class = body.get("rank_class", "").strip()
+    course_id  = body.get("course_id",  "").strip()
+    course_name = body.get("course_name", "").strip()
+    is_active  = body.get("is_active", True)
+
+    if not rank_class:
+        return JsonResponse({"error": "กรุณาระบุระดับชั้น"}, status=400)
+    if not course_id:
+        return JsonResponse({"error": "กรุณาระบุ Course ID"}, status=400)
+    if not course_name:
+        return JsonResponse({"error": "กรุณาระบุชื่อหลักสูตร"}, status=400)
+
+    valid_classes = [c for c, _ in RANK_CLASS_CHOICES]
+    if rank_class not in valid_classes:
+        return JsonResponse({"error": f"rank_class ไม่ถูกต้อง: {rank_class}"}, status=400)
+
+    try:
+        req, created = CourseRequirement.objects.get_or_create(
+            rank_class=rank_class,
+            course_id=course_id,
+            defaults={"course_name": course_name, "is_active": is_active},
+        )
+        if not created:
+            return JsonResponse({"error": "มี requirement นี้อยู่แล้ว (rank_class + course_id ซ้ำ)"}, status=409)
+    except Exception as ex:
+        return JsonResponse({"error": str(ex)}, status=500)
+
+    return JsonResponse({
+        "id": req.id,
+        "rank_class": req.rank_class,
+        "rank_class_display": rank_class_labels.get(req.rank_class, req.rank_class),
+        "course_id": req.course_id,
+        "course_name": req.course_name,
+        "is_active": req.is_active,
+        "created_at": req.created_at.isoformat(),
+    }, status=201)
+
+
+@require_http_methods(["GET", "PATCH", "DELETE"])
+@_require_admin
+def api_admin_course_requirement_detail(request, req_id: int):
+    """
+    GET    /military/api/v1/admin/course-requirements/<id>/  — detail
+    PATCH  /military/api/v1/admin/course-requirements/<id>/  — update
+    DELETE /military/api/v1/admin/course-requirements/<id>/  — delete
+    """
+    from .models import CourseRequirement, RANK_CLASS_CHOICES
+
+    rank_class_labels = dict(RANK_CLASS_CHOICES)
+
+    try:
+        req = CourseRequirement.objects.get(pk=req_id)
+    except CourseRequirement.DoesNotExist:
+        return JsonResponse({"error": "ไม่พบข้อมูล"}, status=404)
+
+    if request.method == "DELETE":
+        req.delete()
+        return JsonResponse({"success": True})
+
+    if request.method == "GET":
+        return JsonResponse({
+            "id": req.id,
+            "rank_class": req.rank_class,
+            "rank_class_display": rank_class_labels.get(req.rank_class, req.rank_class),
+            "course_id": req.course_id,
+            "course_name": req.course_name,
+            "is_active": req.is_active,
+            "created_at": req.created_at.isoformat(),
+        })
+
+    # PATCH — partial update
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "JSON ไม่ถูกต้อง"}, status=400)
+
+    if "course_name" in body:
+        req.course_name = body["course_name"].strip()
+    if "is_active" in body:
+        req.is_active = bool(body["is_active"])
+    if "rank_class" in body:
+        valid_classes = [c for c, _ in RANK_CLASS_CHOICES]
+        if body["rank_class"] not in valid_classes:
+            return JsonResponse({"error": "rank_class ไม่ถูกต้อง"}, status=400)
+        req.rank_class = body["rank_class"]
+    if "course_id" in body:
+        req.course_id = body["course_id"].strip()
+
+    try:
+        req.save()
+    except Exception as ex:
+        return JsonResponse({"error": str(ex)}, status=500)
+
+    return JsonResponse({
+        "id": req.id,
+        "rank_class": req.rank_class,
+        "rank_class_display": rank_class_labels.get(req.rank_class, req.rank_class),
+        "course_id": req.course_id,
+        "course_name": req.course_name,
+        "is_active": req.is_active,
+        "created_at": req.created_at.isoformat(),
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Reports — Compliance (มาตรฐานกำลังพล)
 # ─────────────────────────────────────────────────────────────────────
 
 @require_http_methods(["GET"])
 @_require_admin
-def api_reports_compliance_overview(request):
-    """GET /military/api/v1/reports/compliance/overview/"""
-    from .compliance import bulk_compliance_stats
-    from .models import MilitaryUserProfile
-    qs = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user")
-    stats = bulk_compliance_stats(qs)
-    return JsonResponse(stats)
+def api_reports_summary(request):
+    """
+    GET /military/api/v1/reports/summary/?period=daily|weekly|monthly
+    สรุปสถานะกำลังพลในระบบ สำหรับรายงาน ทบ.
+    """
+    import datetime
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
+    from common.djangoapps.student.models import CourseEnrollment
+    from certificate_expiry.models import UserCertificateExpiry
+    from .compliance import bulk_get_compliance_statuses
+    from .models import MilitaryUserProfile, CourseRequirement, RANK_CLASS_CHOICES, CertificatePendingApproval
+
+    period = request.GET.get("period", "daily")  # daily | weekly | monthly
+    today  = datetime.date.today()
+
+    rank_class_labels = dict(RANK_CLASS_CHOICES)
+
+    # ── กำลังพลทั้งหมด (ไม่รวม admin) — fetch once, reuse ──────────
+    profile_list = list(
+        MilitaryUserProfile.objects
+        .exclude(role__in=("admin", "org_admin"))
+        .select_related("user")
+    )
+    total = len(profile_list)
+
+    # ── ลงทะเบียนเรียน (distinct users ที่ active enrollment) ───────
+    enrolled = (CourseEnrollment.objects
+                .filter(is_active=True,
+                        user__military_profile__isnull=False)
+                .exclude(user__military_profile__role__in=("admin", "org_admin"))
+                .values("user").distinct().count())
+
+    # ── ผ่านมาตรฐาน vs ไม่ผ่าน vs ไม่มีเงื่อนไข (2 queries total) ──
+    statuses = bulk_get_compliance_statuses(profile_list)
+    passed   = sum(1 for s in statuses.values() if s == "passed")
+    no_req   = sum(1 for s in statuses.values() if s == "no_requirements")
+    not_passed = total - passed - no_req
+
+    # ── สอบผ่านคะแนนแล้ว แต่ยังรอ admin กด "อนุมัติทั้งหมด" ในรอบ ──────
+    # (ย่อยของ not_passed ด้านบน — แยกให้เห็นเพื่อรายงาน ผบ. ว่ามีกี่คนที่
+    # "จบจริงแล้ว รอเซ็นอนุมัติ" ต่างจากคนที่ยังไม่สอบผ่านเลย)
+    pending_user_ids = set(
+        CertificatePendingApproval.objects
+        .filter(user_id__in=[p.user_id for p in profile_list], status="pending")
+        .values_list("user_id", flat=True).distinct()
+    )
+    pending_approval = len(pending_user_ids)
+
+    has_requirements = CourseRequirement.objects.filter(is_active=True).exists()
+
+    # ── Breakdown ตาม rank_class (รวม / ผ่านมาตรฐานแล้ว / สอบผ่านรออนุมัติ) ──
+    rank_class_counts: dict = {k: 0 for k, _ in RANK_CLASS_CHOICES if k != "all"}
+    rank_class_passed: dict = {k: 0 for k, _ in RANK_CLASS_CHOICES if k != "all"}
+    rank_class_pending: dict = {k: 0 for k, _ in RANK_CLASS_CHOICES if k != "all"}
+    for profile in profile_list:
+        rc = profile.rank_class
+        if rc in rank_class_counts:
+            rank_class_counts[rc] += 1
+            if statuses.get(profile.user_id) == "passed":
+                rank_class_passed[rc] += 1
+            if profile.user_id in pending_user_ids:
+                rank_class_pending[rc] += 1
+
+    rank_class_breakdown = [
+        {
+            "key": k, "label": rank_class_labels.get(k, k), "total": v,
+            "passed": rank_class_passed[k], "pending_approval": rank_class_pending[k],
+        }
+        for k, v in rank_class_counts.items() if v > 0
+    ]
+
+    # ── Trend: จำนวนผู้ลงทะเบียนใหม่ตามช่วงเวลา ─────────────────────
+    if period == "daily":
+        since = today - datetime.timedelta(days=29)
+        trunc_fn = TruncDate("date_joined")
+        fmt = lambda d: d.strftime("%d %b")
+    elif period == "weekly":
+        since = today - datetime.timedelta(weeks=11)
+        trunc_fn = TruncWeek("date_joined")
+        fmt = lambda d: f"สัปดาห์ {d.strftime('%-d %b')}"
+    else:  # monthly
+        since = today.replace(day=1) - datetime.timedelta(days=335)  # ~11 months back
+        trunc_fn = TruncMonth("date_joined")
+        fmt = lambda d: d.strftime("%b %Y")
+
+    trend_qs = (User.objects
+                .filter(date_joined__date__gte=since,
+                        military_profile__isnull=False)
+                .exclude(military_profile__role__in=("admin", "org_admin"))
+                .annotate(period=trunc_fn)
+                .values("period")
+                .annotate(n=Count("id"))
+                .order_by("period"))
+
+    trend = [{"label": fmt(row["period"].date() if hasattr(row["period"], "date") else row["period"]),
+              "value": row["n"]}
+             for row in trend_qs]
+
+    # ── สรุปช่วงเวลา ──────────────────────────────────────────────────
+    new_today = User.objects.filter(
+        date_joined__date=today,
+        military_profile__isnull=False
+    ).exclude(military_profile__role__in=("admin","org_admin")).count()
+
+    new_week = User.objects.filter(
+        date_joined__date__gte=today - datetime.timedelta(days=6),
+        military_profile__isnull=False
+    ).exclude(military_profile__role__in=("admin","org_admin")).count()
+
+    new_month = User.objects.filter(
+        date_joined__date__gte=today.replace(day=1),
+        military_profile__isnull=False
+    ).exclude(military_profile__role__in=("admin","org_admin")).count()
+
+    return JsonResponse({
+        "generated_at":  datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "period":        period,
+        "total":         total,
+        "enrolled":      enrolled,
+        "passed":        passed,
+        "not_passed":    not_passed,
+        "pending_approval": pending_approval,
+        "no_requirements": no_req,
+        "has_requirements": has_requirements,
+        "percent_enrolled": round(enrolled / total * 100, 1) if total else 0,
+        "percent_passed":   round(passed   / total * 100, 1) if total else 0,
+        "percent_pending_approval": round(pending_approval / total * 100, 1) if total else 0,
+        "new_today":  new_today,
+        "new_week":   new_week,
+        "new_month":  new_month,
+        "rank_class_breakdown": rank_class_breakdown,
+        "trend": trend,
+    })
 
 
-@require_http_methods(["GET"])
-@_require_admin
-def api_reports_compliance_by_region(request):
-    """GET /military/api/v1/reports/compliance/by-region/"""
-    from .compliance import bulk_compliance_stats
-    from .models import MilitaryUserProfile, ARMY_REGION_CHOICES
-    results = []
-    region_map = {v: label for v, label in ARMY_REGION_CHOICES if v}
-    regions = (MilitaryUserProfile.objects
-               .filter(user__is_active=True).exclude(role__in=("admin", "org_admin"))
-               .values_list("army_region", flat=True)
-               .distinct())
-    for region in regions:
-        qs = MilitaryUserProfile.objects.filter(user__is_active=True, army_region=region).select_related("user")
-        stats = bulk_compliance_stats(qs)
-        results.append({
-            "label": region_map.get(region, region or "ไม่ระบุ"),
-            "key": region,
-            **stats,
-        })
-    results.sort(key=lambda x: x["total"], reverse=True)
-    return JsonResponse(results, safe=False)
 
 
-@require_http_methods(["GET"])
-@_require_admin
-def api_reports_compliance_by_rank_class(request):
-    """GET /military/api/v1/reports/compliance/by-rank-class/"""
-    from .compliance import bulk_compliance_stats
-    from .models import MilitaryUserProfile, RANK_CLASS_CHOICES
-    rank_class_map = dict(RANK_CLASS_CHOICES)
-    results = []
-    # Iterate over known rank classes
-    for rc_code, rc_label in RANK_CLASS_CHOICES:
-        if rc_code == "all":
-            continue
-        # Filter by computed rank_class property — need to do per-profile check
-        all_profiles = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user")
-        matching = [p for p in all_profiles if p.rank_class == rc_code]
-        if not matching:
-            continue
-        # Build stats manually since bulk_compliance_stats needs a queryset
-        from .compliance import get_compliance_status
-        total = len(matching)
-        passed = 0
-        not_passed = 0
-        for p in matching:
-            result = get_compliance_status(p.user)
-            if result["status"] in ("passed", "no_requirements"):
-                passed += 1
-            else:
-                not_passed += 1
-        results.append({
-            "label": rc_label,
-            "key": rc_code,
-            "total": total,
-            "passed": passed,
-            "not_passed": not_passed,
-            "percent_passed": round(passed / total * 100, 1) if total > 0 else 0.0,
-            "percent_not_passed": round(not_passed / total * 100, 1) if total > 0 else 0.0,
-        })
-    results.sort(key=lambda x: x["total"], reverse=True)
-    return JsonResponse(results, safe=False)
 
-
-@require_http_methods(["GET"])
-@_require_admin
-def api_reports_compliance_by_rank(request):
-    """GET /military/api/v1/reports/compliance/by-rank/"""
-    from .compliance import get_compliance_status
-    from .models import MilitaryUserProfile, RANK_CHOICES, CIVILIAN_PREFIX_CHOICES
-    # Group by display rank/prefix
-    groups = {}
-    for profile in MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user"):
-        if profile.personnel_type == "military":
-            key = profile.rank or "ไม่ระบุ"
-            label = dict(RANK_CHOICES).get(key, key)
-        else:
-            key = profile.civilian_prefix or "ไม่ระบุ"
-            label = key
-        if key not in groups:
-            groups[key] = {"label": label, "key": key, "total": 0, "passed": 0, "not_passed": 0}
-        groups[key]["total"] += 1
-        result = get_compliance_status(profile.user)
-        if result["status"] in ("passed", "no_requirements"):
-            groups[key]["passed"] += 1
-        else:
-            groups[key]["not_passed"] += 1
-    results = list(groups.values())
-    for r in results:
-        t = r["total"]
-        r["percent_passed"] = round(r["passed"] / t * 100, 1) if t > 0 else 0.0
-        r["percent_not_passed"] = round(r["not_passed"] / t * 100, 1) if t > 0 else 0.0
-    results.sort(key=lambda x: x["total"], reverse=True)
-    return JsonResponse(results, safe=False)
-
-
-@require_http_methods(["GET"])
-@_require_admin
-def api_reports_compliance_by_unit(request):
-    """GET /military/api/v1/reports/compliance/by-unit/?unit=xxx"""
-    from .compliance import get_compliance_status
-    from .models import MilitaryUserProfile
-    filter_unit = request.GET.get("unit", "")
-    qs = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin"))
-    if filter_unit:
-        qs = qs.filter(unit__icontains=filter_unit)
-    groups = {}
-    for profile in qs.select_related("user"):
-        key = profile.unit or "ไม่ระบุ"
-        if key not in groups:
-            groups[key] = {"label": key, "key": key, "total": 0, "passed": 0, "not_passed": 0}
-        groups[key]["total"] += 1
-        result = get_compliance_status(profile.user)
-        if result["status"] in ("passed", "no_requirements"):
-            groups[key]["passed"] += 1
-        else:
-            groups[key]["not_passed"] += 1
-    results = list(groups.values())
-    for r in results:
-        t = r["total"]
-        r["percent_passed"] = round(r["passed"] / t * 100, 1) if t > 0 else 0.0
-        r["percent_not_passed"] = round(r["not_passed"] / t * 100, 1) if t > 0 else 0.0
-    results.sort(key=lambda x: x["total"], reverse=True)
-    return JsonResponse(results, safe=False)
 
 
 @require_http_methods(["GET"])
@@ -4159,27 +5282,31 @@ def api_reports_compliance_not_passed(request):
     """GET /military/api/v1/reports/compliance/not-passed/
     Params: passed=true|false, rank_class, rank, army_region, unit, search, page, per_page
     """
-    from .compliance import get_compliance_status
+    from .compliance import bulk_get_compliance_details, army_region_q
     from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES
     from django.db.models import Q
 
     want_passed = request.GET.get("passed", "false").lower() == "true"
+    # enrolled_only=true → แสดงเฉพาะ "ลงทะเบียนแล้วแต่ยังไม่ผ่าน/หมดอายุ" (ตัดคนยังไม่ลงทะเบียนออก)
+    # default false = พฤติกรรมเดิม (ไม่กระทบหน้าเดิมจนกว่า frontend จะส่ง param นี้)
+    enrolled_only = request.GET.get("enrolled_only", "false").lower() == "true"
     filter_rank_class = request.GET.get("rank_class", "")
     filter_rank = request.GET.get("rank", "")
     filter_unit = request.GET.get("unit", "")
     filter_region = request.GET.get("army_region", "")
     search_text = request.GET.get("search", "").strip()
     page = max(1, int(request.GET.get("page", 1)))
-    per_page = min(100, max(1, int(request.GET.get("per_page", 20))))
+    per_page = min(10000, max(1, int(request.GET.get("per_page", 20))))
 
     rank_display_map = dict(RANK_CHOICES)
     region_display_map = dict(ARMY_REGION_CHOICES)
 
-    qs = MilitaryUserProfile.objects.filter(user__is_active=True).exclude(role__in=("admin", "org_admin")).select_related("user")
+    qs = (MilitaryUserProfile.objects.filter(user__is_active=True)
+          .exclude(role__in=("admin", "org_admin")).select_related("user", "organization"))
     if filter_unit:
         qs = qs.filter(unit__icontains=filter_unit)
     if filter_region:
-        qs = qs.filter(army_region=filter_region)
+        qs = qs.filter(army_region_q(filter_region))
     if filter_rank:
         qs = qs.filter(rank=filter_rank)
     if search_text:
@@ -4189,38 +5316,155 @@ def api_reports_compliance_not_passed(request):
             Q(user__username__icontains=search_text)
         )
 
+    # File cache (Redis จาก uwsgi ไม่เสถียร → ใช้ไฟล์บน shared FS แทน) เฉพาะกรณีไม่มี filter (ที่ใช้บ่อย+หนัก)
+    import os as _os, json as _json, time as _time
+    _cdir = "/openedx/data/mil_report_cache"
+    _cfile = None
+    if not (filter_rank_class or filter_rank or filter_unit or filter_region or search_text):
+        _cfile = "%s/np_%s_%s.json" % (_cdir, want_passed, enrolled_only)
+        if request.GET.get("nocache") != "1":   # nocache=1 = warmer บังคับคำนวณ+เขียนทับ (atomic)
+            try:
+                if _os.path.exists(_cfile) and (_time.time() - _os.path.getmtime(_cfile)) < 3600:
+                    with open(_cfile) as _f:
+                        result_list = _json.load(_f)
+                    _tc = len(result_list); _tp = max(1, (_tc + per_page - 1)//per_page); _st = (page-1)*per_page
+                    return JsonResponse({"total_count": _tc, "total_pages": _tp, "count": _tc, "results": result_list[_st:_st+per_page]})
+            except Exception:
+                pass
+
+    # Fetch all filtered profiles + compute all compliance details in 2 queries
+    all_profiles = list(qs)
+    details_map = bulk_get_compliance_details(all_profiles)
+
     result_list = []
-    for profile in qs:
+    for profile in all_profiles:
         if filter_rank_class and profile.rank_class != filter_rank_class:
             continue
-        comp = get_compliance_status(profile.user)
-        is_passed = comp["status"] in ("passed", "no_requirements")
+        comp = details_map.get(profile.user_id, {"status": "not_passed", "missing": [], "expired": [], "passed": []})
+        is_passed = comp["status"] == "passed"
         if want_passed != is_passed:
             continue
+        if enrolled_only and not want_passed:
+            # เฉพาะคนที่มีหลักสูตรที่ "ลงทะเบียนแล้วแต่ยังไม่ผ่าน" หรือ "หมดอายุ"
+            if not (comp.get("enrolled_not_passed") or comp.get("expired")):
+                continue
 
         rank_code = profile.rank or profile.civilian_prefix or ""
-        rank_display = rank_display_map.get(rank_code, rank_code)
-        region_display = region_display_map.get(profile.army_region or "", profile.army_region or "ไม่ระบุ")
+        rank_display = profile.display_prefix or rank_display_map.get(rank_code, rank_code)
+        eff_region = profile.effective_army_region
+        region_display = region_display_map.get(eff_region or "", eff_region or "ไม่ระบุ")
 
-        entry = {
+        result_list.append({
             "user_id": profile.user_id,
             "username": profile.user.username,
-            "full_name": profile.display_name,
+            "full_name": profile.display_full_name,
             "rank": rank_code,
             "rank_display": rank_display,
             "rank_class": profile.rank_class,
             "rank_class_display": profile.rank_class_display,
             "unit": profile.unit or "",
             "sub_unit": profile.sub_unit or "",
-            "army_region": profile.army_region or "",
+            "army_region": eff_region or "",
             "army_region_display": region_display,
             "contact_email": profile.contact_email or "",
             "phone_number": profile.phone_number or "",
-            "missing_courses": [m["course_name"] for m in comp["missing"]],
+            "missing_courses": [m["course_name"] for m in (comp.get("enrolled_not_passed", []) if enrolled_only else comp["missing"])],
             "expired_courses": [e["course_name"] for e in comp["expired"]],
             "passed_courses": [p["course_name"] for p in comp["passed"]],
-        }
-        result_list.append(entry)
+        })
+
+    if _cfile:
+        try:
+            _os.makedirs(_cdir, exist_ok=True)
+            _tmp = "%s.tmp.%s" % (_cfile, _os.getpid())
+            with open(_tmp, "w") as _f:
+                _json.dump(result_list, _f)
+            _os.replace(_tmp, _cfile)   # atomic — กันอ่านไฟล์ครึ่งๆ
+        except Exception:
+            pass
+    total_count = len(result_list)
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    start = (page - 1) * per_page
+    return JsonResponse({
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "count": total_count,
+        "results": result_list[start:start + per_page],
+    })
+
+
+@require_http_methods(["GET"])
+@_require_admin
+def api_reports_compliance_not_registered(request):
+    """GET /military/api/v1/reports/compliance/not-registered/
+    ผู้ที่มีหลักสูตรบังคับ (ตามชั้นยศ) แต่ "ยังไม่ลงทะเบียน" (ไม่มี active enrollment)
+    Params: rank_class, rank, army_region, unit, search, page, per_page
+    """
+    from .compliance import bulk_get_compliance_details, army_region_q
+    from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES
+    from django.db.models import Q
+
+    filter_rank_class = request.GET.get("rank_class", "")
+    filter_rank = request.GET.get("rank", "")
+    filter_unit = request.GET.get("unit", "")
+    filter_region = request.GET.get("army_region", "")
+    search_text = request.GET.get("search", "").strip()
+    page = max(1, int(request.GET.get("page", 1)))
+    per_page = min(10000, max(1, int(request.GET.get("per_page", 20))))
+
+    rank_display_map = dict(RANK_CHOICES)
+    region_display_map = dict(ARMY_REGION_CHOICES)
+
+    qs = (MilitaryUserProfile.objects.filter(user__is_active=True)
+          .exclude(role__in=("admin", "org_admin")).select_related("user", "organization"))
+    if filter_unit:
+        qs = qs.filter(unit__icontains=filter_unit)
+    if filter_region:
+        qs = qs.filter(army_region_q(filter_region))
+    if filter_rank:
+        qs = qs.filter(rank=filter_rank)
+    if search_text:
+        qs = qs.filter(
+            Q(user__first_name__icontains=search_text) |
+            Q(user__last_name__icontains=search_text) |
+            Q(user__username__icontains=search_text)
+        )
+
+    all_profiles = list(qs)
+    details_map = bulk_get_compliance_details(all_profiles)
+
+    result_list = []
+    for profile in all_profiles:
+        if filter_rank_class and profile.rank_class != filter_rank_class:
+            continue
+        comp = details_map.get(profile.user_id)
+        if not comp:
+            continue
+        not_enrolled = comp.get("not_enrolled", [])
+        if not not_enrolled:
+            continue   # แสดงเฉพาะคนที่มีหลักสูตรบังคับที่ "ยังไม่ลงทะเบียน"
+
+        rank_code = profile.rank or profile.civilian_prefix or ""
+        rank_display = profile.display_prefix or rank_display_map.get(rank_code, rank_code)
+        eff_region = profile.effective_army_region
+        region_display = region_display_map.get(eff_region or "", eff_region or "ไม่ระบุ")
+
+        result_list.append({
+            "user_id": profile.user_id,
+            "username": profile.user.username,
+            "full_name": profile.display_full_name,
+            "rank": rank_code,
+            "rank_display": rank_display,
+            "rank_class": profile.rank_class,
+            "rank_class_display": profile.rank_class_display,
+            "unit": profile.unit or "",
+            "sub_unit": profile.sub_unit or "",
+            "army_region": eff_region or "",
+            "army_region_display": region_display,
+            "contact_email": profile.contact_email or "",
+            "phone_number": profile.phone_number or "",
+            "not_registered_courses": [m["course_name"] for m in not_enrolled],
+        })
 
     total_count = len(result_list)
     total_pages = max(1, (total_count + per_page - 1) // per_page)
@@ -4231,59 +5475,8 @@ def api_reports_compliance_not_passed(request):
         "count": total_count,
         "results": result_list[start:start + per_page],
     })
-@require_http_methods(["GET"])
-@_require_admin
-def api_reports_certificates_expiring(request):
-    """GET /military/api/v1/reports/certificates/expiring/?days=30"""
-    from certificate_expiry.models import UserCertificateExpiry
-    from .models import MilitaryUserProfile
-    days = int(request.GET.get("days", 30))
-    from django.utils import timezone
-    import datetime
-    cutoff = timezone.now().date() + datetime.timedelta(days=days)
-    certs = (UserCertificateExpiry.objects
-             .filter(status__in=("active", "renewed"), expiry_date__lte=cutoff)
-             .select_related("user")
-             .order_by("expiry_date"))
-    results = []
-    for cert in certs:
-        profile = getattr(cert.user, "military_profile", None)
-        results.append({
-            "user_id": cert.user_id,
-            "full_name": profile.display_name if profile else cert.user.get_full_name(),
-            "rank": (profile.rank or profile.civilian_prefix) if profile else "",
-            "unit": profile.unit if profile else "",
-            "course_id": cert.course_id,
-            "course_name": cert.course_name,
-            "expiry_date": cert.expiry_date.isoformat(),
-            "days_left": cert.days_until_expiry,
-        })
-    return JsonResponse({"count": len(results), "results": results})
 
 
-@require_http_methods(["GET"])
-@_require_admin
-def api_reports_certificates_expired(request):
-    """GET /military/api/v1/reports/certificates/expired/"""
-    from certificate_expiry.models import UserCertificateExpiry
-    from .models import MilitaryUserProfile
-    certs = (UserCertificateExpiry.objects
-             .filter(status="expired")
-             .select_related("user")
-             .order_by("-expiry_date"))
-    results = []
-    for cert in certs:
-        profile = getattr(cert.user, "military_profile", None)
-        results.append({
-            "user_id": cert.user_id,
-            "full_name": profile.display_name if profile else cert.user.get_full_name(),
-            "rank": (profile.rank or profile.civilian_prefix) if profile else "",
-            "unit": profile.unit if profile else "",
-            "course_id": cert.course_id,
-            "course_name": cert.course_name,
-            "expiry_date": cert.expiry_date.isoformat(),
-        })
-    return JsonResponse({"count": len(results), "results": results})
 
 
 
@@ -4304,6 +5497,8 @@ def api_admin_organizations(request):
             qs = qs.filter(name__icontains=q) | qs.filter(code__icontains=q)
         results = [{
             "id": o.id, "name": o.name, "code": o.code,
+            "army_region": o.army_region,
+            "army_region_display": o.get_army_region_display() or "ไม่ระบุ",
             "is_active": o.is_active,
             "member_count": o.members.count(),
         } for o in qs.order_by("name")]
@@ -4313,14 +5508,21 @@ def api_admin_organizations(request):
     data = json.loads(request.body)
     name = data.get("name", "").strip()
     code = data.get("code", "").strip()
+    army_region = data.get("army_region", "").strip()
     if not name or not code:
         return JsonResponse({"error": "name และ code จำเป็นต้องระบุ"}, status=400)
+    if army_region and army_region not in dict(ARMY_REGION_CHOICES):
+        return JsonResponse({"error": "army_region ไม่ถูกต้อง"}, status=400)
     if Organization.objects.filter(name=name).exists():
         return JsonResponse({"error": "ชื่อหน่วยงานซ้ำ"}, status=400)
     if Organization.objects.filter(code=code).exists():
         return JsonResponse({"error": "รหัสหน่วยงานซ้ำ"}, status=400)
-    org = Organization.objects.create(name=name, code=code, is_active=True)
-    return JsonResponse({"id": org.id, "name": org.name, "code": org.code, "is_active": org.is_active}, status=201)
+    org = Organization.objects.create(name=name, code=code, army_region=army_region, is_active=True)
+    return JsonResponse({
+        "id": org.id, "name": org.name, "code": org.code,
+        "army_region": org.army_region, "army_region_display": org.get_army_region_display() or "ไม่ระบุ",
+        "is_active": org.is_active,
+    }, status=201)
 
 
 @require_http_methods(["PATCH", "DELETE"])
@@ -4345,13 +5547,22 @@ def api_admin_organization_detail(request, org_id):
         org.name = data["name"].strip()
     if "code" in data:
         org.code = data["code"].strip()
+    if "army_region" in data:
+        region = (data["army_region"] or "").strip()
+        if region and region not in dict(ARMY_REGION_CHOICES):
+            return JsonResponse({"error": "army_region ไม่ถูกต้อง"}, status=400)
+        org.army_region = region
     if "is_active" in data:
         org.is_active = bool(data["is_active"])
     try:
         org.save()
     except IntegrityError:
         return JsonResponse({"error": "ชื่อหรือรหัสหน่วยงานซ้ำกับหน่วยอื่นในระบบ"}, status=409)
-    return JsonResponse({"id": org.id, "name": org.name, "code": org.code, "is_active": org.is_active})
+    return JsonResponse({
+        "id": org.id, "name": org.name, "code": org.code,
+        "army_region": org.army_region, "army_region_display": org.get_army_region_display() or "ไม่ระบุ",
+        "is_active": org.is_active,
+    })
 
 
 @require_POST
@@ -4389,8 +5600,13 @@ def api_admin_organization_bulk_transfer(request, org_id):
 @require_GET
 def api_organizations_public(request):
     """คืนรายชื่อหน่วยงาน Active ทั้งหมด สำหรับ Dropdown สมัครสมาชิก"""
-    orgs = Organization.objects.filter(is_active=True).order_by("name").values("id", "code", "name")
-    return JsonResponse({"results": list(orgs)})
+    region_display_map = dict(ARMY_REGION_CHOICES)
+    orgs = Organization.objects.filter(is_active=True).order_by("name").values("id", "code", "name", "army_region")
+    results = [{
+        **o,
+        "army_region_display": region_display_map.get(o["army_region"], "ไม่ระบุ") or "ไม่ระบุ",
+    } for o in orgs]
+    return JsonResponse({"results": results})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4517,3 +5733,115 @@ def api_org_admin_users(request):
         })
 
     return JsonResponse({"count": len(results), "results": results})
+
+
+# ============================================================================
+# Admin: Registration Whitelist (pre-whitelist เลขบัตรที่หน่วยอนุญาต)
+# ============================================================================
+def _mask_national_id(nid):
+    nid = (nid or "").strip()
+    if len(nid) != 13:
+        return ""
+    return f"{nid[0]}-{nid[1:5]}-xxxxx-xx-{nid[12]}"
+
+
+@require_http_methods(["GET", "POST", "PATCH"])
+@_require_admin
+def api_admin_whitelist(request):
+    cfg = RegistrationConfig.get_solo()
+
+    if request.method == "GET":
+        qs = RegistrationWhitelist.objects.all()
+        search = request.GET.get("search", "").strip()
+        if search:
+            qs = qs.filter(Q(label__icontains=search) | Q(note__icontains=search) | Q(national_id_masked__icontains=search))
+        try:
+            page = max(1, int(request.GET.get("page", 1)))
+            page_size = min(200, max(1, int(request.GET.get("page_size", 50))))
+        except (TypeError, ValueError):
+            page, page_size = 1, 50
+        total = qs.count()
+        items = qs[(page - 1) * page_size: page * page_size]
+        results = [{
+            "id": w.id,
+            "national_id_masked": w.national_id_masked,
+            "label": w.label,
+            "note": w.note,
+            "is_active": w.is_active,
+            "used": w.used_at is not None,
+            "used_at": w.used_at.isoformat() if w.used_at else None,
+            "created_at": w.created_at.isoformat(),
+            "added_by": w.added_by.username if w.added_by else None,
+        } for w in items]
+        return JsonResponse({
+            "enabled": cfg.whitelist_enabled,
+            "count": total,
+            "active_count": RegistrationWhitelist.objects.filter(is_active=True).count(),
+            "page": page, "page_size": page_size, "results": results,
+        })
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid_json"}, status=400)
+
+    if request.method == "PATCH":
+        if "enabled" in body:
+            cfg.whitelist_enabled = bool(body["enabled"])
+            cfg.updated_by = request.user
+            cfg.save()
+        return JsonResponse({"enabled": cfg.whitelist_enabled})
+
+    # POST = bulk add
+    import re as _re
+    from military_auth.validators import validate_national_id
+    raw = body.get("national_ids", "")
+    note = (body.get("note", "") or "").strip()[:255]
+    tokens = raw if isinstance(raw, list) else _re.split(r"[^0-9]+", str(raw))
+    added = skipped = invalid = 0
+    seen = set()
+    for t in tokens:
+        nid = str(t or "").strip()
+        if not nid:
+            continue
+        if not validate_national_id(nid):
+            invalid += 1
+            continue
+        if nid in seen:
+            continue
+        seen.add(nid)
+        obj, created = RegistrationWhitelist.objects.get_or_create(
+            national_id_hmac=hmac_field(nid),
+            defaults={"national_id_masked": _mask_national_id(nid), "note": note, "added_by": request.user},
+        )
+        if created:
+            added += 1
+        else:
+            if not obj.is_active:
+                obj.is_active = True
+                obj.save(update_fields=["is_active"])
+            skipped += 1
+    return JsonResponse({
+        "added": added, "skipped": skipped, "invalid": invalid,
+        "active_count": RegistrationWhitelist.objects.filter(is_active=True).count(),
+    })
+
+
+@require_http_methods(["DELETE", "PATCH"])
+@_require_admin
+def api_admin_whitelist_detail(request, wl_id: int):
+    try:
+        w = RegistrationWhitelist.objects.get(pk=wl_id)
+    except RegistrationWhitelist.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+    if request.method == "DELETE":
+        w.delete()
+        return JsonResponse({"success": True})
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        body = {}
+    if "is_active" in body:
+        w.is_active = bool(body["is_active"])
+        w.save(update_fields=["is_active"])
+    return JsonResponse({"success": True, "is_active": w.is_active})
