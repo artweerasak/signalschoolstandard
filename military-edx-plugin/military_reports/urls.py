@@ -21,10 +21,9 @@ from .api_views import (
     # Course requirements CRUD
     api_course_requirements,
     api_course_requirement_detail,
-    # PDX export
-    api_export_pdx,
-    api_units_list,
 )
+# PDX export (ส่งออกฟอร์มนำเข้าระบบ PDX ของ ทบ.)
+from .pdx_views import api_export_pdx, api_export_count, api_units_list
 
 app_name = "military_reports"
 
@@ -57,5 +56,6 @@ urlpatterns = [
 
     # ส่งออกฟอร์ม PDX (นำเข้าระบบ PDX ของ ทบ.)
     path("api/v1/reports/export/pdx/", api_export_pdx, name="api_export_pdx"),
+    path("api/v1/reports/export/count/", api_export_count, name="api_export_count"),
     path("api/v1/reports/units/", api_units_list, name="api_units_list"),
 ]
