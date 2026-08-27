@@ -24,6 +24,7 @@ export default function PdxExportPage() {
   const [loadingUnits, setLoadingUnits] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [unitInput, setUnitInput] = useState("")
+  const [result, setResult] = useState<"" | "passed" | "not_passed">("")
   const [count, setCount] = useState<Count | null>(null)
   const [loadingCount, setLoadingCount] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -87,6 +88,7 @@ export default function PdxExportPage() {
       const p = new URLSearchParams()
       if (region) p.set("army_region", region)
       if (unitsParam) p.set("units", unitsParam)
+      if (result) p.set("result", result)
       const res = await fetch(`/military/api/v1/reports/export/pdx/?${p.toString()}`, { credentials: "include" })
       if (res.status === 401 || res.status === 403) throw new Error("ไม่มีสิทธิ์ (ต้องเป็นแอดมิน)")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -107,6 +109,12 @@ export default function PdxExportPage() {
   }
 
   const scopeText = region ? REGIONS.find(r => r.value === region)?.label : "ทุกทัพภาค"
+  const displayCount = count ? (result === "passed" ? count.passed : result === "not_passed" ? count.not_passed : count.count) : 0
+  const RESULTS: { value: "" | "passed" | "not_passed"; label: string }[] = [
+    { value: "", label: "ทั้งหมด" },
+    { value: "passed", label: "เฉพาะผ่าน" },
+    { value: "not_passed", label: "เฉพาะไม่ผ่าน" },
+  ]
 
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6">
@@ -155,17 +163,36 @@ export default function PdxExportPage() {
           </div>
         )}
 
+        {/* เลือกผลการศึกษา */}
+        <div className="mt-4">
+          <label className="block text-sm font-semibold text-gray-700 mb-1.5">ผลการศึกษาที่จะส่งออก</label>
+          <div className="flex gap-2 flex-wrap">
+            {RESULTS.map((r) => (
+              <button key={r.value} type="button" onClick={() => setResult(r.value)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border ${result === r.value ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* พรีวิวจำนวน */}
         <div className="mt-4 bg-gray-50 rounded-lg px-4 py-3 text-sm">
           {loadingCount ? (
             <span className="text-gray-400">กำลังนับจำนวน...</span>
           ) : count ? (
             <span className="text-gray-700">
-              จะส่งออก <b className="text-[#2D0F42] text-base">{count.count.toLocaleString()}</b> คน
-              <span className="text-gray-400"> · </span>
-              <span className="text-emerald-600">ผ่าน {count.passed.toLocaleString()}</span>
-              <span className="text-gray-400"> · </span>
-              <span className="text-red-500">ไม่ผ่าน {count.not_passed.toLocaleString()}</span>
+              จะส่งออก <b className="text-[#2D0F42] text-base">{displayCount.toLocaleString()}</b> คน
+              {result === "" && (
+                <>
+                  <span className="text-gray-400"> · </span>
+                  <span className="text-emerald-600">ผ่าน {count.passed.toLocaleString()}</span>
+                  <span className="text-gray-400"> · </span>
+                  <span className="text-red-500">ไม่ผ่าน {count.not_passed.toLocaleString()}</span>
+                </>
+              )}
+              {result === "passed" && <span className="text-emerald-600"> (เฉพาะผ่าน)</span>}
+              {result === "not_passed" && <span className="text-red-500"> (เฉพาะไม่ผ่าน)</span>}
               <span className="text-gray-400 block text-xs mt-0.5">
                 ขอบเขต: {scopeText}{selected.length ? ` · ${selected.length} หน่วย` : " · ทุกหน่วย"}
               </span>
@@ -176,9 +203,9 @@ export default function PdxExportPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-3 flex-wrap">
-          <button onClick={handleExport} disabled={loading || (count?.count ?? 0) === 0}
+          <button onClick={handleExport} disabled={loading || displayCount === 0}
             className="bg-[#4A1A6B] hover:bg-[#3a1454] disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
-            {loading ? "กำลังสร้างไฟล์..." : `⬇ ดาวน์โหลดไฟล์ PDX (${(count?.count ?? 0).toLocaleString()} คน)`}
+            {loading ? "กำลังสร้างไฟล์..." : `⬇ ดาวน์โหลดไฟล์ PDX (${displayCount.toLocaleString()} คน)`}
           </button>
         </div>
 
@@ -193,6 +220,7 @@ export default function PdxExportPage() {
           <li><b>คอลัมน์ในไฟล์:</b> เลขบัตรประชาชน · ยศ ชื่อ-สกุล · สังกัด · ผลการศึกษา (ผ่าน/ไม่ผ่าน)</li>
           <li><b>ผลการศึกษา:</b> “ผ่าน” = ผ่านหลักสูตรที่กำหนดตามชั้นยศครบและใบรับรองยังไม่หมดอายุ · นอกนั้นเป็น “ไม่ผ่าน”</li>
           <li><b>เลือกหน่วย:</b> พิมพ์เพื่อค้นหาแล้ว <b>เลือกจากรายการที่ระบบแนะนำ</b> (หน่วยจริงในฐานข้อมูล) เลือกได้หลายหน่วย · เว้นว่าง = ทุกหน่วยในทัพภาคที่เลือก</li>
+          <li><b>ผลการศึกษาที่จะส่งออก:</b> เลือกได้ว่าเอา “ทั้งหมด”, “เฉพาะผ่าน” หรือ “เฉพาะไม่ผ่าน”</li>
           <li><b>ตัวเลขพรีวิว:</b> ระบบจะบอกจำนวนคน (ผ่าน/ไม่ผ่าน) ที่จะส่งออก ก่อนกดดาวน์โหลด</li>
           <li><b>นำเข้า PDX:</b> เปิดระบบ PDX → เมนูนำเข้า → เลือกไฟล์ที่ดาวน์โหลดนี้ (ห้ามแก้หัวตาราง/ชื่อชีต)</li>
         </ul>
