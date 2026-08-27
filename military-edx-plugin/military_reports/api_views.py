@@ -586,3 +586,24 @@ def api_export_pdx(request):
         })
 
     return export_pdx(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  รายชื่อหน่วย (สำหรับ autocomplete ในหน้า export PDX)
+#  กรองตามทัพภาคได้ เพื่อให้เลือกหน่วยที่มีจริง ป้องกันพิมพ์ผิด
+# ─────────────────────────────────────────────────────────────────────
+@require_GET
+@_require_admin
+def api_units_list(request):
+    region = request.GET.get("army_region", "").strip()
+    qs = _PERSONNEL_QS()
+    if region:
+        from military_profile.compliance import army_region_q
+        qs = qs.filter(army_region_q(region))
+    units = list(
+        qs.exclude(unit="")
+        .values_list("unit", flat=True)
+        .distinct()
+        .order_by("unit")
+    )
+    return JsonResponse({"units": units, "count": len(units)})
