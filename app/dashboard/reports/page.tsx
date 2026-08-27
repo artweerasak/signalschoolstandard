@@ -98,6 +98,10 @@ export default function ReportsPage() {
           <p className="text-sm text-gray-500 mt-1">สถานะการผ่านมาตรฐานหลักสูตรที่กำหนด</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <a href="/dashboard/reports/pdx-export"
+            className="bg-[#4A1A6B] hover:bg-[#3a1454] text-white text-sm font-medium px-4 py-2 rounded-lg">
+            📤 ส่งออกฟอร์ม PDX
+          </a>
           <a href="/dashboard/reports/personnel?status=passed"
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
             ✅ ดูผู้ผ่านทั้งหมด
@@ -105,6 +109,18 @@ export default function ReportsPage() {
           <a href="/dashboard/reports/personnel?status=not_passed"
             className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
             📋 ดูผู้ไม่ผ่านทั้งหมด
+          </a>
+          <a href="/dashboard/reports/not-registered"
+            className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            📝 ยังไม่ลงทะเบียน (พิมพ์แยกหน่วย)
+          </a>
+          <a href="/dashboard/reports/not-passed"
+            className="bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            🖨️ ลงแล้วไม่ผ่าน (พิมพ์แยกหน่วย)
+          </a>
+          <a href="/dashboard/reports/passed"
+            className="bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            🖨️ ผู้ผ่านมาตรฐาน (พิมพ์แยก/เฉพาะหน่วย)
           </a>
         </div>
       </div>
