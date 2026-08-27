@@ -1,11 +1,11 @@
 /**
  * app/dashboard/reports/pdx-export/page.tsx
  * ส่งออกรายชื่อกำลังพลเป็นฟอร์ม Excel สำหรับนำเข้าระบบ PDX ของ ทบ.
- * เลือกได้: ทั้งหมด / เฉพาะทัพภาค / เฉพาะหน่วย
+ * เลือกได้: ทั้งหมด / เฉพาะทัพภาค / เฉพาะหน่วย (autocomplete จากหน่วยจริงในระบบ)
  */
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 const REGIONS = [
   { value: "", label: "ทั้งหมด (ทุกทัพภาค)" },
@@ -18,20 +18,44 @@ const REGIONS = [
 export default function PdxExportPage() {
   const [region, setRegion] = useState("")
   const [unit, setUnit] = useState("")
+  const [units, setUnits] = useState<string[]>([])
+  const [loadingUnits, setLoadingUnits] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [done, setDone] = useState("")
 
+  // โหลดรายชื่อหน่วยจริง (เปลี่ยนทัพภาค → โหลดใหม่ให้ตรงภาค)
+  useEffect(() => {
+    let cancelled = false
+    setLoadingUnits(true); setUnit("")
+    const params = new URLSearchParams()
+    if (region) params.set("army_region", region)
+    ;(async () => {
+      try {
+        const res = await fetch(`/military/api/v1/reports/units/?${params.toString()}`, { credentials: "include" })
+        const data = await res.json()
+        if (!cancelled) setUnits(Array.isArray(data.units) ? data.units : [])
+      } catch {
+        if (!cancelled) setUnits([])
+      } finally {
+        if (!cancelled) setLoadingUnits(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [region])
+
+  // หน่วยที่พิมพ์ต้องมีจริง (หรือเว้นว่าง = ทุกหน่วย)
+  const unitValid = unit.trim() === "" || units.includes(unit.trim())
+
   async function handleExport() {
+    if (!unitValid) { setError("ไม่พบหน่วยนี้ในระบบ — กรุณาเลือกจากรายการที่แนะนำ หรือเว้นว่างเพื่อออกทุกหน่วย"); return }
     setLoading(true); setError(""); setDone("")
     try {
       const params = new URLSearchParams()
       if (region) params.set("army_region", region)
       if (unit.trim()) params.set("unit", unit.trim())
 
-      const res = await fetch(`/military/api/v1/reports/export/pdx/?${params.toString()}`, {
-        credentials: "include",
-      })
+      const res = await fetch(`/military/api/v1/reports/export/pdx/?${params.toString()}`, { credentials: "include" })
       if (res.status === 401 || res.status === 403) throw new Error("ไม่มีสิทธิ์ (ต้องเป็นแอดมิน)")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
@@ -65,7 +89,6 @@ export default function PdxExportPage() {
         </p>
       </div>
 
-      {/* กล่องเลือกขอบเขต + ปุ่มดาวน์โหลด */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-5">
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
@@ -79,21 +102,29 @@ export default function PdxExportPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">เฉพาะหน่วย (ไม่บังคับ)</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              เฉพาะหน่วย (ไม่บังคับ)
+              <span className="text-gray-400 font-normal"> · {loadingUnits ? "กำลังโหลด..." : `${units.length} หน่วย`}</span>
+            </label>
             <input
               type="text"
               value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="พิมพ์ชื่อหน่วย เช่น กรมการทหารสื่อสาร"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#4A1A6B] outline-none"
+              list="unitlist"
+              onChange={(e) => { setUnit(e.target.value); setError("") }}
+              placeholder="พิมพ์เพื่อค้นหา แล้วเลือกจากรายการ"
+              className={`w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#4A1A6B] ${unitValid ? "border-gray-300" : "border-red-400 bg-red-50"}`}
             />
+            <datalist id="unitlist">
+              {units.map((u) => <option key={u} value={u} />)}
+            </datalist>
+            {!unitValid && <p className="text-xs text-red-600 mt-1">หน่วยนี้ไม่มีในระบบ — เลือกจากรายการที่แนะนำ</p>}
           </div>
         </div>
 
         <div className="mt-4 flex items-center gap-3 flex-wrap">
           <button
             onClick={handleExport}
-            disabled={loading}
+            disabled={loading || !unitValid}
             className="bg-[#4A1A6B] hover:bg-[#3a1454] disabled:opacity-60 text-white text-sm font-semibold px-5 py-2.5 rounded-lg"
           >
             {loading ? "กำลังสร้างไฟล์..." : "⬇ ดาวน์โหลดไฟล์ PDX (.xlsx)"}
@@ -105,14 +136,13 @@ export default function PdxExportPage() {
         {done && <p className="mt-3 text-sm text-emerald-600">{done}</p>}
       </div>
 
-      {/* คำอธิบายสำหรับแอดมิน */}
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 text-sm text-gray-700 leading-relaxed">
         <h3 className="font-bold text-[#2D0F42] mb-2">📌 คำอธิบาย (สำหรับแอดมิน)</h3>
         <ul className="list-disc pl-5 space-y-1.5">
           <li><b>ไฟล์นี้คืออะไร:</b> รายชื่อกำลังพลพร้อมผลการศึกษา ในรูปแบบ 4 คอลัมน์ที่ระบบ <b>PDX</b> ของ ทบ. รับนำเข้าได้ทันที</li>
           <li><b>คอลัมน์ในไฟล์:</b> เลขบัตรประชาชน · ยศ ชื่อ-สกุล · สังกัด · ผลการศึกษา (ผ่าน/ไม่ผ่าน)</li>
           <li><b>ผลการศึกษา:</b> “ผ่าน” = ผ่านหลักสูตรที่กำหนดตามชั้นยศครบและใบรับรองยังไม่หมดอายุ · นอกนั้นเป็น “ไม่ผ่าน”</li>
-          <li><b>วิธีเลือกข้อมูล:</b> เลือก “ทั้งหมด”, เจาะจงทัพภาค, หรือพิมพ์ชื่อหน่วยเพื่อกรองเฉพาะหน่วย แล้วกดดาวน์โหลด</li>
+          <li><b>เลือกหน่วย:</b> พิมพ์เพื่อค้นหาแล้ว <b>เลือกจากรายการที่ระบบแนะนำ</b> (ดึงจากหน่วยจริงในฐานข้อมูล) — พิมพ์เองไม่ตรงจะกดดาวน์โหลดไม่ได้ ป้องกันหน่วยผิด</li>
           <li><b>นำเข้า PDX:</b> เปิดระบบ PDX → เมนูนำเข้า → เลือกไฟล์ที่ดาวน์โหลดนี้ (ห้ามแก้หัวตาราง/ชื่อชีต)</li>
           <li className="text-gray-500">* เลขบัตรถูกเก็บเป็น “ข้อความ” กัน Excel ตัดเลข 0 นำหน้า · การส่งออกต้องมีสิทธิ์แอดมิน</li>
         </ul>
