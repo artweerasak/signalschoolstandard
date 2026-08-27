@@ -546,3 +546,43 @@ def api_course_requirement_detail(request, req_id: int):
         return JsonResponse({"deleted": True})
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  ส่งออกฟอร์ม PDX (นำเข้าระบบ PDX ของ ทบ.)
+#  4 คอลัมน์: เลขบัตรประชาชน | ยศ ชื่อ-สกุล | สังกัด | ผลการศึกษา(ผ่าน/ไม่ผ่าน)
+#  รองรับ filter เดิม: army_region (ทัพภาค), unit (หน่วย), rank_class, rank
+#  export ทุกคนในขอบเขต filter (ผ่าน→"ผ่าน", นอกนั้น→"ไม่ผ่าน")
+# ─────────────────────────────────────────────────────────────────────
+@require_GET
+@_require_admin
+def api_export_pdx(request):
+    from military_profile.compliance import bulk_get_compliance_statuses
+    from .exporters.pdx_exporter import export_pdx
+
+    filters = _parse_filters(request)
+    qs = (
+        _apply_profile_filters(_PERSONNEL_QS(), filters)
+        .select_related("user")
+        .order_by("unit", "rank", "full_name_th")
+    )
+    profiles = list(qs)
+
+    # user_id -> "passed" | "not_passed" | "no_requirements"
+    statuses = bulk_get_compliance_statuses(profiles)
+
+    rows = []
+    for p in profiles:
+        try:
+            nid = p.national_id  # decrypt
+        except Exception:
+            nid = ""
+        result = "ผ่าน" if statuses.get(p.user_id) == "passed" else "ไม่ผ่าน"
+        rows.append({
+            "national_id": nid,
+            "rank_name": f"{p.get_rank_display()} {p.full_name_th}".strip(),
+            "unit": p.unit or "",
+            "result": result,
+        })
+
+    return export_pdx(rows)

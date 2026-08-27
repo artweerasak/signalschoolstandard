@@ -21,6 +21,8 @@ from .api_views import (
     # Course requirements CRUD
     api_course_requirements,
     api_course_requirement_detail,
+    # PDX export
+    api_export_pdx,
 )
 
 app_name = "military_reports"
@@ -51,4 +53,7 @@ urlpatterns = [
     # Course requirements admin CRUD
     path("api/v1/admin/course-requirements/", api_course_requirements, name="api_course_requirements"),
     path("api/v1/admin/course-requirements/<int:req_id>/", api_course_requirement_detail, name="api_course_requirement_detail"),
+
+    # ส่งออกฟอร์ม PDX (นำเข้าระบบ PDX ของ ทบ.)
+    path("api/v1/reports/export/pdx/", api_export_pdx, name="api_export_pdx"),
 ]
