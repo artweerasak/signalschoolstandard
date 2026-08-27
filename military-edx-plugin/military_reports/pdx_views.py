@@ -56,22 +56,32 @@ def api_export_count(request):
 @require_GET
 @_require_admin
 def api_export_pdx(request):
-    """ส่งออกไฟล์ .xlsx ตามฟอร์ม PDX (เลขบัตร | ยศ ชื่อ-สกุล | สังกัด | ผลการศึกษา)"""
+    """ส่งออกไฟล์ .xlsx ตามฟอร์ม PDX (เลขบัตร | ยศ ชื่อ-สกุล | สังกัด | ผลการศึกษา)
+
+    filter เพิ่ม: result = "passed" (เฉพาะผ่าน) | "not_passed" (เฉพาะไม่ผ่าน) | "" (ทั้งหมด)
+    """
     qs = _pdx_queryset(request).select_related("user").order_by("unit", "rank", "full_name_th")
     profiles = list(qs)
     statuses = bulk_get_compliance_statuses(profiles)
 
+    result_filter = request.GET.get("result", "").strip()  # passed | not_passed | ""
+
     rows = []
     for p in profiles:
+        is_passed = statuses.get(p.user_id) == "passed"
+        # กรองตามผลการศึกษาที่เลือก
+        if result_filter == "passed" and not is_passed:
+            continue
+        if result_filter == "not_passed" and is_passed:
+            continue
         try:
             nid = p.national_id  # decrypt
         except Exception:
             nid = ""
-        result = "ผ่าน" if statuses.get(p.user_id) == "passed" else "ไม่ผ่าน"
         rows.append({
             "national_id": nid,
             "rank_name": f"{p.get_rank_display()} {p.full_name_th}".strip(),
             "unit": p.unit or "",
-            "result": result,
+            "result": "ผ่าน" if is_passed else "ไม่ผ่าน",
         })
     return export_pdx(rows)
