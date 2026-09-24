@@ -21,6 +21,15 @@ from .quota_views import (
     api_enrollment_request_detail,
     api_enrollment_request_retry,
 )
+from .grading_views import (
+    api_my_courses,
+    api_course_roster,
+    api_manual_grades,
+    api_manual_grade_detail,
+    api_course_finalize,
+    api_co_instructors,
+    api_co_instructor_detail,
+)
 
 app_name = "military_curriculum"
 
@@ -41,4 +50,13 @@ urlpatterns = [
     path("api/v1/curriculum/reports/quota-demand/", api_quota_demand_report, name="api_quota_demand_report"),
     path("api/v1/curriculum/enrollment-requests/<int:request_id>/", api_enrollment_request_detail, name="api_enrollment_request_detail"),
     path("api/v1/curriculum/enrollment-requests/<int:request_id>/retry/", api_enrollment_request_retry, name="api_enrollment_request_retry"),
+
+    # Hybrid Grading & Co-Instructor (instructor) — Sprint 3
+    path("api/v1/curriculum/my-courses/", api_my_courses, name="api_my_courses"),
+    path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/roster/", api_course_roster, name="api_course_roster"),
+    path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/manual-grades/", api_manual_grades, name="api_manual_grades"),
+    path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/manual-grades/<int:grade_id>/", api_manual_grade_detail, name="api_manual_grade_detail"),
+    path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/finalize/", api_course_finalize, name="api_course_finalize"),
+    path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/co-instructors/", api_co_instructors, name="api_co_instructors"),
+    path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/co-instructors/<int:user_id>/", api_co_instructor_detail, name="api_co_instructor_detail"),
 ]
