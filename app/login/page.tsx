@@ -70,6 +70,8 @@ function LoginPageInner() {
         router.push("/dashboard")
       } else if (user.role === "instructor") {
         router.push("/instructor")
+      } else if (user.role === "prep_school") {
+        router.push("/prep-school")
       } else {
         router.push("/my")
       }

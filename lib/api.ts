@@ -138,7 +138,7 @@ export interface CurrentUser {
   username: string
   email: string
   is_staff: boolean
-  role: "admin" | "org_admin" | "instructor" | "student"
+  role: "admin" | "org_admin" | "instructor" | "student" | "prep_school" | "prep_personnel" | "evaluator"
   full_name: string
   rank: string | null
   unit: string | null
@@ -195,6 +195,47 @@ export interface OrgAdminDashboard {
   pct_not_tested: number
   passed_list: OrgMemberRow[]
   expired_list: OrgMemberRow[]
+}
+
+// ── Curriculum (prep_school) ──────────────────────────────────────────────
+
+export interface CurriculumRegionQuota {
+  id: number
+  army_region: string
+  quota: number
+}
+
+export interface CurriculumCourseItem {
+  id: number
+  course_id: string
+  display_name: string
+  sequence_order: number
+  credit_hours: string
+  credits: string
+  assessment_type: "score" | "pass_fail"
+  passing_score: string | null
+  is_required: boolean
+}
+
+export interface CurriculumSummary {
+  id: number
+  name: string
+  batch_code: string
+  academic_year: number
+  organization_id: number
+  organization_name: string | null
+  status: "draft" | "submitted" | "active" | "closed"
+  quota_total: number
+  course_count: number
+  created_at: string | null
+  submitted_at: string | null
+}
+
+export interface CurriculumDetail extends CurriculumSummary {
+  eligible_rank_class: string
+  eligible_personnel_type: string
+  region_quotas: CurriculumRegionQuota[]
+  courses: CurriculumCourseItem[]
 }
 
 export interface OrgMemberRow {
@@ -525,6 +566,35 @@ export const api = {
     if (params?.org_id) qs.set("org_id", String(params.org_id))
     return fetchAPI<{ count: number; results: OrgMemberRow[] }>(`api/v1/org-admin/users/?${qs}`)
   },
+
+  // ── Curriculum (prep_school) ─────────────────────────────────────────────
+  listCurricula: (params?: { status?: string; org_id?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.status) qs.set("status", params.status)
+    if (params?.org_id) qs.set("org_id", String(params.org_id))
+    return fetchAPI<{ count: number; results: CurriculumSummary[] }>(`api/v1/curriculum/curricula/?${qs}`)
+  },
+  createCurriculum: (body: {
+    name: string; batch_code: string; academic_year: number; organization_id?: number
+    eligible_rank_class?: string; eligible_personnel_type?: string; quota_total?: number
+    region_quotas?: { army_region: string; quota: number }[]
+  }) => fetchAPIPost<CurriculumDetail>("api/v1/curriculum/curricula/", body),
+  getCurriculum: (id: number) => fetchAPI<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`),
+  updateCurriculum: (id: number, body: Partial<{
+    name: string; batch_code: string; academic_year: number
+    eligible_rank_class: string; eligible_personnel_type: string; quota_total: number
+  }>) => fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`, body, "PATCH"),
+  addCurriculumCourse: (id: number, body: {
+    course_id: string; display_name: string; credit_hours: number; credits: number
+    assessment_type?: "score" | "pass_fail"; passing_score?: number
+    is_required?: boolean; sequence_order?: number
+  }) => fetchAPIPost<{ id: number; course_id: string; display_name: string }>(
+    `api/v1/curriculum/curricula/${id}/courses/`, body
+  ),
+  removeCurriculumCourse: (id: number, coursePk: number) =>
+    fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/curricula/${id}/courses/${coursePk}/`, {}, "DELETE"),
+  submitCurriculum: (id: number) =>
+    fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/submit/`, {}),
 
   // ── Video Folder Sharing ─────────────────────────────────────────────────
   getVideoShare: (courseSlug: string) =>
