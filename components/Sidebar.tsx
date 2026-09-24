@@ -79,6 +79,7 @@ const instructorNavGroups: NavGroup[] = [
     groupLabel: "หลักสูตร",
     items: [
       { href: "/instructor", label: "หลักสูตรของฉัน", icon: "🎓" },
+      { href: "/instructor/my-courses", label: "คะแนน/วิชาในหลักสูตร", icon: "📝" },
       { href: "/instructor/videos", label: "วิดีโอการสอน", icon: "🎬" },
       { href: "/instructor/documents", label: "เอกสาร / ตำราเรียน", icon: "📄" },
     ],
