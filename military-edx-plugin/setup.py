@@ -24,6 +24,7 @@ setup(
             "certificate_renewal = certificate_renewal.apps:CertificateRenewalConfig",
             "military_reports = military_reports.apps:MilitaryReportsConfig",
             "expiry_notifications = expiry_notifications.apps:ExpiryNotificationsConfig",
+            "military_curriculum = military_curriculum.apps:MilitaryCurriculumConfig",
         ],
         "cms.djangoapp": [
             "certificate_expiry = certificate_expiry.apps:CertificateExpiryConfig",

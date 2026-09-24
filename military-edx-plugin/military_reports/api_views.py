@@ -19,33 +19,20 @@ from military_profile.models import (
     RANK_CLASS_CHOICES, NCO_RANKS, OFFICER_RANKS, CourseRequirement,
 )
 from military_profile.compliance import get_compliance_status, bulk_compliance_stats
+from military_profile.permissions import (
+    _require_login, _require_admin, NON_PERSONNEL_ROLES,
+)
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 
-# กำลังพลจริง (ไม่นับ admin / org_admin)
-_PERSONNEL_QS = lambda: MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin"))
+# กำลังพลจริง (ไม่นับ admin / org_admin / prep_school / prep_personnel / evaluator)
+# NON_PERSONNEL_ROLES อยู่ที่ military_profile/permissions.py — แก้ที่เดียว
+# ใช้ร่วมกันทุกจุด กัน role ใหม่หลุดไปนับเป็น "กำลังพล" ในรายงาน
+_PERSONNEL_QS = lambda: MilitaryUserProfile.objects.exclude(role__in=NON_PERSONNEL_ROLES)
 
-
-
-def _require_login(view_func):
-    """Decorator: return 401 JSON แทน redirect เมื่อยังไม่ login"""
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return JsonResponse({"error": "Unauthorized"}, status=401)
-        return view_func(request, *args, **kwargs)
-    return wrapper
-
-
-def _require_admin(view_func):
-    """Decorator: admin only (is_staff or role=admin)"""
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return JsonResponse({"error": "Unauthorized"}, status=401)
-        profile = getattr(request.user, "military_profile", None)
-        is_admin = request.user.is_staff or (profile and profile.role == "admin")
-        if not is_admin:
-            return JsonResponse({"error": "Forbidden"}, status=403)
-        return view_func(request, *args, **kwargs)
-    return wrapper
+# หมายเหตุ: _require_login/_require_admin ย้ายไป military_profile/permissions.py
+# แล้ว (import ด้านบนแทนการนิยาม local) — เดิมไฟล์นี้มี copy ของตัวเองที่ "ลืม"
+# ใส่ _apply_private_no_cache ทำให้ endpoint กลุ่มนี้ไม่มีการป้องกัน shared-cache
+# leak เหมือนจุดอื่นในระบบ — import จากส่วนกลางแก้ช่องโหว่นี้ไปด้วยในตัว
 
 
 @require_GET
@@ -74,7 +61,7 @@ def api_dashboard_summary(request):
 
     data = {
         "total_personnel": MilitaryUserProfile.objects.exclude(
-            role__in=("admin", "org_admin")
+            role__in=NON_PERSONNEL_ROLES
         ).count(),
         **cert_stats,
     }

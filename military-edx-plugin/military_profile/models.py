@@ -271,11 +271,17 @@ class MilitaryUserProfile(models.Model):
     )
 
     # Role-based access control
+    # prep_school/prep_personnel/evaluator เพิ่มเข้ามาสำหรับวงรอบหลักสูตร
+    # (military_curriculum app) — ดู military_profile/permissions.py สำหรับ
+    # role registry กลางที่ apps อื่นใช้ร่วมกัน
     ROLE_CHOICES = [
-        ("admin",      "ผู้ดูแลระบบ"),
-        ("org_admin",  "ผู้ดูแลหน่วย (ฝอ.1)"),
-        ("instructor", "ครูอาจารย์"),
-        ("student",    "กำลังพล"),
+        ("admin",          "ผู้ดูแลระบบ"),
+        ("org_admin",      "ผู้ดูแลหน่วย (ฝอ.1)"),
+        ("instructor",     "ครูอาจารย์"),
+        ("student",        "กำลังพล"),
+        ("prep_school",    "แผนกเตรียมการ รร.สส."),
+        ("prep_personnel", "แผนกเตรียมพล กพ."),
+        ("evaluator",      "แผนกประเมินผล"),
     ]
     role = models.CharField(
         max_length=20,
