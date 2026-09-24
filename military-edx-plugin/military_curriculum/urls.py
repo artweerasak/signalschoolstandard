@@ -30,6 +30,14 @@ from .grading_views import (
     api_co_instructors,
     api_co_instructor_detail,
 )
+from .evaluation_views import (
+    api_evaluation_forms,
+    api_evaluation_form_detail,
+    api_evaluation_form_responses_summary,
+    api_evaluation_status_dashboard,
+    api_pending_evaluations,
+    api_submit_evaluation,
+)
 
 app_name = "military_curriculum"
 
@@ -59,4 +67,14 @@ urlpatterns = [
     path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/finalize/", api_course_finalize, name="api_course_finalize"),
     path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/co-instructors/", api_co_instructors, name="api_co_instructors"),
     path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/co-instructors/<int:user_id>/", api_co_instructor_detail, name="api_co_instructor_detail"),
+
+    # Evaluation Gatekeeper (evaluator) — Sprint 4
+    path("api/v1/curriculum/evaluation-forms/", api_evaluation_forms, name="api_evaluation_forms"),
+    path("api/v1/curriculum/evaluation-forms/<int:form_id>/", api_evaluation_form_detail, name="api_evaluation_form_detail"),
+    path("api/v1/curriculum/evaluation-forms/<int:form_id>/responses/summary/", api_evaluation_form_responses_summary, name="api_evaluation_form_responses_summary"),
+    path("api/v1/curriculum/dashboard/evaluation-status/", api_evaluation_status_dashboard, name="api_evaluation_status_dashboard"),
+
+    # Student-facing
+    path("api/v1/curriculum/my/evaluations/pending/", api_pending_evaluations, name="api_pending_evaluations"),
+    path("api/v1/curriculum/my/evaluations/<int:form_id>/submit/", api_submit_evaluation, name="api_submit_evaluation"),
 ]
