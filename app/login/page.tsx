@@ -72,6 +72,8 @@ function LoginPageInner() {
         router.push("/instructor")
       } else if (user.role === "prep_school") {
         router.push("/prep-school")
+      } else if (user.role === "prep_personnel") {
+        router.push("/prep-personnel")
       } else {
         router.push("/my")
       }
