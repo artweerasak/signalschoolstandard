@@ -24,6 +24,7 @@ export default function EvaluatorPage() {
   const [curricula, setCurricula] = useState<EvaluatorCurriculumItem[]>([])
   const [curriculaLoading, setCurriculaLoading] = useState(true)
   const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [yearMenuOpen, setYearMenuOpen] = useState(false)
   const [error, setError] = useState("")
 
   const [gradingStatus, setGradingStatus] = useState<GradingStatusReport | null>(null)
@@ -102,17 +103,30 @@ export default function EvaluatorPage() {
         <Card className="p-6 text-center text-sm text-[#9a92a8]">ยังไม่มีหลักสูตรที่ส่งให้แผนกเตรียมพลแล้ว</Card>
       ) : (
         <div className="space-y-3">
-          {years.length > 1 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              {years.map(y => (
-                <button key={y} onClick={() => setSelectedYear(y)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors
-                    ${selectedYear === y ? "bg-[#4A1A6B] text-white" : "bg-[#f0ecf6] text-[#6b6478] hover:bg-[#e6e1ee]"}`}>
-                  ปี {y}
-                </button>
-              ))}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-[#6b6478]">ปีการศึกษา</span>
+            <div className="relative">
+              <button onClick={() => setYearMenuOpen(v => !v)}
+                className="flex items-center gap-2 bg-white border border-[#d9d2e6] rounded-xl px-4 py-2 text-sm font-medium text-[#2D0F42] shadow-sm hover:border-[#4A1A6B] transition-colors min-w-[120px] justify-between">
+                {selectedYear}
+                <span className={`text-[#9a92a8] text-xs transition-transform ${yearMenuOpen ? "rotate-180" : ""}`}>▾</span>
+              </button>
+              {yearMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setYearMenuOpen(false)} />
+                  <div className="absolute z-20 mt-1.5 w-full min-w-[140px] bg-white border border-[#e6e1ee] rounded-xl shadow-lg overflow-hidden py-1">
+                    {years.map(y => (
+                      <button key={y} onClick={() => { setSelectedYear(y); setYearMenuOpen(false) }}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors
+                          ${selectedYear === y ? "bg-[#4A1A6B] text-white font-medium" : "text-[#4a4456] hover:bg-[#f7f5fa]"}`}>
+                        {y}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           {curriculaForYear.length === 0 ? (
             <Card className="p-6 text-center text-sm text-[#9a92a8]">ไม่มีหลักสูตรของปีนี้</Card>
