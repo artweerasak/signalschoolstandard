@@ -56,6 +56,7 @@ export default function CurriculumDetailPage() {
   useEffect(() => { if (curriculumId) load() }, [curriculumId])
 
   const isDraft = curriculum?.status === "draft"
+  const canAddCourse = curriculum?.status === "draft" || curriculum?.status === "submitted" || curriculum?.status === "active"
 
   const openAddCourse = () => {
     setCourseForm(EMPTY_COURSE_FORM)
@@ -192,13 +193,20 @@ export default function CurriculumDetailPage() {
 
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-[#2D0F42]">วิชาในหลักสูตร ({curriculum.courses.length})</h2>
-        {isDraft && (
+        {canAddCourse && (
           <button onClick={openAddCourse}
             className="bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-medium px-4 py-2 rounded-lg">
             + เพิ่มวิชา
           </button>
         )}
       </div>
+
+      {!isDraft && curriculum.status !== "closed" && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
+          หลักสูตรนี้ส่งให้แผนกเตรียมพลไปแล้ว — เพิ่มวิชาใหม่ได้ตามปกติ แต่ถ้ามีกำลังพลที่บรรจุเข้าหลักสูตรนี้ไปแล้วบางส่วน
+          ต้องแจ้งแผนกเตรียมพลให้กดปุ่ม &ldquo;ตามให้ครบ&rdquo; เพื่อลงทะเบียนวิชาใหม่ให้คนกลุ่มนั้นด้วย (ระบบไม่ลงทะเบียนให้อัตโนมัติ)
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
         {curriculum.courses.length === 0 ? (
