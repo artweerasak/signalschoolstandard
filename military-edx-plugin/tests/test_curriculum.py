@@ -355,3 +355,77 @@ class TestCurriculumCourseEditability:
         resp = client.delete(f"/military/api/v1/curriculum/curricula/{c.id}/courses/{cc.id}/")
         assert resp.status_code == 409
         assert c.courses.filter(pk=cc.id).exists()
+
+
+class TestCurriculumDates:
+    def test_create_with_start_end_date(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "หลักสูตรมีวันที่", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id,
+                "start_date": "2027-01-10", "end_date": "2027-03-20",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201, resp.content
+        body = resp.json()
+        assert body["start_date"] == "2027-01-10"
+        assert body["end_date"] == "2027-03-20"
+
+    def test_create_rejects_start_after_end(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id,
+                "start_date": "2027-03-20", "end_date": "2027-01-10",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_patch_partial_end_date_validated_against_existing_start(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        create_resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id, "start_date": "2027-03-20",
+            }),
+            content_type="application/json",
+        )
+        curriculum_id = create_resp.json()["id"]
+
+        resp = client.patch(
+            f"/military/api/v1/curriculum/curricula/{curriculum_id}/",
+            data=json.dumps({"end_date": "2027-01-10"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_patch_sets_end_date(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        create_resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id,
+            }),
+            content_type="application/json",
+        )
+        curriculum_id = create_resp.json()["id"]
+
+        resp = client.patch(
+            f"/military/api/v1/curriculum/curricula/{curriculum_id}/",
+            data=json.dumps({"end_date": "2027-06-30"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        assert resp.json()["end_date"] == "2027-06-30"
