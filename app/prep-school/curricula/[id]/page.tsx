@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { api, CurriculumDetail } from "@/lib/api"
+import { api, CurriculumDetail, Course } from "@/lib/api"
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "ร่าง", submitted: "ส่งให้แผนกเตรียมพลแล้ว", active: "ใช้งาน", closed: "ปิดรุ่น",
@@ -39,6 +39,10 @@ export default function CurriculumDetailPage() {
   const [courseForm, setCourseForm] = useState<CourseForm>(EMPTY_COURSE_FORM)
   const [savingCourse, setSavingCourse] = useState(false)
   const [courseFormError, setCourseFormError] = useState("")
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
+  const [courseQuery, setCourseQuery] = useState("")
+  const [courseResults, setCourseResults] = useState<Course[]>([])
+  const [searchingCourses, setSearchingCourses] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const load = () => {
@@ -56,11 +60,42 @@ export default function CurriculumDetailPage() {
   const openAddCourse = () => {
     setCourseForm(EMPTY_COURSE_FORM)
     setCourseFormError("")
+    setSelectedCourse(null)
+    setCourseQuery("")
+    setCourseResults([])
     setShowCourseModal(true)
   }
 
+  // ค้นหารายวิชาจากคลังวิชาในระบบ (debounce 300ms) แทนการให้พิมพ์ course_id เอง
+  useEffect(() => {
+    if (!showCourseModal || selectedCourse || !courseQuery.trim()) {
+      setCourseResults([])
+      return
+    }
+    const t = setTimeout(() => {
+      setSearchingCourses(true)
+      api.courses(courseQuery)
+        .then(r => setCourseResults(r.results))
+        .catch(() => setCourseResults([]))
+        .finally(() => setSearchingCourses(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [courseQuery, showCourseModal, selectedCourse])
+
+  const pickCourse = (c: Course) => {
+    setSelectedCourse(c)
+    setCourseForm(f => ({ ...f, course_id: c.id, display_name: c.name }))
+    setCourseResults([])
+    setCourseQuery("")
+  }
+
+  const clearSelectedCourse = () => {
+    setSelectedCourse(null)
+    setCourseForm(f => ({ ...f, course_id: "", display_name: "" }))
+  }
+
   const handleSaveCourse = async () => {
-    if (!courseForm.course_id.trim()) { setCourseFormError("กรุณากรอก Course ID"); return }
+    if (!selectedCourse) { setCourseFormError("กรุณาค้นหาและเลือกวิชาจากระบบ"); return }
     if (!courseForm.display_name.trim()) { setCourseFormError("กรุณากรอกชื่อวิชา"); return }
     setSavingCourse(true)
     setCourseFormError("")
@@ -218,13 +253,43 @@ export default function CurriculumDetailPage() {
                 <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{courseFormError}</div>
               )}
               <div>
-                <label className="block text-sm font-medium text-[#4a4456] mb-1">Course ID (edX)</label>
-                <input type="text" placeholder="เช่น course-v1:Signal+SIG101+2570" value={courseForm.course_id}
-                  onChange={e => setCourseForm({ ...courseForm, course_id: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">รายวิชา (ค้นหาจากระบบ)</label>
+                {selectedCourse ? (
+                  <div className="flex items-center justify-between gap-2 border border-gray-300 rounded-lg px-3 py-2 bg-[#f7f5fa]">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[#2D0F42] truncate">{selectedCourse.name}</p>
+                      <p className="text-xs text-[#9a92a8] font-mono truncate">{selectedCourse.id}</p>
+                    </div>
+                    <button type="button" onClick={clearSelectedCourse}
+                      className="text-xs text-[#4A1A6B] hover:underline shrink-0">เปลี่ยน</button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input type="text" placeholder="พิมพ์ชื่อวิชาที่ต้องการค้นหา..." value={courseQuery}
+                      onChange={e => setCourseQuery(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                    {courseQuery.trim() && (
+                      <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                        {searchingCourses ? (
+                          <p className="px-3 py-2 text-sm text-[#9a92a8]">กำลังค้นหา...</p>
+                        ) : courseResults.length === 0 ? (
+                          <p className="px-3 py-2 text-sm text-[#9a92a8]">ไม่พบวิชาที่ตรงกับคำค้นหา</p>
+                        ) : (
+                          courseResults.map(c => (
+                            <button type="button" key={c.id} onClick={() => pickCourse(c)}
+                              className="w-full text-left px-3 py-2 hover:bg-[#f7f5fa] text-sm border-b border-gray-100 last:border-0">
+                              <p className="font-medium text-[#2D0F42]">{c.name}</p>
+                              <p className="text-xs text-[#9a92a8] font-mono">{c.id}</p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#4a4456] mb-1">ชื่อวิชา</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ชื่อวิชา (แสดงในหลักสูตร)</label>
                 <input type="text" value={courseForm.display_name}
                   onChange={e => setCourseForm({ ...courseForm, display_name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
