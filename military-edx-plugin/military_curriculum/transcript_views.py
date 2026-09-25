@@ -2,15 +2,19 @@
 military_curriculum/transcript_views.py
 
 Learner Transcript (student) — Sprint 5
+Org-wide personnel completion history (org_admin) — Sprint 2 (2026-09)
 
 ทุกคนเข้าถึงได้เฉพาะข้อมูลของตัวเอง (self only) — ใช้ _require_login เฉยๆ
 ไม่ผูก role เฉพาะ (กำลังพลทุกคนเป็น student ได้เสมอ)
 """
+from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 
-from military_profile.permissions import _require_login
+from military_profile.permissions import _require_login, _require_org_admin, get_org_scope
 
 from .services.gatekeeper_service import get_gated_transcript
+
+User = get_user_model()
 
 
 @_require_login
@@ -55,3 +59,46 @@ def api_my_certificate(request, curriculum_id: int):
     # ที่มี WeasyPrint อยู่แล้ว) — ต้องตัดสินใจ policy ก่อนว่าจะ reuse
     # หรือทำ template ใหม่เฉพาะ curriculum
     return JsonResponse({"available": True, "curriculum_name": entry["curriculum_name"]})
+
+
+@_require_org_admin
+def api_org_completions(request):
+    """
+    GET /military/api/v1/curriculum/org/completions/
+    ประวัติการเรียนของกำลังพลในหน่วย — org_admin เห็นเฉพาะหน่วยตัวเอง เสมอ
+    (ไม่สน ?org_id= ที่ส่งมา ป้องกันดูข้ามหน่วย), admin เต็มเห็นทุกหน่วย
+    หรือกรองด้วย ?org_id= ได้ — จุดแรกที่ military_curriculum ใช้
+    get_org_scope() (แทน inline comparison เดิมของแอปนี้เอง)
+
+    reuse get_gated_transcript() ต่อกำลังพลแต่ละคนในหน่วย (เหมือน
+    /my/transcript/ ของ student คนนั้นเป๊ะ — เห็นแค่สิ่งที่ผ่าน gate แล้ว)
+    ไม่มี curriculum-level completed date เก็บอยู่จริงในระบบ (มีแค่ระดับวิชา
+    ผ่าน FinalCourseResult.computed_at) จึงคืนละเอียดระดับวิชาให้ frontend
+    จัดกลุ่มแสดงเอง
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    from military_profile.models import MilitaryUserProfile
+
+    is_unscoped_admin, org_id = get_org_scope(request)
+    if not is_unscoped_admin and not org_id:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+
+    qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin"))
+    if org_id:
+        qs = qs.filter(organization_id=org_id)
+
+    results = []
+    for p in qs.select_related("user").order_by("full_name_th"):
+        curricula = get_gated_transcript(p.user)
+        if not curricula:
+            continue
+        results.append({
+            "student_id": p.user_id,
+            "full_name": p.full_name_th,
+            "rank_display": p.get_rank_display(),
+            "curricula": curricula,
+        })
+
+    return JsonResponse({"results": results, "count": len(results)})
