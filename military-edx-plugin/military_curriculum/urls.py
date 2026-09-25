@@ -41,6 +41,8 @@ from .evaluation_views import (
     api_evaluation_form_detail,
     api_evaluation_form_responses_summary,
     api_evaluation_status_dashboard,
+    api_grading_status_report,
+    api_curriculum_ranking,
     api_pending_evaluations,
     api_submit_evaluation,
 )
@@ -93,6 +95,8 @@ urlpatterns = [
     path("api/v1/curriculum/evaluation-forms/<int:form_id>/", api_evaluation_form_detail, name="api_evaluation_form_detail"),
     path("api/v1/curriculum/evaluation-forms/<int:form_id>/responses/summary/", api_evaluation_form_responses_summary, name="api_evaluation_form_responses_summary"),
     path("api/v1/curriculum/dashboard/evaluation-status/", api_evaluation_status_dashboard, name="api_evaluation_status_dashboard"),
+    path("api/v1/curriculum/reports/grading-status/", api_grading_status_report, name="api_grading_status_report"),
+    path("api/v1/curriculum/curricula/<int:curriculum_id>/ranking/", api_curriculum_ranking, name="api_curriculum_ranking"),
 
     # Student-facing
     path("api/v1/curriculum/my/evaluations/pending/", api_pending_evaluations, name="api_pending_evaluations"),

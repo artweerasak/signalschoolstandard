@@ -54,6 +54,8 @@ class Curriculum(models.Model):
     name = models.CharField(max_length=255, verbose_name="ชื่อหลักสูตร")
     batch_code = models.CharField(max_length=50, verbose_name="รุ่นที่")
     academic_year = models.PositiveIntegerField(db_index=True, verbose_name="ปีการศึกษา (พ.ศ.)")
+    start_date = models.DateField(null=True, blank=True, verbose_name="วันเริ่มหลักสูตร")
+    end_date = models.DateField(null=True, blank=True, verbose_name="วันจบหลักสูตร")
     organization = models.ForeignKey(
         "military_profile.Organization",
         on_delete=models.PROTECT,

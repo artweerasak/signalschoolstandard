@@ -8,6 +8,7 @@ Sprint 1 เท่านั้น — ยังไม่มี cascade enrollmen
 evaluation gatekeeper (Sprint 4), transcript (Sprint 5)
 """
 import json
+from datetime import date
 
 from django.db import IntegrityError
 from django.views.decorators.csrf import csrf_exempt
@@ -22,6 +23,40 @@ from .models import Curriculum, CurriculumCourse, CurriculumRegionQuota, RANK_OR
 from .permissions import require_school_curriculum_read, SIGNAL_SCHOOL_ORG_ID
 
 User = get_user_model()
+
+
+def _parse_date(value):
+    """Parse 'YYYY-MM-DD' (หรือ date object) เป็น datetime.date — คืน None
+    ถ้าว่าง/parse ไม่ได้ (ตาม pattern เดียวกับ military_profile.api_views._parse_date
+    แต่แยกไฟล์เพื่อไม่ต้อง import ข้าม api_views.py ที่หนักและมี edx-platform
+    lazy import ปนอยู่)"""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _clean_curriculum_dates(data: dict, existing: Curriculum | None = None) -> tuple:
+    """เตรียม+ตรวจสอบ start_date/end_date จาก request body — คืน (updates,
+    error) เหมือน _clean_eligibility_fields (รองรับทั้ง create ที่ส่งครบ และ
+    PATCH ที่ส่งบางส่วน — เทียบกับค่าเดิมถ้า PATCH ส่งมาแค่ด้านเดียว)"""
+    updates: dict = {}
+
+    if "start_date" in data:
+        updates["start_date"] = _parse_date(data["start_date"])
+    if "end_date" in data:
+        updates["end_date"] = _parse_date(data["end_date"])
+
+    start = updates.get("start_date", existing.start_date if existing else None)
+    end = updates.get("end_date", existing.end_date if existing else None)
+    if start and end and start > end:
+        return {}, "วันเริ่มหลักสูตรต้องไม่หลังวันจบหลักสูตร"
+
+    return updates, None
 
 
 def _clean_eligibility_fields(data: dict, existing: Curriculum | None = None) -> tuple:
@@ -78,6 +113,8 @@ def _curriculum_summary(c: Curriculum) -> dict:
         "name": c.name,
         "batch_code": c.batch_code,
         "academic_year": c.academic_year,
+        "start_date": c.start_date.isoformat() if c.start_date else None,
+        "end_date": c.end_date.isoformat() if c.end_date else None,
         "organization_id": c.organization_id,
         "organization_name": c.organization.name if c.organization_id else None,
         "status": c.status,
@@ -179,11 +216,17 @@ def api_curricula(request):
     if elig_error:
         return JsonResponse({"error": elig_error}, status=400)
 
+    dates, date_error = _clean_curriculum_dates(data)
+    if date_error:
+        return JsonResponse({"error": date_error}, status=400)
+
     try:
         c = Curriculum.objects.create(
             name=name,
             batch_code=batch_code,
             academic_year=academic_year,
+            start_date=dates.get("start_date"),
+            end_date=dates.get("end_date"),
             organization_id=organization_id,
             eligible_rank_class=(data.get("eligible_rank_class") or "").strip(),
             eligible_rank_min=eligibility.get("eligible_rank_min", ""),
@@ -258,6 +301,12 @@ def api_curriculum_detail(request, curriculum_id: int):
         if elig_error:
             return JsonResponse({"error": elig_error}, status=400)
         for k, v in eligibility.items():
+            setattr(c, k, v)
+
+        dates, date_error = _clean_curriculum_dates(data, existing=c)
+        if date_error:
+            return JsonResponse({"error": date_error}, status=400)
+        for k, v in dates.items():
             setattr(c, k, v)
 
         c.save()

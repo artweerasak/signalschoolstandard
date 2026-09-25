@@ -8,14 +8,19 @@ student-facing endpoints (api_pending_evaluations, api_submit_evaluation)
 (รวม admin/instructor/prep_school ฯลฯ) เป็น "student" ได้เสมอตาม requirement
 """
 import json
+from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
-from military_profile.permissions import require_role, _require_login, ROLE_ADMIN, ROLE_EVALUATOR, ROLE_PREP_SCHOOL
+from military_profile.permissions import (
+    require_role, _require_login, ROLE_ADMIN, ROLE_EVALUATOR, ROLE_PREP_SCHOOL, ROLE_PREP_PERSONNEL,
+)
 
-from .models import Curriculum, CurriculumCourse, EvaluationForm, EvaluationResponse
+from .models import (
+    Curriculum, CurriculumCourse, EvaluationForm, EvaluationResponse, FinalCourseResult,
+)
 from .services.gatekeeper_service import is_evaluation_complete, get_pending_evaluations
 
 User = get_user_model()
@@ -176,6 +181,143 @@ def api_evaluation_status_dashboard(request):
     return JsonResponse({
         "curriculum_id": curriculum.id,
         "curriculum_name": curriculum.name,
+        "results": rows,
+        "count": len(rows),
+    })
+
+
+@require_role([ROLE_EVALUATOR, ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_grading_status_report(request):
+    """
+    GET /military/api/v1/curriculum/reports/grading-status/?curriculum_id=&academic_year=
+
+    ติดตามว่าวิชาไหนในหลักสูตร (active/closed) ยังไม่ถูกครูปิดคะแนน
+    (finalize_course ยังไม่เคยเรียก หรือเรียกแล้วแต่ยังไม่ครบทุกคนที่บรรจุ)
+    — ใช้ curriculum.end_date กำหนดว่า "เกินกำหนด" หรือยัง (ยังไม่มี end_date
+    = ยังบอกไม่ได้ว่าเกินกำหนดหรือไม่ แต่ยังโชว์ในรายการเป็น pending ปกติ)
+
+    Dashboard เท่านั้น (v1) — ยังไม่มีการส่ง email/แจ้งเตือนอัตโนมัติ ตามที่
+    ตกลงกันไว้ว่าจะเริ่มจากส่วนนี้ก่อน
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    qs = Curriculum.objects.filter(status__in=["active", "closed"])
+
+    curriculum_id = request.GET.get("curriculum_id")
+    if curriculum_id:
+        qs = qs.filter(pk=curriculum_id)
+
+    academic_year = request.GET.get("academic_year", "").strip()
+    if academic_year:
+        try:
+            qs = qs.filter(academic_year=int(academic_year))
+        except ValueError:
+            return JsonResponse({"error": "academic_year ต้องเป็นตัวเลข"}, status=400)
+
+    today = date.today()
+    rows = []
+    for c in qs.prefetch_related("courses", "courses__instructors__user__military_profile"):
+        enrolled_count = c.enrollment_requests.filter(status__in=["completed", "partial_failed"]).count()
+        if enrolled_count == 0:
+            continue  # ยังไม่มีคนบรรจุ ไม่มีอะไรให้ปิดคะแนน
+
+        for cc in c.courses.all():
+            finalized_count = FinalCourseResult.objects.filter(curriculum_course=cc).count()
+            pending_count = max(enrolled_count - finalized_count, 0)
+            if pending_count == 0:
+                continue  # ปิดคะแนนครบแล้ว ไม่ต้องติดตาม
+
+            instructors = [
+                {
+                    "user_id": ci.user_id,
+                    "full_name": ci.user.military_profile.full_name_th if hasattr(ci.user, "military_profile") else ci.user.username,
+                    "is_owner": ci.is_owner,
+                }
+                for ci in cc.instructors.all()
+            ]
+            is_overdue = bool(c.end_date and today > c.end_date)
+
+            rows.append({
+                "curriculum_id": c.id,
+                "curriculum_name": c.name,
+                "academic_year": c.academic_year,
+                "end_date": c.end_date.isoformat() if c.end_date else None,
+                "curriculum_course_id": cc.id,
+                "course_display_name": cc.display_name,
+                "enrolled_count": enrolled_count,
+                "finalized_count": finalized_count,
+                "pending_count": pending_count,
+                "instructors": instructors,
+                "is_overdue": is_overdue,
+            })
+
+    rows.sort(key=lambda r: (not r["is_overdue"], r["end_date"] or "9999-99-99"))
+    return JsonResponse({"results": rows, "count": len(rows)})
+
+
+@require_role([ROLE_EVALUATOR, ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curriculum_ranking(request, curriculum_id: int):
+    """
+    GET /military/api/v1/curriculum/curricula/{id}/ranking/
+
+    จัดอันดับนักเรียนในหลักสูตรด้วยเกรดเฉลี่ยถ่วงน้ำหนักตามหน่วยกิต
+    (sum(final_score × credits) / sum(credits) ของวิชาที่ปิดคะแนนแล้ว)
+    ถ้าเกรดเฉลี่ยเท่ากัน จัดอันดับต่อด้วยคะแนนรวมดิบ (sum(final_score) ไม่
+    ถ่วงน้ำหนัก) — นักเรียนที่ยังไม่มีวิชาไหนปิดคะแนนเลยจะไม่ถูกจัดอันดับ
+    (ไม่มีข้อมูลให้เทียบ) is_complete บอกว่าปิดคะแนนครบทุกวิชาหรือยัง เพื่อ
+    แยกอันดับที่ยัง "ไม่นิ่ง" ออกจากอันดับสุดท้ายจริง
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    courses = list(c.courses.all())
+    total_course_count = len(courses)
+
+    student_ids = list(
+        c.enrollment_requests.filter(status__in=["completed", "partial_failed"]).values_list("student_id", flat=True)
+    )
+    students = User.objects.filter(id__in=student_ids).select_related("military_profile")
+
+    results_by_student: dict = {}
+    for fr in FinalCourseResult.objects.filter(
+        curriculum_course__curriculum=c, final_score__isnull=False,
+    ).select_related("curriculum_course"):
+        results_by_student.setdefault(fr.student_id, []).append(fr)
+
+    rows = []
+    for s in students:
+        frs = results_by_student.get(s.id, [])
+        if not frs:
+            continue
+        weighted_sum = sum(float(fr.final_score) * float(fr.curriculum_course.credits) for fr in frs)
+        credit_sum = sum(float(fr.curriculum_course.credits) for fr in frs)
+        weighted_average = round(weighted_sum / credit_sum, 2) if credit_sum > 0 else None
+        total_score = round(sum(float(fr.final_score) for fr in frs), 2)
+        profile = getattr(s, "military_profile", None)
+        rows.append({
+            "student_id": s.id,
+            "full_name": profile.full_name_th if profile else s.username,
+            "rank_display": profile.get_rank_display() if profile else "",
+            "weighted_average": weighted_average,
+            "total_score": total_score,
+            "courses_graded": len(frs),
+            "courses_total": total_course_count,
+            "is_complete": len(frs) == total_course_count,
+        })
+
+    rows.sort(key=lambda r: (-(r["weighted_average"] or 0), -(r["total_score"] or 0)))
+    for i, r in enumerate(rows, start=1):
+        r["rank"] = i
+
+    return JsonResponse({
+        "curriculum_id": c.id,
+        "curriculum_name": c.name,
         "results": rows,
         "count": len(rows),
     })
