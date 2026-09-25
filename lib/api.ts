@@ -322,6 +322,32 @@ export interface EnrollmentRequestDetail {
   processed_at: string | null
 }
 
+// ── Hybrid Grading + Co-Instructor (instructor) ────────────────────────────
+
+export interface MyCurriculumCourseItem {
+  id: number
+  course_id: string
+  display_name: string
+  curriculum_name: string
+  is_owner: boolean
+  student_count: number
+}
+
+export interface RosterRow {
+  student_id: number
+  username: string
+  full_name: string
+  manual_grade_count: number
+  final_score: string | null
+  passed: boolean | null
+}
+
+export interface CoInstructorRow {
+  user_id: number
+  username: string
+  is_owner: boolean
+}
+
 export interface OrgMemberRow {
   user_id: number
   full_name: string
@@ -810,6 +836,31 @@ export const api = {
     fetchAPI<EnrollmentRequestDetail>(`api/v1/curriculum/enrollment-requests/${id}/`),
   retryEnrollment: (id: number) =>
     fetchAPIPost<EnrollmentRequestDetail>(`api/v1/curriculum/enrollment-requests/${id}/retry/`, {}),
+
+  // ── Hybrid Grading + Co-Instructor (instructor) ──────────────────────────
+  getMyCurriculumCourses: () =>
+    fetchAPI<{ count: number; results: MyCurriculumCourseItem[] }>("api/v1/curriculum/my-courses/"),
+  getCurriculumCourseRoster: (id: number) =>
+    fetchAPI<{ count: number; results: RosterRow[] }>(`api/v1/curriculum/my-courses/${id}/roster/`),
+  addManualGrade: (id: number, body: {
+    student_id: number; component_name: string; score: number; max_score: number
+    weight?: number; notes?: string
+  }) => fetchAPIPost<{ id: number; component_name: string; score: string }>(
+    `api/v1/curriculum/my-courses/${id}/manual-grades/`, body
+  ),
+  updateManualGrade: (id: number, gradeId: number, body: Partial<{
+    component_name: string; score: number; max_score: number; weight: number; notes: string
+  }>) => fetchAPIPost<{ id: number; score: string; max_score: string }>(
+    `api/v1/curriculum/my-courses/${id}/manual-grades/${gradeId}/`, body, "PATCH"
+  ),
+  finalizeCurriculumCourse: (id: number) =>
+    fetchAPIPost<{ finalized_count: number }>(`api/v1/curriculum/my-courses/${id}/finalize/`, {}),
+  getCoInstructors: (id: number) =>
+    fetchAPI<{ results: CoInstructorRow[] }>(`api/v1/curriculum/my-courses/${id}/co-instructors/`),
+  addCoInstructor: (id: number, userId: number) =>
+    fetchAPIPost<{ user_id: number; username: string }>(`api/v1/curriculum/my-courses/${id}/co-instructors/`, { user_id: userId }),
+  removeCoInstructor: (id: number, userId: number) =>
+    fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/my-courses/${id}/co-instructors/${userId}/`, {}, "DELETE"),
 
   // ── Video Folder Sharing ─────────────────────────────────────────────────
   getVideoShare: (courseSlug: string) =>
