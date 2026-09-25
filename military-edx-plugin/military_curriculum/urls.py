@@ -20,6 +20,8 @@ from .quota_views import (
     api_curriculum_activate,
     api_quota_demand_report,
     api_eligible_density_report,
+    api_curriculum_org_quotas,
+    api_curriculum_personnel_search,
     api_curriculum_enroll,
     api_catch_up_enrollment,
     api_enrollment_request_detail,
@@ -72,6 +74,8 @@ urlpatterns = [
     path("api/v1/curriculum/curricula/<int:curriculum_id>/catch-up-enrollment/", api_catch_up_enrollment, name="api_catch_up_enrollment"),
     path("api/v1/curriculum/reports/quota-demand/", api_quota_demand_report, name="api_quota_demand_report"),
     path("api/v1/curriculum/reports/eligible-density/", api_eligible_density_report, name="api_eligible_density_report"),
+    path("api/v1/curriculum/curricula/<int:curriculum_id>/org-quotas/", api_curriculum_org_quotas, name="api_curriculum_org_quotas"),
+    path("api/v1/curriculum/personnel-search/", api_curriculum_personnel_search, name="api_curriculum_personnel_search"),
     path("api/v1/curriculum/enrollment-requests/<int:request_id>/", api_enrollment_request_detail, name="api_enrollment_request_detail"),
     path("api/v1/curriculum/enrollment-requests/<int:request_id>/retry/", api_enrollment_request_retry, name="api_enrollment_request_retry"),
 

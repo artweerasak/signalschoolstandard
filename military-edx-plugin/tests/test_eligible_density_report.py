@@ -148,3 +148,31 @@ class TestEligibleDensityReport:
         # ต้องถูกตัดออก เหลือแค่ student+instructor = 2
         org_a_row = next(r for r in resp.json()["results"] if r["organization_id"] == org_a.id)
         assert org_a_row["eligible_count"] == 2
+
+    def test_results_include_army_region(self, db, prep_personnel_user, curriculum_factory):
+        org_region1 = Organization.objects.create(name="หน่วยทัพภาค 1", code="DENS-R1", army_region="1")
+        c = curriculum_factory(organization=org_region1)
+        _make_user("t_region1_student", "student", org_region1)
+
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/reports/eligible-density/?curriculum_id={c.id}")
+        assert resp.status_code == 200
+        row = next(r for r in resp.json()["results"] if r["organization_id"] == org_region1.id)
+        assert row["army_region"] == "1"
+        assert row["army_region_display"] == "กองทัพภาคที่ 1"
+
+    def test_army_region_filter(self, db, prep_personnel_user, curriculum_factory):
+        org_region1 = Organization.objects.create(name="หน่วยทัพภาค 1 กรอง", code="DENS-R1F", army_region="1")
+        org_central = Organization.objects.create(name="หน่วยส่วนกลาง กรอง", code="DENS-CF", army_region="central")
+        c = curriculum_factory(organization=org_region1)
+        _make_user("t_region1_filter", "student", org_region1)
+        _make_user("t_central_filter", "student", org_central)
+
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/reports/eligible-density/?curriculum_id={c.id}&army_region=central")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["national"]["total_in_scope"] == 1
+        assert body["results"][0]["organization_id"] == org_central.id
