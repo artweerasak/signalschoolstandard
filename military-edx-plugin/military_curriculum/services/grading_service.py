@@ -7,12 +7,11 @@ Hybrid grading (auto จาก e-Learning + manual กรอกเอง) แล
 ⚠️ imports ของ edx-platform อยู่ภายในฟังก์ชันเท่านั้น (lazy) — เหตุผล
 เดียวกับ enrollment_service.py
 
-⚠️ field names ของ PersistentCourseGrade/CourseAccessRole อ้างอิงจาก
-Open edX schema มาตรฐาน (เสถียรมาหลายปี) + `role__in=["instructor","staff"]`
-ที่พบจริงใน military_profile/api_views.py (ยืนยันว่า role string ที่ระบบนี้
-ใช้จริงคือ "staff"/"instructor") — **ยังไม่ได้ verify field ของ
-PersistentCourseGrade กับ edx-platform เวอร์ชันที่รันจริงบนเครื่อง
-เนื่องจาก SSH ใช้งานไม่ได้ตอนเขียนโค้ดนี้ ควรตรวจสอบก่อน merge**
+field names ของ PersistentCourseGrade/CourseAccessRole อ้างอิงจาก Open edX
+schema มาตรฐาน + `role__in=["instructor","staff"]` ที่พบจริงใน
+military_profile/api_views.py — verify แล้วกับ edx-platform เวอร์ชันจริงบน
+production (percent_grade ถูกต้อง, import path ต้องใช้ common.djangoapps.
+student.* ไม่ใช่ student.* ตรงๆ — แก้ไขแล้วตามที่เจอตอนทดสอบ enrollment_service)
 """
 import logging
 
@@ -32,7 +31,7 @@ def sync_course_access_role(course_id_str: str, user, add: bool) -> None:
     เอง (Studio, instructor dashboard) เห็น permission ตรงกัน"""
     from opaque_keys import InvalidKeyError
     from opaque_keys.edx.keys import CourseKey
-    from student.models.user import CourseAccessRole
+    from common.djangoapps.student.models.user import CourseAccessRole
 
     try:
         course_key = CourseKey.from_string(course_id_str)
@@ -82,7 +81,7 @@ def finalize_course(curriculum_course) -> list:
 
     คำนวณคะแนนจริงเสมอ ไม่ถูก evaluation gatekeeper บล็อก (gate บล็อกแค่
     การ "แสดงผล" ให้ student เห็น ดู services/gatekeeper_service.py)"""
-    from student.models.course_enrollment import CourseEnrollment
+    from common.djangoapps.student.models.course_enrollment import CourseEnrollment
     from opaque_keys.edx.keys import CourseKey
 
     from ..models import FinalCourseResult
