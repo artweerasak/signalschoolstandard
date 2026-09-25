@@ -263,6 +263,7 @@ def api_my_profile(request):
             "full_name": user.get_full_name() or user.username,
             "rank": None,
             "rank_display": None,
+            "rank_effective_date": None,
             "position": None,
             "unit": None,
             "sub_unit": None,
@@ -279,6 +280,7 @@ def api_my_profile(request):
         "full_name": profile.full_name_th,
         "rank": profile.rank,
         "rank_display": profile.display_rank_name,
+        "rank_effective_date": profile.rank_effective_date.isoformat() if profile.rank_effective_date else None,
         "gender": profile.gender,
         "gender_display": profile.get_gender_display(),
         "position": profile.position,
@@ -293,13 +295,49 @@ def api_my_profile(request):
     })
 
 
+def _apply_self_rank_update(profile, body) -> list:
+    """
+    แก้ไข rank/rank_effective_date ที่กำลังพลกรอกเอง — แยกเป็นฟังก์ชันเดี่ยว
+    เพื่อให้ภายหลัง (เมื่อมีการแบ่งมอบหน้าที่ org_admin ชัดเจนแล้ว) เปลี่ยนจาก
+    "set ตรง" เป็น "สร้าง pending record รออนุมัติ" ได้โดยแก้แค่จุดนี้จุดเดียว
+    ไม่ต้องแตะฟิลด์อื่นใน api_my_profile_complete
+    """
+    updated = []
+    valid_ranks = dict(RANK_CHOICES)
+
+    if "rank" in body:
+        rank = (body["rank"] or "").strip()
+        if rank and rank not in valid_ranks:
+            return None
+        profile.rank = rank
+        updated.append("rank")
+
+    if "rank_effective_date" in body:
+        raw = body["rank_effective_date"]
+        if raw:
+            d = _parse_date(raw)
+            if not d:
+                return None
+            profile.rank_effective_date = d
+        else:
+            profile.rank_effective_date = None
+        updated.append("rank_effective_date")
+
+    return updated
+
+
 @require_http_methods(["PATCH", "POST"])
 @_require_login
 def api_my_profile_complete(request):
     """
     PATCH /military/api/v1/my/profile/complete/
     ให้กำลังพลกรอก/แก้ไขข้อมูลที่ขาดหายไป:
-    birth_date, service_start_date (เฉพาะเมื่อยังไม่มี), position, contact_email, phone_number
+    birth_date, service_start_date (เฉพาะเมื่อยังไม่มี), position, contact_email,
+    phone_number, rank, rank_effective_date
+
+    rank/rank_effective_date: มีผลทันทีไม่ต้องรออนุมัติ (v1 — org_admin ยังไม่ถูก
+    แบ่งมอบหน้าที่ชัดเจนในหลายหน่วย ดู _apply_self_rank_update สำหรับ hook
+    สำหรับใส่ approval gate ในอนาคต)
     """
     user = request.user
     profile = getattr(user, "military_profile", None)
@@ -337,6 +375,12 @@ def api_my_profile_complete(request):
     if "phone_number" in body:
         profile.phone_number = body["phone_number"].strip()
         updated.append("phone_number")
+
+    if "rank" in body or "rank_effective_date" in body:
+        rank_updated = _apply_self_rank_update(profile, body)
+        if rank_updated is None:
+            return JsonResponse({"error": "ข้อมูลยศหรือวันที่มีผลไม่ถูกต้อง"}, status=400)
+        updated.extend(rank_updated)
 
     if updated:
         profile.save(update_fields=updated)
