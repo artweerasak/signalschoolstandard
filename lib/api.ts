@@ -256,6 +256,72 @@ export interface CurriculumDetail extends CurriculumSummary {
   courses: CurriculumCourseItem[]
 }
 
+// ── Quota/Demand Report + Cascade Enrollment (prep_personnel) ─────────────
+
+export interface SubmittedCurriculumItem {
+  id: number
+  name: string
+  batch_code: string
+  academic_year: number
+  organization_name: string | null
+  status: "submitted" | "active"
+  quota_total: number
+  course_count: number
+  submitted_at: string | null
+}
+
+export interface QuotaDemandRegionRow {
+  army_region: string
+  quota: number
+  requested: number
+  filled: number
+}
+
+export interface QuotaDemandReport {
+  curriculum_id: number
+  curriculum_name: string
+  national_quota: number
+  national_requested: number
+  national_filled: number
+  region_quotas: QuotaDemandRegionRow[]
+}
+
+export interface EnrollCoursePreview {
+  course_id: string
+  would_enroll: boolean
+  error: string | null
+}
+
+export interface EnrollStudentPreview {
+  student_id: number
+  would_succeed: boolean
+  courses: EnrollCoursePreview[]
+}
+
+export interface EnrollDryRunResult {
+  dry_run: true
+  preview: EnrollStudentPreview[]
+  missing_student_ids: number[]
+}
+
+export interface EnrollExecuteResult {
+  mode: "sync" | "async"
+  enrollment_request_ids: number[]
+  missing_student_ids: number[]
+}
+
+export interface EnrollmentRequestDetail {
+  id: number
+  curriculum_id: number
+  curriculum_name: string
+  student_id: number
+  student_username: string
+  status: "pending" | "processing" | "completed" | "partial_failed" | "failed"
+  result_detail: Record<string, string>
+  created_at: string | null
+  processed_at: string | null
+}
+
 export interface OrgMemberRow {
   user_id: number
   full_name: string
@@ -722,6 +788,28 @@ export const api = {
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/curricula/${id}/courses/${coursePk}/`, {}, "DELETE"),
   submitCurriculum: (id: number) =>
     fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/submit/`, {}),
+
+  // ── Quota/Demand Report + Cascade Enrollment (prep_personnel) ────────────
+  listSubmittedCurricula: (status?: "submitted" | "active") => {
+    const qs = status ? `?status=${status}` : ""
+    return fetchAPI<{ count: number; results: SubmittedCurriculumItem[] }>(`api/v1/curriculum/curricula/submitted/${qs}`)
+  },
+  activateCurriculum: (id: number) =>
+    fetchAPIPost<{ id: number; status: string }>(`api/v1/curriculum/curricula/${id}/activate/`, {}),
+  getQuotaDemandReport: (curriculumId: number) =>
+    fetchAPI<QuotaDemandReport>(`api/v1/curriculum/reports/quota-demand/?curriculum_id=${curriculumId}`),
+  previewEnrollStudents: (curriculumId: number, studentIds: number[]) =>
+    fetchAPIPost<EnrollDryRunResult>(`api/v1/curriculum/curricula/${curriculumId}/enroll/`, {
+      student_ids: studentIds, dry_run: true,
+    }),
+  enrollStudents: (curriculumId: number, studentIds: number[]) =>
+    fetchAPIPost<EnrollExecuteResult>(`api/v1/curriculum/curricula/${curriculumId}/enroll/`, {
+      student_ids: studentIds,
+    }),
+  getEnrollmentRequest: (id: number) =>
+    fetchAPI<EnrollmentRequestDetail>(`api/v1/curriculum/enrollment-requests/${id}/`),
+  retryEnrollment: (id: number) =>
+    fetchAPIPost<EnrollmentRequestDetail>(`api/v1/curriculum/enrollment-requests/${id}/retry/`, {}),
 
   // ── Video Folder Sharing ─────────────────────────────────────────────────
   getVideoShare: (courseSlug: string) =>
