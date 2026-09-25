@@ -11,6 +11,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { loginWithMilitaryId } from "@/lib/auth"
 import { api } from "@/lib/api"
+import Button from "@/components/ui/Button"
 
 function validateNationalId(id: string): boolean {
   if (!/^\d{13}$/.test(id)) return false
@@ -101,149 +102,161 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2D0F42] via-[#4A1A6B] to-[#7B3FA0] px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#180626] px-4 py-10">
+      {/* พื้นหลัง gradient เข้ม + glow ตกแต่ง ต้นแบบจาก signalschool.ac.th hero */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#2D0F42] via-[#3a1456] to-[#180626]" aria-hidden="true" />
+      <div
+        className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[560px] h-[560px] rounded-full bg-[#7B3FA0]/25 blur-[120px]"
+        aria-hidden="true"
+      />
+      <div
+        className="absolute bottom-[-15%] right-[-5%] w-[420px] h-[420px] rounded-full bg-[#C9A84C]/15 blur-[110px]"
+        aria-hidden="true"
+      />
 
-        {/* Header */}
-        <div className="bg-[#4A1A6B] px-8 py-8 flex flex-col items-center gap-3">
-          <Image
-            src="/signal_logo.png"
-            alt="กรมการทหารสื่อสาร"
-            width={90}
-            height={90}
-            className="rounded-full border-4 border-[#C9A84C] shadow-lg bg-white p-1"
-            priority
-          />
-          <div className="text-center">
-            <h1 className="text-white text-xl font-bold tracking-wide">
-              กรมการทหารสื่อสาร
-            </h1>
-            <p className="text-[#C9A84C] text-sm mt-0.5">
-              กรมทหารสื่อสาร · ระบบการเรียนการสอนออนไลน์
-            </p>
+      <div className="relative w-full max-w-md">
+        {/* Crest ลอยเหนือการ์ด พร้อม glow ring */}
+        <div className="flex justify-center -mb-10 relative z-10">
+          <div className="relative">
+            <span className="absolute inset-0 rounded-full blur-xl bg-[#C9A84C]/40 -z-10 scale-150" aria-hidden="true" />
+            <span className="absolute -inset-3 rounded-full border border-[#E8C96A]/30 -z-10" aria-hidden="true" />
+            <Image
+              src="/signal_logo.png"
+              alt="กรมการทหารสื่อสาร"
+              width={92}
+              height={92}
+              className="rounded-full border-4 border-[#C9A84C] shadow-[0_8px_30px_rgba(201,168,76,0.35)] bg-white p-1"
+              priority
+            />
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="px-8 py-8 space-y-5">
-          <p className="text-center text-[#4A1A6B] font-semibold text-base">
-            เข้าสู่ระบบ
-          </p>
-
-          {/* Username (National ID) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              ชื่อผู้ใช้ <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              placeholder="เลขบัตรประชาชน 13 หลัก หรือ ชื่อผู้ใช้"
-              value={username}
-              onChange={(e) => handleUsernameChange(e.target.value)}
-              className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition
-                ${errors.username
-                  ? "border-red-400 focus:ring-red-300"
-                  : "border-gray-300 focus:ring-[#7B3FA0] focus:border-[#4A1A6B]"
-                }`}
-              autoComplete="username"
-            />
-            {errors.username && (
-              <p className="text-red-500 text-xs mt-1">{errors.username}</p>
-            )}
-          </div>
-
-          {/* Password */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              รหัสผ่าน <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="password"
-              placeholder="กรอกรหัสผ่าน"
-              value={password}
-              onChange={(e) => handlePasswordChange(e.target.value)}
-              className={`w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition
-                ${errors.password
-                  ? "border-red-400 focus:ring-red-300"
-                  : "border-gray-300 focus:ring-[#7B3FA0] focus:border-[#4A1A6B]"
-                }`}
-              autoComplete="current-password"
-            />
-            {errors.password && (
-              <p className="text-red-500 text-xs mt-1">{errors.password}</p>
-            )}
-            <p className="text-xs text-gray-400 mt-1">
-              รหัสผ่าน default คือเลขประจำตัวทหาร 10 หลัก
+        <div className="bg-white rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] overflow-hidden pt-14">
+          <div className="text-center px-8 pb-2">
+            <p className="text-[10px] font-mono tracking-[0.2em] text-[#9a92a8] uppercase">
+              Royal Thai Army Signal School
+            </p>
+            <h1 className="text-[#2D0F42] text-xl font-bold tracking-wide mt-1">
+              กรมการทหารสื่อสาร
+            </h1>
+            <p className="text-[#6b6478] text-sm mt-0.5">
+              ระบบการเรียนการสอนออนไลน์
             </p>
           </div>
 
-          {/* API Error */}
-          {apiError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-lg">
-              {apiError}
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="px-8 pt-6 pb-8 space-y-5">
+            {/* Username (National ID) */}
+            <div>
+              <label className="block text-sm font-medium text-[#4a4456] mb-1">
+                ชื่อผู้ใช้ <span className="text-[#b91c1c]">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="เลขบัตรประชาชน 13 หลัก หรือ ชื่อผู้ใช้"
+                value={username}
+                onChange={(e) => handleUsernameChange(e.target.value)}
+                className={`w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 transition
+                  ${errors.username
+                    ? "border-[#f3a0a0] focus:ring-red-200"
+                    : "border-[#d9d2e6] focus:ring-[#C9A84C]/40 focus:border-[#4A1A6B]"
+                  }`}
+                autoComplete="username"
+              />
+              {errors.username && (
+                <p className="text-[#b91c1c] text-xs mt-1">{errors.username}</p>
+              )}
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-sm font-medium text-[#4a4456] mb-1">
+                รหัสผ่าน <span className="text-[#b91c1c]">*</span>
+              </label>
+              <input
+                type="password"
+                placeholder="กรอกรหัสผ่าน"
+                value={password}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                className={`w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 transition
+                  ${errors.password
+                    ? "border-[#f3a0a0] focus:ring-red-200"
+                    : "border-[#d9d2e6] focus:ring-[#C9A84C]/40 focus:border-[#4A1A6B]"
+                  }`}
+                autoComplete="current-password"
+              />
+              {errors.password && (
+                <p className="text-[#b91c1c] text-xs mt-1">{errors.password}</p>
+              )}
+              <p className="text-xs text-[#9a92a8] mt-1">
+                รหัสผ่าน default คือเลขประจำตัวทหาร 10 หลัก
+              </p>
+            </div>
+
+            {/* API Error */}
+            {apiError && (
+              <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] text-sm px-4 py-2.5 rounded-xl">
+                {apiError}
+              </div>
+            )}
+
+            {/* Submit */}
+            <Button type="submit" disabled={loading} className="w-full py-3">
+              {loading ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  กำลังเข้าสู่ระบบ...
+                </>
+              ) : (
+                "เข้าสู่ระบบ"
+              )}
+            </Button>
+          </form>
+
+          {process.env.NEXT_PUBLIC_THAID_ENABLED === "1" && (
+            <div className="px-8 pb-2">
+              <div className="flex items-center gap-3 my-2 text-[#9a92a8] text-xs">
+                <span className="h-px bg-[#e6e1ee] flex-1" />หรือ<span className="h-px bg-[#e6e1ee] flex-1" />
+              </div>
+              <a
+                href="/thaid/login"
+                className="flex items-center justify-center gap-2 w-full border border-[#4A1A6B]/30 text-[#4A1A6B] rounded-full py-2.5 font-medium hover:bg-[#4A1A6B] hover:text-white transition-colors"
+              >
+                <span aria-hidden>🪪</span> เข้าสู่ระบบด้วย ThaID
+              </a>
+              <p className="text-xs text-[#9a92a8] text-center mt-1">ยืนยันตัวตนผ่านแอป ThaID บนมือถือ</p>
             </div>
           )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#4A1A6B] hover:bg-[#2D0F42] disabled:bg-[#9B7AB8] text-white font-semibold py-3 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-                กำลังเข้าสู่ระบบ...
-              </>
-            ) : (
-              "เข้าสู่ระบบ"
-            )}
-          </button>
-        </form>
-
-        {process.env.NEXT_PUBLIC_THAID_ENABLED === "1" && (
-          <div className="px-8 pb-2">
-            <div className="flex items-center gap-3 my-2 text-gray-400 text-xs">
-              <span className="h-px bg-gray-200 flex-1" />หรือ<span className="h-px bg-gray-200 flex-1" />
-            </div>
-            <a
-              href="/thaid/login"
-              className="flex items-center justify-center gap-2 w-full border border-[#4A1A6B] text-[#4A1A6B] rounded-lg py-2.5 font-medium hover:bg-[#4A1A6B] hover:text-white transition"
-            >
-              <span aria-hidden>🪪</span> เข้าสู่ระบบด้วย ThaID
-            </a>
-            <p className="text-xs text-gray-400 text-center mt-1">ยืนยันตัวตนผ่านแอป ThaID บนมือถือ</p>
+          {/* Footer */}
+          <div className="border-t border-[#f0ecf6] px-8 py-4 text-center space-y-2">
+            <p className="text-sm text-[#6b6478]">
+              ยังไม่มีบัญชี?{" "}
+              <Link href="/register" className="text-[#4A1A6B] hover:underline font-medium">
+                สมัครสมาชิก
+              </Link>
+            </p>
+            <p className="text-xs text-[#9a92a8]">
+              หากลืมรหัสผ่าน{" "}
+              <Link href="/reset-password" className="text-[#4A1A6B] hover:underline">
+                ขอรีเซ็ตรหัสผ่าน
+              </Link>
+              {" "}หรือติดต่อผู้ดูแลระบบ
+            </p>
+            {/* PDPA Notice */}
+            <p className="text-xs text-[#9a92a8] border-t border-[#f0ecf6] pt-2 leading-relaxed">
+              ระบบนี้จัดเก็บข้อมูลส่วนบุคคลเพื่อการเรียนการสอนภายในองค์กรตาม{" "}
+              <Link href="/privacy" className="underline hover:text-[#4A1A6B]">
+                นโยบายความเป็นส่วนตัว (PDPA)
+              </Link>
+            </p>
+            <p className="text-xs text-[#9a92a8]">
+              © {new Date().getFullYear()} กรมการทหารสื่อสาร · กรมทหารสื่อสาร
+            </p>
           </div>
-        )}
-
-        {/* Footer */}
-        <div className="border-t border-gray-100 px-8 py-4 text-center space-y-2">
-          <p className="text-sm text-gray-500">
-            ยังไม่มีบัญชี?{" "}
-            <Link href="/register" className="text-[#4A1A6B] hover:underline font-medium">
-              สมัครสมาชิก
-            </Link>
-          </p>
-          <p className="text-xs text-gray-400">
-            หากลืมรหัสผ่าน{" "}
-            <Link href="/reset-password" className="text-[#4A1A6B] hover:underline">
-              ขอรีเซ็ตรหัสผ่าน
-            </Link>
-            {" "}หรือติดต่อผู้ดูแลระบบ
-          </p>
-          {/* PDPA Notice */}
-          <p className="text-xs text-gray-400 border-t border-gray-100 pt-2 leading-relaxed">
-            ระบบนี้จัดเก็บข้อมูลส่วนบุคคลเพื่อการเรียนการสอนภายในองค์กรตาม{" "}
-            <Link href="/privacy" className="underline hover:text-[#4A1A6B]">
-              นโยบายความเป็นส่วนตัว (PDPA)
-            </Link>
-          </p>
-          <p className="text-xs text-gray-400">
-            © {new Date().getFullYear()} กรมการทหารสื่อสาร · กรมทหารสื่อสาร
-          </p>
         </div>
       </div>
     </div>

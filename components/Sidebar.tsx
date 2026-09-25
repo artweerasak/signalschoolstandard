@@ -141,7 +141,7 @@ function NavGroupSection({
   return (
     <div>
       {group.groupLabel && (
-        <p className="px-4 pt-4 pb-1 text-purple-400 text-xs uppercase tracking-wider font-medium">
+        <p className="px-5 pt-4 pb-1 text-purple-300/60 text-[11px] uppercase tracking-widest font-mono font-medium">
           {group.groupLabel}
         </p>
       )}
@@ -156,16 +156,19 @@ function NavGroupSection({
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 mx-1 px-3 py-2.5 rounded-lg text-sm transition-colors
+            className={`relative flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-150
               ${isActive
-                ? "bg-[#4A1A6B] text-white font-semibold"
-                : "text-purple-200 hover:bg-[#3D1460] hover:text-white"
+                ? "bg-white/10 text-white font-semibold"
+                : "text-purple-200/80 hover:bg-white/5 hover:text-white"
               }`}
           >
+            {isActive && (
+              <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[#E8C96A]" aria-hidden="true" />
+            )}
             <span className="text-base w-5 text-center">{item.icon}</span>
             <span className="flex-1">{item.label}</span>
             {item.badge && pendingCount && pendingCount > 0 ? (
-              <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center font-mono">
                 {pendingCount > 9 ? "9+" : pendingCount}
               </span>
             ) : null}
@@ -224,7 +227,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`w-64 min-h-screen bg-[#2D0F42] flex flex-col transform transition-transform duration-200 ease-out
+        className={`w-64 min-h-screen bg-gradient-to-b from-[#2D0F42] to-[#230a35] flex flex-col transform transition-transform duration-200 ease-out
           fixed inset-y-0 left-0 z-50 md:static md:z-auto md:translate-x-0
           ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -239,17 +242,23 @@ export default function Sidebar({
       </button>
 
       {/* Logo */}
-      <div className="flex flex-col items-center gap-3 px-6 py-7 border-b border-[#4A1A6B]">
-        <Image
-          src="/signal_logo.png"
-          alt="กรมการทหารสื่อสาร"
-          width={60}
-          height={60}
-          className="rounded-full border-2 border-[#C9A84C] bg-white p-0.5"
-        />
+      <div className="flex flex-col items-center gap-3 px-6 py-7 border-b border-white/10">
+        <div className="relative">
+          <span
+            className="absolute inset-0 rounded-full blur-md bg-[#C9A84C]/30 -z-10 scale-125"
+            aria-hidden="true"
+          />
+          <Image
+            src="/signal_logo.png"
+            alt="กรมการทหารสื่อสาร"
+            width={60}
+            height={60}
+            className="rounded-full border-2 border-[#C9A84C] bg-white p-0.5"
+          />
+        </div>
         <div className="text-center">
           <p className="text-white text-sm font-bold leading-tight">กรมการทหารสื่อสาร</p>
-          <p className="text-[#C9A84C] text-xs mt-0.5">
+          <p className="text-[#E8C96A] text-xs mt-0.5 font-mono tracking-wide">
             {variant === "admin"
               ? "ผู้ดูแลระบบ"
               : variant === "instructor"
@@ -271,7 +280,7 @@ export default function Sidebar({
         ))}
 
         {personalGroups && (
-          <div className="border-t border-[#4A1A6B] mt-2 pt-1">
+          <div className="border-t border-white/10 mt-2 pt-1">
             {personalGroups.map((group, idx) => (
               <NavGroupSection
                 key={idx}
@@ -285,7 +294,7 @@ export default function Sidebar({
 
       {/* User */}
       {userName && (
-        <div className="px-4 py-4 border-t border-[#4A1A6B]">
+        <div className="px-5 py-4 border-t border-white/10">
           <p className="text-white text-sm font-medium truncate">{userName}</p>
           {userRank && <p className="text-purple-300 text-xs">{userRank}</p>}
           {userUnit && <p className="text-purple-400 text-xs truncate">{userUnit}</p>}

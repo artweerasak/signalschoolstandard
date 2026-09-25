@@ -1,18 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Noto_Sans_Thai, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import SessionTimeout from "@/components/SessionTimeout";
 import CapacityExceededModal from "@/components/CapacityExceededModal";
 import ActiveUserHeartbeat from "@/components/ActiveUserHeartbeat";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// globals.css เคยอ้างอิง 'Sarabun' เป็น body font แต่ไม่เคยโหลดจริง (ไม่มี
+// next/font/@font-face/<link> ที่ไหนเลย) ข้อความไทยทั้งระบบ fallback ไป
+// Arial/system font เงียบๆ มาตลอด — โหลด Noto Sans Thai จริงแทน
+const notoSansThai = Noto_Sans_Thai({
+  variable: "--font-body",
+  subsets: ["thai", "latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono-signal",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -27,8 +32,8 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="th"
+      className={`${notoSansThai.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {children}
