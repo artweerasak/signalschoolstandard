@@ -61,13 +61,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="bg-white border-b border-gray-200 pl-16 md:pl-6 pr-4 md:pr-6 py-4 flex items-center justify-between">
-          <h1 className="text-[#4A1A6B] font-bold text-sm sm:text-lg truncate">
+        <header className="bg-white border-b border-[#e6e1ee] pl-16 md:pl-6 pr-4 md:pr-6 py-4 flex items-center justify-between">
+          <h1 className="text-[#2D0F42] font-bold text-sm sm:text-lg truncate">
             ระบบการเรียนการสอนออนไลน์ · กรมการทหารสื่อสาร
           </h1>
           {user && (
             <div className="hidden sm:flex items-center gap-3">
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-[#6b6478]">
                 {user.rank ? `${user.rank} ` : ""}{user.full_name}
               </span>
             </div>

@@ -9,19 +9,41 @@
   --signal-gold-light:   #E8C96A;
   --background: #f5f3f7;
   --foreground: #1a1a2e;
+
+  /* Neutral scale — แทน gray-* ที่กระจัดกระจายไม่สม่ำเสมอทั่วระบบ */
+  --surface:        #ffffff;
+  --surface-muted:  #f7f5fa;
+  --border-subtle:  #e6e1ee;
+  --border-default: #d9d2e6;
+  --text-muted:     #6b6478;
+  --text-faint:     #9a92a8;
+
+  /* Status colors — แทนค่าที่เคย hardcode แยกกันในแต่ละหน้า (เช่น #FEE2E2) */
+  --status-success:      #15803d;
+  --status-success-bg:   #dcfce7;
+  --status-warning:      #b45309;
+  --status-warning-bg:   #fef3c7;
+  --status-error:        #b91c1c;
+  --status-error-bg:     #fee2e2;
+  --status-info:         #1d4ed8;
+  --status-info-bg:      #dbeafe;
+
+  /* Radius scale — ให้การ์ด/ปุ่ม/ป้ายโค้งมนสม่ำเสมอกันทั้งระบบ */
+  --radius-card: 1rem;
+  --radius-pill: 999px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono-signal);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Sarabun', Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), 'Noto Sans Thai', Arial, Helvetica, sans-serif;
 }
 
 /* ── Print: ซ่อน sidebar/header ของ dashboard layout ทุกหน้า และคลาย

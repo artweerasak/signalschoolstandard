@@ -59,13 +59,16 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
   const roleLabel = isAdmin ? "ผู้ดูแลระบบ" : isInstructor ? "ครูอาจารย์" : "กรมทหารสื่อสาร"
 
   return (
-    <aside className="w-60 min-h-screen bg-[#2D0F42] flex flex-col">
-      <div className="flex flex-col items-center gap-3 px-6 py-8 border-b border-[#4A1A6B]">
-        <Image src="/signal_logo.png" alt="กรมการทหารสื่อสาร" width={60} height={60}
-          className="rounded-full border-2 border-[#C9A84C] bg-white p-0.5" />
+    <aside className="w-60 min-h-screen bg-gradient-to-b from-[#2D0F42] to-[#230a35] flex flex-col">
+      <div className="flex flex-col items-center gap-3 px-6 py-8 border-b border-white/10">
+        <div className="relative">
+          <span className="absolute inset-0 rounded-full blur-md bg-[#C9A84C]/30 -z-10 scale-125" aria-hidden="true" />
+          <Image src="/signal_logo.png" alt="กรมการทหารสื่อสาร" width={60} height={60}
+            className="rounded-full border-2 border-[#C9A84C] bg-white p-0.5" />
+        </div>
         <div className="text-center">
           <p className="text-white text-sm font-bold">กรมการทหารสื่อสาร</p>
-          <p className="text-[#C9A84C] text-xs mt-0.5">{roleLabel}</p>
+          <p className="text-[#E8C96A] text-xs mt-0.5 font-mono tracking-wide">{roleLabel}</p>
         </div>
       </div>
 
@@ -73,7 +76,7 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
         {/* ปุ่มกลับ portal หลักสำหรับ admin/instructor */}
         {backLink && (
           <Link href={backLink.href}
-            className="flex items-center gap-2 px-4 py-2 mb-3 rounded-lg text-xs text-purple-300 hover:text-white hover:bg-[#4A1A6B] transition-colors border border-purple-700">
+            className="flex items-center gap-2 px-4 py-2 mb-3 rounded-xl text-xs text-purple-300 hover:text-white hover:bg-white/10 transition-colors border border-white/15">
             {backLink.label}
           </Link>
         )}
@@ -81,8 +84,9 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
           const isActive = pathname === item.href || (item.href !== "/my" && pathname.startsWith(item.href))
           return (
             <Link key={item.href} href={item.href}
-              className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-colors
-                ${isActive ? "bg-[#4A1A6B] text-white font-semibold" : "text-purple-200 hover:bg-[#4A1A6B] hover:text-white"}`}>
+              className={`relative flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all duration-150
+                ${isActive ? "bg-white/10 text-white font-semibold" : "text-purple-200/80 hover:bg-white/5 hover:text-white"}`}>
+              {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[#E8C96A]" aria-hidden="true" />}
               <span>{item.icon}</span>{item.label}
             </Link>
           )
@@ -90,8 +94,8 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
       </nav>
 
       {user && (
-        <div className="px-4 py-4 border-t border-[#4A1A6B]">
-          <p className="text-[#C9A84C] text-xs font-semibold uppercase tracking-wide mb-1">ผู้ใช้งาน</p>
+        <div className="px-5 py-4 border-t border-white/10">
+          <p className="text-[#E8C96A] text-[11px] font-mono font-semibold uppercase tracking-widest mb-1">ผู้ใช้งาน</p>
           <p className="text-white text-sm font-medium truncate">{user.full_name}</p>
           {user.rank && <p className="text-purple-300 text-xs">{user.rank}</p>}
           {user.unit && <p className="text-purple-400 text-xs truncate">{user.unit}</p>}
@@ -175,14 +179,14 @@ export default function MyLayout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-[#f5f3f7]">
       <div className="hidden md:block"><LearnerSidebar user={user} /></div>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-4 flex items-center justify-between">
-          <h1 className="text-[#4A1A6B] font-bold text-sm md:text-base truncate">
+        <header className="bg-white border-b border-[#e6e1ee] px-4 md:px-6 py-4 flex items-center justify-between">
+          <h1 className="text-[#2D0F42] font-bold text-sm md:text-base truncate">
             ระบบ eLearning · กรมการทหารสื่อสาร
           </h1>
           {user && (
             <div className="flex items-center gap-3">
               <NotificationBell />
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-[#6b6478]">
                 {user.rank ? `${user.rank} ` : ""}{user.full_name}
               </span>
             </div>
@@ -191,7 +195,7 @@ export default function MyLayout({ children }: { children: React.ReactNode }) {
         {user && <MissingDatesBanner user={user} />}
         <main className="flex-1 p-4 md:p-6 overflow-auto pb-20 md:pb-6">{children}</main>
         {/* Mobile bottom navigation */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#2D0F42] border-t border-[#4A1A6B] flex z-40">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#2D0F42] border-t border-white/10 flex z-40">
           {[
             { href: "/my", icon: "🏠", label: "หลัก" },
             { href: "/my/courses", icon: "📚", label: "หลักสูตร" },

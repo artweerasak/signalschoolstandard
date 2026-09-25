@@ -7,6 +7,8 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { api, MyProfile, MyCertificate, Course } from "@/lib/api"
+import Card from "@/components/ui/Card"
+import StatusPill from "@/components/ui/StatusPill"
 
 const LMS_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th"
 
@@ -18,18 +20,10 @@ function buildCourseUrl(courseId: string): string | null {
 }
 
 function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | null }) {
-  if (status === "expired") return (
-    <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">หมดอายุแล้ว</span>
-  )
-  if (status === "renewed") return (
-    <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">ต่ออายุแล้ว</span>
-  )
-  if (daysLeft !== null && daysLeft <= 30) return (
-    <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full font-medium">ใกล้หมดอายุ</span>
-  )
-  return (
-    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">ใช้งานได้</span>
-  )
+  if (status === "expired") return <StatusPill tone="error">หมดอายุแล้ว</StatusPill>
+  if (status === "renewed") return <StatusPill tone="info">ต่ออายุแล้ว</StatusPill>
+  if (daysLeft !== null && daysLeft <= 30) return <StatusPill tone="warning">ใกล้หมดอายุ</StatusPill>
+  return <StatusPill tone="success">ใช้งานได้</StatusPill>
 }
 
 export default function MyHomePage() {
@@ -71,32 +65,33 @@ export default function MyHomePage() {
   return (
     <div className="space-y-6 max-w-3xl">
       {/* ยินดีต้อนรับ */}
-      <div className="bg-gradient-to-r from-[#4A1A6B] to-[#7B3FA0] rounded-xl p-6 text-white">
-        <p className="text-purple-200 text-sm">ยินดีต้อนรับเข้าสู่ระบบ</p>
+      <div className="relative overflow-hidden rounded-2xl p-6 text-white bg-gradient-to-br from-[#2D0F42] via-[#4A1A6B] to-[#7B3FA0]">
+        <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-[#C9A84C]/15 blur-3xl" aria-hidden="true" />
+        <p className="relative text-purple-200 text-sm">ยินดีต้อนรับเข้าสู่ระบบ</p>
         {loading ? (
-          <div className="h-8 w-48 bg-white/20 rounded animate-pulse mt-1" />
+          <div className="relative h-8 w-48 bg-white/20 rounded animate-pulse mt-1" />
         ) : (
-          <h2 className="text-2xl font-bold mt-1">
+          <h2 className="relative text-2xl font-bold mt-1">
             {profile?.rank_display} {profile?.full_name}
           </h2>
         )}
-        <p className="text-purple-300 text-sm mt-1">{profile?.unit}</p>
+        <p className="relative text-purple-300 text-sm mt-1">{profile?.unit}</p>
         {profile?.service_years != null && (
-          <p className="text-purple-200 text-xs mt-2">รับราชการมา {profile.service_years} ปี</p>
+          <p className="relative text-[#E8C96A] text-xs mt-2 font-mono">รับราชการมา {profile.service_years} ปี</p>
         )}
       </div>
 
       {/* แจ้งเตือน */}
       {(expiredCount > 0 || nearExpiryCount > 0) && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
+        <div className="bg-[#fef3c7] border border-[#fde68a] rounded-2xl p-4 flex items-start gap-3">
           <span className="text-2xl">⚠️</span>
           <div>
-            <p className="font-semibold text-yellow-800 text-sm">มีใบประกาศที่ต้องดำเนินการ</p>
-            <ul className="text-yellow-700 text-sm mt-1 space-y-0.5">
+            <p className="font-semibold text-[#92400e] text-sm">มีใบประกาศที่ต้องดำเนินการ</p>
+            <ul className="text-[#b45309] text-sm mt-1 space-y-0.5">
               {expiredCount > 0 && <li>• หมดอายุแล้ว {expiredCount} รายการ — ต้องต่ออายุ</li>}
               {nearExpiryCount > 0 && <li>• ใกล้หมดอายุ {nearExpiryCount} รายการ (ภายใน 30 วัน)</li>}
             </ul>
-            <Link href="/my/certificates" className="text-yellow-700 underline text-xs mt-2 inline-block">
+            <Link href="/my/certificates" className="text-[#b45309] underline text-xs mt-2 inline-block">
               ดูรายละเอียด →
             </Link>
           </div>
@@ -104,42 +99,41 @@ export default function MyHomePage() {
       )}
 
       {/* ลิงก์ค้นหาหลักสูตร */}
-      <Link
-        href="/my/courses"
-        className="flex items-center justify-between bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 hover:border-[#7B3FA0] hover:shadow-md transition-all group"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">📚</span>
-          <div>
-            <p className="font-semibold text-gray-800 text-sm">ค้นหาหลักสูตร</p>
-            <p className="text-xs text-gray-400">ดูหลักสูตรทั้งหมดและลงทะเบียนเรียน</p>
+      <Link href="/my/courses" className="block group">
+        <Card hoverable className="flex items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📚</span>
+            <div>
+              <p className="font-semibold text-[#2D0F42] text-sm">ค้นหาหลักสูตร</p>
+              <p className="text-xs text-[#9a92a8]">ดูหลักสูตรทั้งหมดและลงทะเบียนเรียน</p>
+            </div>
           </div>
-        </div>
-        <span className="text-[#4A1A6B] group-hover:translate-x-1 transition-transform">→</span>
+          <span className="text-[#4A1A6B] group-hover:translate-x-1 transition-transform">→</span>
+        </Card>
       </Link>
 
       {/* สรุปใบประกาศ */}
       <div>
         <h3 className="font-semibold text-[#2D0F42] mb-3">สรุปใบประกาศ</h3>
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
-            <p className="text-3xl font-bold text-green-600">{activeCount}</p>
-            <p className="text-xs text-gray-500 mt-1">ใช้งานได้</p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
-            <p className="text-3xl font-bold text-yellow-500">{nearExpiryCount}</p>
-            <p className="text-xs text-gray-500 mt-1">ใกล้หมดอายุ</p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
-            <p className="text-3xl font-bold text-red-500">{expiredCount}</p>
-            <p className="text-xs text-gray-500 mt-1">หมดอายุแล้ว</p>
-          </div>
+          <Card className="p-4 text-center">
+            <p className="text-3xl font-bold font-mono text-[#15803d]">{activeCount}</p>
+            <p className="text-xs text-[#6b6478] mt-1">ใช้งานได้</p>
+          </Card>
+          <Card className="p-4 text-center">
+            <p className="text-3xl font-bold font-mono text-[#b45309]">{nearExpiryCount}</p>
+            <p className="text-xs text-[#6b6478] mt-1">ใกล้หมดอายุ</p>
+          </Card>
+          <Card className="p-4 text-center">
+            <p className="text-3xl font-bold font-mono text-[#b91c1c]">{expiredCount}</p>
+            <p className="text-xs text-[#6b6478] mt-1">หมดอายุแล้ว</p>
+          </Card>
         </div>
       </div>
 
       {/* ความคืบหน้าการเรียน */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+      <Card>
+        <div className="px-5 py-4 border-b border-[#f0ecf6] flex justify-between items-center">
           <h3 className="font-semibold text-[#4A1A6B]">📖 หลักสูตรที่ลงทะเบียนไว้</h3>
           <Link href="/my/courses" className="text-xs text-[#7B3FA0] hover:underline">ค้นหาหลักสูตร →</Link>
         </div>
@@ -182,11 +176,11 @@ export default function MyHomePage() {
             })
           )}
         </div>
-      </div>
+      </Card>
 
       {/* ใบประกาศล่าสุด */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+      <Card>
+        <div className="px-5 py-4 border-b border-[#f0ecf6] flex justify-between items-center">
           <h3 className="font-semibold text-[#4A1A6B]">📜 ใบประกาศของฉัน</h3>
           <Link href="/my/certificates" className="text-xs text-[#7B3FA0] hover:underline">ดูทั้งหมด →</Link>
         </div>
@@ -216,7 +210,7 @@ export default function MyHomePage() {
             ))
           )}
         </div>
-      </div>
+      </Card>
 
       {entryError && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white text-sm px-5 py-3 rounded-xl shadow-xl z-50 flex items-center gap-2">
