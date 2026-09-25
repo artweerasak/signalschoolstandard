@@ -176,6 +176,14 @@ export default function CurriculumDetailPage() {
           <p className="text-[#9a92a8] text-xs">โควตารวม</p>
           <p className="font-medium mt-0.5">{curriculum.quota_total}</p>
         </div>
+        <div>
+          <p className="text-[#9a92a8] text-xs">ระยะเวลาหลักสูตร</p>
+          <p className="font-medium mt-0.5">
+            {curriculum.start_date || curriculum.end_date
+              ? `${curriculum.start_date ?? "?"} – ${curriculum.end_date ?? "?"}`
+              : "ไม่ระบุ"}
+          </p>
+        </div>
         <div className="col-span-2 md:col-span-4">
           <p className="text-[#9a92a8] text-xs">คุณสมบัติผู้เข้าเรียน</p>
           <p className="font-medium mt-0.5">

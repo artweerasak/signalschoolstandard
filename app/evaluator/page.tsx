@@ -5,7 +5,10 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { api, EvaluationFormItem, EvaluationStatusDashboard, EvaluatorCurriculumItem } from "@/lib/api"
+import {
+  api, EvaluationFormItem, EvaluationStatusDashboard, EvaluatorCurriculumItem,
+  GradingStatusReport, CurriculumRanking,
+} from "@/lib/api"
 import Card from "@/components/ui/Card"
 import PageHeader from "@/components/ui/PageHeader"
 import Button from "@/components/ui/Button"
@@ -39,8 +42,13 @@ export default function EvaluatorPage() {
 
   const [forms, setForms] = useState<EvaluationFormItem[]>([])
   const [dashboard, setDashboard] = useState<EvaluationStatusDashboard | null>(null)
+  const [ranking, setRanking] = useState<CurriculumRanking | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+
+  const [gradingStatus, setGradingStatus] = useState<GradingStatusReport | null>(null)
+  const [gradingStatusLoading, setGradingStatusLoading] = useState(true)
+  const [showAllPending, setShowAllPending] = useState(false)
 
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<FormBuilderState>(EMPTY_FORM)
@@ -55,6 +63,11 @@ export default function EvaluatorPage() {
       })
       .catch(() => setError("โหลดรายการหลักสูตรไม่สำเร็จ"))
       .finally(() => setCurriculaLoading(false))
+
+    api.getGradingStatusReport()
+      .then(setGradingStatus)
+      .catch(() => {})
+      .finally(() => setGradingStatusLoading(false))
   }, [])
 
   const years = useMemo(
@@ -72,8 +85,9 @@ export default function EvaluatorPage() {
     Promise.all([
       api.listEvaluationForms({ curriculum_id: id }),
       api.getEvaluationStatusDashboard(id),
+      api.getCurriculumRanking(id),
     ])
-      .then(([formsRes, dashRes]) => { setForms(formsRes.results); setDashboard(dashRes) })
+      .then(([formsRes, dashRes, rankRes]) => { setForms(formsRes.results); setDashboard(dashRes); setRanking(rankRes) })
       .catch(() => setError("ไม่สามารถโหลดข้อมูลหลักสูตรนี้ได้"))
       .finally(() => setLoading(false))
   }
@@ -134,6 +148,37 @@ export default function EvaluatorPage() {
 
       {error && (
         <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-4 py-3 rounded-xl text-sm">{error}</div>
+      )}
+
+      {!gradingStatusLoading && gradingStatus && gradingStatus.count > 0 && (
+        <Card className={`p-5 border-2 ${gradingStatus.results.some(r => r.is_overdue) ? "border-red-300 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold text-[#2D0F42]">ครูอาจารย์ค้างส่งคะแนน ({gradingStatus.count} วิชา)</h2>
+            {gradingStatus.results.length > 5 && (
+              <button onClick={() => setShowAllPending(v => !v)} className="text-xs text-[#4A1A6B] hover:underline shrink-0">
+                {showAllPending ? "ย่อ" : `ดูทั้งหมด (${gradingStatus.results.length})`}
+              </button>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            {(showAllPending ? gradingStatus.results : gradingStatus.results.slice(0, 5)).map(r => (
+              <div key={r.curriculum_course_id}
+                className={`flex items-center justify-between gap-2 text-sm px-3 py-2 rounded-lg ${r.is_overdue ? "bg-red-100" : "bg-white"}`}>
+                <div className="min-w-0">
+                  <p className="font-medium text-[#2D0F42] truncate">
+                    {r.course_display_name} <span className="text-xs text-[#9a92a8] font-normal">— {r.curriculum_name}</span>
+                  </p>
+                  <p className="text-xs text-[#6b6478] truncate">
+                    ครู: {r.instructors.length > 0 ? r.instructors.map(i => i.full_name).join(", ") : "ยังไม่ได้มอบหมายครู"}
+                    {" · "}เหลือ {r.pending_count}/{r.enrolled_count} คน
+                    {r.end_date && ` · กำหนดจบ ${r.end_date}`}
+                  </p>
+                </div>
+                {r.is_overdue && <StatusPill tone="error">เกินกำหนด</StatusPill>}
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
 
       {curriculaLoading ? (
@@ -245,6 +290,45 @@ export default function EvaluatorPage() {
               </tbody>
             </table>
           </Card>
+
+          {ranking && (
+            <Card className="overflow-hidden">
+              <div className="p-4 border-b border-[#f0ecf6]">
+                <h2 className="font-semibold text-[#2D0F42]">จัดอันดับนักเรียน</h2>
+                <p className="text-xs text-[#9a92a8] mt-0.5">เกรดเฉลี่ยถ่วงน้ำหนักตามหน่วยกิต — เท่ากันเรียงตามคะแนนรวม</p>
+              </div>
+              {ranking.results.length === 0 ? (
+                <div className="py-12 text-center text-[#9a92a8] text-sm">ยังไม่มีวิชาไหนปิดคะแนนเลย</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
+                      <th className="px-4 py-3">อันดับ</th>
+                      <th className="px-4 py-3">ชื่อ-สกุล</th>
+                      <th className="px-4 py-3">เกรดเฉลี่ย</th>
+                      <th className="px-4 py-3">คะแนนรวม</th>
+                      <th className="px-4 py-3">ความคืบหน้า</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ranking.results.map(r => (
+                      <tr key={r.student_id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
+                        <td className="px-4 py-3 font-mono font-semibold text-[#4A1A6B]">{r.rank}</td>
+                        <td className="px-4 py-3 font-medium">{r.rank_display} {r.full_name}</td>
+                        <td className="px-4 py-3 font-mono">{r.weighted_average ?? "-"}</td>
+                        <td className="px-4 py-3 font-mono text-[#6b6478]">{r.total_score}</td>
+                        <td className="px-4 py-3">
+                          {r.is_complete
+                            ? <StatusPill tone="success">ครบทุกวิชา</StatusPill>
+                            : <StatusPill tone="warning">{r.courses_graded}/{r.courses_total} วิชา</StatusPill>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          )}
         </>
       )}
 

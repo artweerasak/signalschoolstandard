@@ -42,6 +42,8 @@ interface FormData {
   name: string
   batch_code: string
   academic_year: number
+  start_date: string
+  end_date: string
   eligible_rank_class: string
   eligible_rank_min: string
   eligible_rank_max: string
@@ -51,6 +53,7 @@ interface FormData {
 }
 const EMPTY_FORM: FormData = {
   name: "", batch_code: "", academic_year: new Date().getFullYear() + 543,
+  start_date: "", end_date: "",
   eligible_rank_class: "", eligible_rank_min: "", eligible_rank_max: "",
   eligible_min_years_in_rank: "", eligible_personnel_type: "", quota_total: 0,
 }
@@ -83,6 +86,9 @@ export default function PrepSchoolPage() {
   const handleSave = async () => {
     if (!form.name.trim()) { setFormError("กรุณากรอกชื่อหลักสูตร"); return }
     if (!form.batch_code.trim()) { setFormError("กรุณากรอกรุ่นที่"); return }
+    if (form.start_date && form.end_date && form.start_date > form.end_date) {
+      setFormError("วันเริ่มหลักสูตรต้องไม่หลังวันจบหลักสูตร"); return
+    }
     setSaving(true)
     setFormError("")
     try {
@@ -184,6 +190,20 @@ export default function PrepSchoolPage() {
                   <label className="block text-sm font-medium text-[#4a4456] mb-1">ปีการศึกษา (พ.ศ.)</label>
                   <input type="number" value={form.academic_year}
                     onChange={e => setForm({ ...form, academic_year: Number(e.target.value) })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">วันเริ่มหลักสูตร (ไม่บังคับ)</label>
+                  <input type="date" value={form.start_date}
+                    onChange={e => setForm({ ...form, start_date: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">วันจบหลักสูตร (ไม่บังคับ)</label>
+                  <input type="date" value={form.end_date}
+                    onChange={e => setForm({ ...form, end_date: e.target.value })}
                     className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
               </div>
