@@ -122,7 +122,7 @@ def _enroll_single_course(student, course_id_str: str, dry_run: bool = False) ->
         return EnrollmentResult(course_id_str, False, f"modulestore error: {e}")
 
     try:
-        from student.models.course_enrollment import CourseEnrollment
+        from common.djangoapps.student.models.course_enrollment import CourseEnrollment
         existing = CourseEnrollment.objects.filter(user=student, course_id=course_key).first()
         if existing and existing.is_active:
             return EnrollmentResult(course_id_str, True, None)  # idempotent — enroll อยู่แล้ว
