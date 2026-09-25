@@ -5,10 +5,15 @@ import Link from "next/link"
 import { api, CurrentUser } from "@/lib/api"
 import Crest from "@/components/Crest"
 
-const navItems = [
+const SIGNAL_SCHOOL_ORG_ID = 161
+
+const baseNavItems = [
   { href: "/org-admin",        label: "ภาพรวม",          icon: "📊" },
   { href: "/org-admin/users",  label: "กำลังพลในสังกัด", icon: "👥" },
+  { href: "/org-admin/personnel-history", label: "ประวัติการเรียนกำลังพล", icon: "📖" },
 ]
+
+const schoolNavItem = { href: "/org-admin/school-curricula", label: "หลักสูตร รร.ส.สส.", icon: "🎓" }
 
 export default function OrgAdminLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
@@ -29,6 +34,10 @@ export default function OrgAdminLayout({ children }: { children: React.ReactNode
   }, [router])
 
   if (loading) return <div className="flex h-screen items-center justify-center text-[#9a92a8]">กำลังโหลด...</div>
+
+  const navItems = user?.organization_id === SIGNAL_SCHOOL_ORG_ID
+    ? [...baseNavItems, schoolNavItem]
+    : baseNavItems
 
   return (
     <div className="flex h-screen bg-[#f7f5fa]">

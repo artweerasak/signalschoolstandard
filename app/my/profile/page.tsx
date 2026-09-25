@@ -8,6 +8,15 @@ function getCookie(name: string) {
   return v ? v[2] : null
 }
 
+const RANK_CHOICES = [
+  ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
+  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],["CSGT_S","จ่าสิบเอกพิเศษ"],
+  ["WO1","พันจ่าตรี"],["WO2","พันจ่าโท"],["WO3","พันจ่าเอก"],
+  ["2LT","ร้อยตรี"],["1LT","ร้อยโท"],["CPT","ร้อยเอก"],
+  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],["COL_S","พันเอกพิเศษ"],
+  ["BGEN","พลตรี"],["MGEN","พลโท"],["GEN","พลเอก"],
+]
+
 function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () => void }) {
   const parseDate = (val: string | null | undefined): string => {
     if (!val) return ""
@@ -128,6 +137,127 @@ function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () 
         <button type="submit" disabled={saving}
           className="bg-[#4A1A6B] hover:bg-[#2D0F42] disabled:opacity-50 text-white text-sm font-medium px-6 py-2 rounded-lg transition">
           {saving ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function EditRankSection({ profile, onDone }: { profile: MyProfile; onDone: () => void }) {
+  const parseDate = (val: string | null | undefined): string => {
+    if (!val) return ""
+    try {
+      const d = new Date(val)
+      if (isNaN(d.getTime()) || d.getFullYear() < 1900) return ""
+      return d.toISOString().split("T")[0]
+    } catch { return "" }
+  }
+
+  const formatDateTH = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" })
+    } catch { return iso }
+  }
+
+  const initRank = profile.rank ?? ""
+  const initEffectiveDate = parseDate(profile.rank_effective_date)
+
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ rank: initRank, rank_effective_date: initEffectiveDate })
+  const [saved, setSaved] = useState({ rank_display: profile.rank_display, rank_effective_date: initEffectiveDate })
+  const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    setForm({ rank: initRank, rank_effective_date: initEffectiveDate })
+    setSaved({ rank_display: profile.rank_display, rank_effective_date: initEffectiveDate })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initRank, initEffectiveDate, profile.rank_display])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+    if (!form.rank) { setError("กรุณาเลือกยศ"); return }
+    setSaving(true)
+    try {
+      const res = await fetch("/military/api/v1/my/profile/complete/", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") || "" },
+        body: JSON.stringify({ rank: form.rank, rank_effective_date: form.rank_effective_date || null }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ")
+      const rankLabel = RANK_CHOICES.find(([code]) => code === form.rank)?.[1] ?? form.rank
+      setSaved({ rank_display: rankLabel, rank_effective_date: form.rank_effective_date })
+      setSuccess(true)
+      setEditing(false)
+      onDone()
+      notifyProfileUpdated()
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-[#2D0F42]">ชั้นยศปัจจุบัน</h3>
+          <button onClick={() => { setEditing(true); setSuccess(false) }}
+            className="text-sm text-[#7B3FA0] hover:underline">แก้ไข</button>
+        </div>
+        {success && <p className="text-green-600 text-sm mb-2">✓ บันทึกแล้ว มีผลทันที</p>}
+        <div className="space-y-2 text-sm">
+          <div className="flex gap-4">
+            <span className="text-[#9a92a8] w-36 shrink-0">ชั้นยศ</span>
+            <span className="text-[#2D0F42] font-medium">{saved.rank_display || "—"}</span>
+          </div>
+          <div className="flex gap-4">
+            <span className="text-[#9a92a8] w-36 shrink-0">วันที่มีผล</span>
+            <span className="text-[#2D0F42] font-medium">{saved.rank_effective_date ? formatDateTH(saved.rank_effective_date) : "—"}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-[#7B3FA0] shadow-sm px-6 py-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-[#2D0F42]">แก้ไขชั้นยศปัจจุบัน</h3>
+          <p className="text-xs text-amber-600 mt-0.5">มีผลต่อการคัดกรองสิทธิ์เข้าเรียนหลักสูตร — บันทึกแล้วมีผลทันที ไม่ต้องรออนุมัติ</p>
+        </div>
+        <button onClick={() => setEditing(false)} className="text-sm text-[#9a92a8] hover:text-[#6b6478]">ยกเลิก</button>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="block text-sm text-[#6b6478] mb-1">ชั้นยศ</label>
+          <select value={form.rank}
+            onChange={e => setForm(f => ({ ...f, rank: e.target.value }))}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0] bg-white">
+            <option value="">— เลือกชั้นยศ —</option>
+            {RANK_CHOICES.map(([code, label]) => (
+              <option key={code} value={code}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm text-[#6b6478] mb-1">วันที่มีผล (วันแต่งตั้งยศล่าสุด)</label>
+          <input type="date" value={form.rank_effective_date}
+            onChange={e => setForm(f => ({ ...f, rank_effective_date: e.target.value }))}
+            max={new Date().toISOString().split("T")[0]}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]" />
+        </div>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+        <button type="submit" disabled={saving}
+          className="bg-[#4A1A6B] hover:bg-[#2D0F42] disabled:opacity-50 text-white text-sm font-medium px-6 py-2 rounded-lg transition">
+          {saving ? "กำลังบันทึก..." : "บันทึกชั้นยศ"}
         </button>
       </form>
     </div>
@@ -415,6 +545,9 @@ export default function MyProfilePage() {
 
       {/* Edit Dates */}
       {profile && <EditDatesSection profile={profile} onDone={loadProfile} />}
+
+      {/* Edit Rank */}
+      {profile && <EditRankSection profile={profile} onDone={loadProfile} />}
 
       {/* Edit Gender */}
       {profile && <EditGenderSection profile={profile} onDone={loadProfile} />}

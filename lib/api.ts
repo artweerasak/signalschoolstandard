@@ -122,6 +122,7 @@ export interface MyProfile {
   full_name: string
   rank: string | null
   rank_display: string | null
+  rank_effective_date: string | null
   gender: "M" | "F" | null
   gender_display: string | null
   position: string | null
@@ -393,6 +394,7 @@ export interface TranscriptCourseEntry {
   grade_visible: boolean
   final_score: string | null
   passed: boolean | null
+  completed_at: string | null
   gate_reason: string | null
 }
 
@@ -409,6 +411,38 @@ export interface TranscriptCurriculumEntry {
 export interface MyTranscript {
   curricula: TranscriptCurriculumEntry[]
   total_credits_earned: number
+}
+
+// ── Signal School curriculum roster (org_admin, org id=161 only) ──────────
+
+export interface SchoolCurriculumRosterRow {
+  student_id: number
+  full_name: string
+  rank_display: string
+  unit: string
+}
+
+export interface SchoolCurriculumRoster {
+  curriculum_id: number
+  curriculum_name: string
+  batch_code: string
+  academic_year: number
+  results: SchoolCurriculumRosterRow[]
+  count: number
+}
+
+// ── Org-wide personnel completion history (org_admin, any unit) ───────────
+
+export interface OrgCompletionEntry {
+  student_id: number
+  full_name: string
+  rank_display: string
+  curricula: TranscriptCurriculumEntry[]
+}
+
+export interface OrgCompletionsResponse {
+  results: OrgCompletionEntry[]
+  count: number
 }
 
 export interface OrgMemberRow {
@@ -952,6 +986,18 @@ export const api = {
     fetchAPI<{ available: boolean; reason?: string; curriculum_name?: string }>(
       `api/v1/curriculum/my/transcript/${curriculumId}/certificate/`
     ),
+
+  // ── Signal School curriculum roster (org_admin, org id=161 only) ────────
+  listSchoolCurricula: (academicYear?: number) => {
+    const qs = academicYear ? `?academic_year=${academicYear}` : ""
+    return fetchAPI<{ count: number; results: CurriculumSummary[] }>(`api/v1/curriculum/school/curricula/${qs}`)
+  },
+  getSchoolCurriculumRoster: (curriculumId: number) =>
+    fetchAPI<SchoolCurriculumRoster>(`api/v1/curriculum/school/curricula/${curriculumId}/roster/`),
+
+  // ── Org-wide personnel completion history (org_admin, any unit) ─────────
+  getOrgCompletions: () =>
+    fetchAPI<OrgCompletionsResponse>("api/v1/curriculum/org/completions/"),
 
   // ── Video Folder Sharing ─────────────────────────────────────────────────
   getVideoShare: (courseSlug: string) =>
