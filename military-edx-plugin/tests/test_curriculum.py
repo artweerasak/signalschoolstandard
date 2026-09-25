@@ -183,3 +183,109 @@ class TestCurriculumAPI:
         client.force_login(other_prep_school)
         resp = client.get(f"/military/api/v1/curriculum/curricula/{c.id}/")
         assert resp.status_code == 403
+
+
+class TestEligibilityCriteria:
+    def test_create_with_rank_range_and_min_years(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "นายสิบชั้นต้น", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id,
+                "eligible_rank_min": "CPL", "eligible_rank_max": "CSGT",
+                "eligible_min_years_in_rank": 1, "eligible_personnel_type": "military",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["eligible_rank_min"] == "CPL"
+        assert body["eligible_rank_max"] == "CSGT"
+        assert body["eligible_rank_min_display"] == "สิบตรี"
+        assert body["eligible_min_years_in_rank"] == 1
+        assert body["eligible_personnel_type"] == "military"
+
+    def test_create_rejects_invalid_rank_code(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id, "eligible_rank_min": "NOT_A_RANK",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_create_rejects_min_greater_than_max(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id,
+                "eligible_rank_min": "COL", "eligible_rank_max": "CPL",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_create_rejects_invalid_personnel_type(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id, "eligible_personnel_type": "ไม่มีอยู่จริง",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_patch_partial_rank_range_validated_against_existing(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        create_resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id, "eligible_rank_min": "CPL", "eligible_rank_max": "CSGT",
+            }),
+            content_type="application/json",
+        )
+        curriculum_id = create_resp.json()["id"]
+
+        # PATCH ส่งแค่ rank_min ด้านเดียว ให้ค่ามากกว่า rank_max เดิม (CSGT) —
+        # ต้อง validate โดยเทียบกับค่าเดิมด้วย ไม่ใช่แค่ค่าที่ส่งมาใน PATCH นี้
+        resp = client.patch(
+            f"/military/api/v1/curriculum/curricula/{curriculum_id}/",
+            data=json.dumps({"eligible_rank_min": "COL"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_patch_updates_min_years_in_rank(self, db, prep_school_user, organization):
+        client = Client()
+        client.force_login(prep_school_user)
+        create_resp = client.post(
+            "/military/api/v1/curriculum/curricula/",
+            data=json.dumps({
+                "name": "x", "batch_code": "1", "academic_year": 2570,
+                "organization_id": organization.id,
+            }),
+            content_type="application/json",
+        )
+        curriculum_id = create_resp.json()["id"]
+
+        resp = client.patch(
+            f"/military/api/v1/curriculum/curricula/{curriculum_id}/",
+            data=json.dumps({"eligible_min_years_in_rank": 2}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        assert resp.json()["eligible_min_years_in_rank"] == 2

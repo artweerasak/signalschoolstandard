@@ -16,11 +16,59 @@ from django.http import JsonResponse
 from django.contrib.auth import get_user_model
 
 from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_SCHOOL
+from military_profile.models import PERSONNEL_TYPE_CHOICES
 
-from .models import Curriculum, CurriculumCourse, CurriculumRegionQuota
+from .models import Curriculum, CurriculumCourse, CurriculumRegionQuota, RANK_ORDER
 from .permissions import require_school_curriculum_read, SIGNAL_SCHOOL_ORG_ID
 
 User = get_user_model()
+
+
+def _clean_eligibility_fields(data: dict, existing: Curriculum | None = None) -> tuple:
+    """เตรียม+ตรวจสอบฟิลด์เกณฑ์คุณสมบัติ (ช่วงยศ/ระยะเวลาครองยศ/ประเภทบุคลากร)
+    จาก request body — คืน (updates, error) โดย updates มีเฉพาะ key ที่ผู้ใช้
+    ส่งมาจริง (รองรับทั้งตอนสร้าง ที่ส่งครบ และ PATCH ที่ส่งบางส่วน) ถ้า PATCH
+    ส่งมาแค่ rank_min หรือ rank_max ด้านเดียว จะเทียบ ordering กับค่าเดิมของ
+    หลักสูตร (existing) ด้วย"""
+    updates: dict = {}
+
+    if "eligible_rank_min" in data:
+        v = (data["eligible_rank_min"] or "").strip()
+        if v and v not in RANK_ORDER:
+            return {}, "eligible_rank_min ไม่ถูกต้อง"
+        updates["eligible_rank_min"] = v
+
+    if "eligible_rank_max" in data:
+        v = (data["eligible_rank_max"] or "").strip()
+        if v and v not in RANK_ORDER:
+            return {}, "eligible_rank_max ไม่ถูกต้อง"
+        updates["eligible_rank_max"] = v
+
+    rank_min = updates.get("eligible_rank_min", existing.eligible_rank_min if existing else "")
+    rank_max = updates.get("eligible_rank_max", existing.eligible_rank_max if existing else "")
+    if rank_min and rank_max and RANK_ORDER[rank_min] > RANK_ORDER[rank_max]:
+        return {}, "ยศต่ำสุดต้องไม่สูงกว่ายศสูงสุด"
+
+    if "eligible_min_years_in_rank" in data:
+        raw = data["eligible_min_years_in_rank"]
+        if raw in (None, ""):
+            updates["eligible_min_years_in_rank"] = None
+        else:
+            try:
+                years = int(raw)
+            except (TypeError, ValueError):
+                return {}, "eligible_min_years_in_rank ต้องเป็นตัวเลข"
+            if years < 0:
+                return {}, "eligible_min_years_in_rank ต้องไม่ติดลบ"
+            updates["eligible_min_years_in_rank"] = years
+
+    if "eligible_personnel_type" in data:
+        v = (data["eligible_personnel_type"] or "").strip()
+        if v and v not in dict(PERSONNEL_TYPE_CHOICES):
+            return {}, "eligible_personnel_type ไม่ถูกต้อง"
+        updates["eligible_personnel_type"] = v
+
+    return updates, None
 
 
 def _curriculum_summary(c: Curriculum) -> dict:
@@ -43,7 +91,13 @@ def _curriculum_summary(c: Curriculum) -> dict:
 def _curriculum_detail(c: Curriculum) -> dict:
     data = _curriculum_summary(c)
     data["eligible_rank_class"] = c.eligible_rank_class
+    data["eligible_rank_min"] = c.eligible_rank_min
+    data["eligible_rank_min_display"] = c.get_eligible_rank_min_display() if c.eligible_rank_min else None
+    data["eligible_rank_max"] = c.eligible_rank_max
+    data["eligible_rank_max_display"] = c.get_eligible_rank_max_display() if c.eligible_rank_max else None
+    data["eligible_min_years_in_rank"] = c.eligible_min_years_in_rank
     data["eligible_personnel_type"] = c.eligible_personnel_type
+    data["eligible_personnel_type_display"] = c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None
     data["region_quotas"] = [
         {"id": q.id, "army_region": q.army_region, "quota": q.quota}
         for q in c.region_quotas.all()
@@ -121,6 +175,10 @@ def api_curricula(request):
             {"error": "name, batch_code, academic_year, organization_id required"}, status=400
         )
 
+    eligibility, elig_error = _clean_eligibility_fields(data)
+    if elig_error:
+        return JsonResponse({"error": elig_error}, status=400)
+
     try:
         c = Curriculum.objects.create(
             name=name,
@@ -128,7 +186,10 @@ def api_curricula(request):
             academic_year=academic_year,
             organization_id=organization_id,
             eligible_rank_class=(data.get("eligible_rank_class") or "").strip(),
-            eligible_personnel_type=(data.get("eligible_personnel_type") or "").strip(),
+            eligible_rank_min=eligibility.get("eligible_rank_min", ""),
+            eligible_rank_max=eligibility.get("eligible_rank_max", ""),
+            eligible_min_years_in_rank=eligibility.get("eligible_min_years_in_rank"),
+            eligible_personnel_type=eligibility.get("eligible_personnel_type", ""),
             quota_total=data.get("quota_total") or 0,
             created_by=request.user,
         )
@@ -185,13 +246,20 @@ def api_curriculum_detail(request, curriculum_id: int):
         except (json.JSONDecodeError, ValueError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        for field in ("name", "batch_code", "eligible_rank_class", "eligible_personnel_type"):
+        for field in ("name", "batch_code", "eligible_rank_class"):
             if field in data:
                 setattr(c, field, (data[field] or "").strip())
         if "academic_year" in data:
             c.academic_year = data["academic_year"]
         if "quota_total" in data:
             c.quota_total = data["quota_total"] or 0
+
+        eligibility, elig_error = _clean_eligibility_fields(data, existing=c)
+        if elig_error:
+            return JsonResponse({"error": elig_error}, status=400)
+        for k, v in eligibility.items():
+            setattr(c, k, v)
+
         c.save()
         return JsonResponse(_curriculum_detail(c))
 

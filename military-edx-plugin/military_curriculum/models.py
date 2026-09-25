@@ -19,7 +19,21 @@ course_id เป็น CharField (ไม่ใช่ FK) เพราะ course 
 from django.contrib.auth import get_user_model
 from django.db import models
 
+from military_profile.models import RANK_CHOICES, PERSONNEL_TYPE_CHOICES
+
 User = get_user_model()
+
+# ลำดับชั้นยศจาก RANK_CHOICES (เรียงจากต่ำสุด→สูงสุดอยู่แล้วในนิยามต้นฉบับ) —
+# ใช้เทียบช่วงยศ (eligible_rank_min/max) โดยไม่ต้อง hardcode ลำดับซ้ำที่นี่
+RANK_ORDER = {code: i for i, (code, _) in enumerate(RANK_CHOICES)}
+
+
+def ranks_in_range(rank_min: str, rank_max: str) -> list:
+    """คืนรายการรหัสยศทั้งหมดที่อยู่ในช่วง [rank_min, rank_max] (รวมขอบ) —
+    ว่างทั้งคู่ = ไม่จำกัดช่วงยศ (คืนทุกยศ), ว่างด้านเดียว = ไม่จำกัดด้านนั้น"""
+    lo = RANK_ORDER.get(rank_min, 0) if rank_min else 0
+    hi = RANK_ORDER.get(rank_max, len(RANK_CHOICES) - 1) if rank_max else len(RANK_CHOICES) - 1
+    return [code for code, idx in RANK_ORDER.items() if lo <= idx <= hi]
 
 
 # ---------------------------------------------------------------------------
@@ -46,12 +60,27 @@ class Curriculum(models.Model):
         related_name="curricula",
         verbose_name="หน่วยงานผู้จัด",
     )
+    # ฟิลด์เดิม (free text) — คงไว้เพื่อไม่ทำลายข้อมูลหลักสูตรเก่าที่มีอยู่แล้ว
+    # ใช้แสดงผลเป็นคำอธิบายเสริมเท่านั้น ไม่ใช้กรองข้อมูลกำลังพล (ดู field
+    # eligible_rank_min/eligible_rank_max ด้านล่างสำหรับเกณฑ์ที่ query ได้จริง)
     eligible_rank_class = models.CharField(
         max_length=100, blank=True, default="",
-        verbose_name="ช่วงชั้นยศที่มีสิทธิ์",
+        verbose_name="ช่วงชั้นยศที่มีสิทธิ์ (คำอธิบาย)",
+    )
+    eligible_rank_min = models.CharField(
+        max_length=10, choices=RANK_CHOICES, blank=True, default="",
+        verbose_name="ยศต่ำสุดที่มีสิทธิ์",
+    )
+    eligible_rank_max = models.CharField(
+        max_length=10, choices=RANK_CHOICES, blank=True, default="",
+        verbose_name="ยศสูงสุดที่มีสิทธิ์",
+    )
+    eligible_min_years_in_rank = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name="ระยะเวลาครองยศขั้นต่ำ (ปี)",
     )
     eligible_personnel_type = models.CharField(
-        max_length=100, blank=True, default="",
+        max_length=100, choices=PERSONNEL_TYPE_CHOICES, blank=True, default="",
         verbose_name="ประเภทบุคลากรที่มีสิทธิ์",
     )
     status = models.CharField(
