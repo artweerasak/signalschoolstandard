@@ -40,6 +40,33 @@ def _form_summary(f: EvaluationForm) -> dict:
     }
 
 
+def _validate_schema(schema) -> str | None:
+    """ตรวจโครงสร้างคำถามของแบบประเมิน — คืน error message ถ้าไม่ถูกต้อง,
+    None ถ้าผ่าน บังคับให้ทุกคำถามมี key/label/type (rating = คะแนน 1-5
+    แบบมาตรฐาน มากที่สุด-น้อยที่สุด, text = ข้อความอิสระ เช่น ข้อเสนอแนะ)
+    เพื่อให้ทั้งฝั่งกรอก (student) และฝั่งสรุปผล (responses/summary) รู้วิธี
+    render/คำนวณที่ถูกต้อง — แบบประเมินเก่าก่อนมี field นี้ (schema ไม่มี
+    "type") ยังใช้งานได้ปกติ ฝั่งอ่านจะ fallback เป็น "text" ให้เอง"""
+    if not isinstance(schema, dict):
+        return "schema ต้องเป็น object"
+    questions = schema.get("questions")
+    if not isinstance(questions, list) or not questions:
+        return "ต้องมีคำถามอย่างน้อย 1 ข้อ"
+    seen_keys = set()
+    for q in questions:
+        if not isinstance(q, dict):
+            return "แต่ละคำถามต้องเป็น object"
+        key, label, qtype = q.get("key"), q.get("label"), q.get("type")
+        if not key or not label:
+            return "แต่ละคำถามต้องมี key และ label"
+        if qtype not in ("rating", "text"):
+            return "type ของคำถามต้องเป็น 'rating' หรือ 'text'"
+        if key in seen_keys:
+            return f"key '{key}' ซ้ำกันในแบบประเมินเดียวกัน"
+        seen_keys.add(key)
+    return None
+
+
 @require_role([ROLE_EVALUATOR, ROLE_ADMIN])
 def api_evaluator_curricula(request):
     """
@@ -119,6 +146,10 @@ def api_evaluation_forms(request):
     if level == "curriculum" and curriculum_course_id:
         return JsonResponse({"error": "level=curriculum ต้องไม่ระบุ curriculum_course_id"}, status=400)
 
+    schema_error = _validate_schema(schema)
+    if schema_error:
+        return JsonResponse({"error": schema_error}, status=400)
+
     try:
         curriculum = Curriculum.objects.get(pk=curriculum_id)
     except Curriculum.DoesNotExist:
@@ -159,6 +190,9 @@ def api_evaluation_form_detail(request, form_id: int):
     if "title" in data:
         form.title = (data["title"] or "").strip()
     if "schema" in data:
+        schema_error = _validate_schema(data["schema"])
+        if schema_error:
+            return JsonResponse({"error": schema_error}, status=400)
         form.schema = data["schema"]
     if "is_required" in data:
         form.is_required = bool(data["is_required"])
@@ -170,7 +204,13 @@ def api_evaluation_form_detail(request, form_id: int):
 
 @require_role([ROLE_EVALUATOR, ROLE_PREP_SCHOOL, ROLE_ADMIN])
 def api_evaluation_form_responses_summary(request, form_id: int):
-    """GET /military/api/v1/curriculum/evaluation-forms/{id}/responses/summary/"""
+    """GET /military/api/v1/curriculum/evaluation-forms/{id}/responses/summary/
+
+    สรุปผลจริงต่อคำถาม — ไม่ใช่แค่นับจำนวนคนตอบเหมือนเดิม: คำถามแบบ rating
+    (1-5) ได้ค่าเฉลี่ย + การกระจายคะแนนแต่ละระดับ, คำถามแบบ text ได้รายการ
+    คำตอบทั้งหมด (ไม่ระบุตัวตนผู้ตอบ — แบบประเมินความพึงพอใจเป็น anonymous
+    ตามธรรมเนียมมาตรฐาน) แบบประเมินเก่าที่ schema ยังไม่มี "type" ต่อคำถาม
+    จะถูกปฏิบัติเป็น text ให้อัตโนมัติ (backward-safe)"""
     if request.method != "GET":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -179,9 +219,49 @@ def api_evaluation_form_responses_summary(request, form_id: int):
     except EvaluationForm.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
-    answered_count = form.responses.count()
+    questions = (form.schema or {}).get("questions") or []
+    responses = list(form.responses.all())
+
+    question_summaries = []
+    for q in questions:
+        key = q.get("key")
+        label = q.get("label")
+        qtype = q.get("type", "text")
+
+        if qtype == "rating":
+            distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            values = []
+            for r in responses:
+                try:
+                    v = int(r.answers.get(key))
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= v <= 5:
+                    values.append(v)
+                    distribution[v] += 1
+            question_summaries.append({
+                "key": key, "label": label, "type": "rating",
+                "average": round(sum(values) / len(values), 2) if values else None,
+                "distribution": distribution,
+                "response_count": len(values),
+            })
+        else:
+            texts = [
+                str(r.answers.get(key)).strip()
+                for r in responses
+                if r.answers.get(key) and str(r.answers.get(key)).strip()
+            ]
+            question_summaries.append({
+                "key": key, "label": label, "type": "text",
+                "answers": texts,
+                "response_count": len(texts),
+            })
+
     return JsonResponse({
-        "form_id": form.id, "title": form.title, "answered_count": answered_count,
+        "form_id": form.id,
+        "title": form.title,
+        "answered_count": len(responses),
+        "questions": question_summaries,
     })
 
 

@@ -132,7 +132,8 @@ class TestEvaluationFormAPI:
             "/military/api/v1/curriculum/evaluation-forms/",
             data=json.dumps({
                 "curriculum_id": curriculum.id, "level": "curriculum",
-                "title": "แบบประเมินหลักสูตรรวม", "schema": {"questions": []},
+                "title": "แบบประเมินหลักสูตรรวม",
+                "schema": {"questions": [{"key": "q1", "label": "ความพึงพอใจโดยรวม", "type": "rating"}]},
             }),
             content_type="application/json",
         )
@@ -173,6 +174,132 @@ class TestEvaluationFormAPI:
         )
         assert resp.status_code == 200
         assert resp.json()["is_active"] is False
+
+
+class TestEvaluationSchemaValidation:
+    """บังคับให้ทุกคำถามมี key/label/type (rating|text) — ดู
+    military_curriculum/evaluation_views.py:_validate_schema"""
+
+    def _create(self, client, curriculum, questions):
+        return client.post(
+            "/military/api/v1/curriculum/evaluation-forms/",
+            data=json.dumps({
+                "curriculum_id": curriculum.id, "level": "curriculum",
+                "title": "x", "schema": {"questions": questions},
+            }),
+            content_type="application/json",
+        )
+
+    def test_rejects_no_questions(self, db, evaluator_user, curriculum):
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = self._create(client, curriculum, [])
+        assert resp.status_code == 400
+
+    def test_rejects_missing_type(self, db, evaluator_user, curriculum):
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = self._create(client, curriculum, [{"key": "q1", "label": "x"}])
+        assert resp.status_code == 400
+
+    def test_rejects_invalid_type(self, db, evaluator_user, curriculum):
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = self._create(client, curriculum, [{"key": "q1", "label": "x", "type": "number"}])
+        assert resp.status_code == 400
+
+    def test_rejects_duplicate_keys(self, db, evaluator_user, curriculum):
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = self._create(client, curriculum, [
+            {"key": "q1", "label": "a", "type": "rating"},
+            {"key": "q1", "label": "b", "type": "text"},
+        ])
+        assert resp.status_code == 400
+
+    def test_accepts_valid_mixed_questions(self, db, evaluator_user, curriculum):
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = self._create(client, curriculum, [
+            {"key": "q1", "label": "ความพึงพอใจต่อผู้สอน", "type": "rating"},
+            {"key": "q2", "label": "ข้อเสนอแนะเพิ่มเติม", "type": "text"},
+        ])
+        assert resp.status_code == 201, resp.content
+
+    def test_patch_validates_new_schema(self, db, evaluator_user, curriculum):
+        form = EvaluationForm.objects.create(
+            curriculum=curriculum, level="curriculum", title="x",
+            schema={"questions": [{"key": "q1", "label": "a", "type": "rating"}]},
+            is_required=True, created_by=evaluator_user,
+        )
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.patch(
+            f"/military/api/v1/curriculum/evaluation-forms/{form.id}/",
+            data=json.dumps({"schema": {"questions": []}}), content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+class TestEvaluationResponsesSummary:
+    """สรุปผลจริงต่อคำถาม — rating ได้ค่าเฉลี่ย+distribution, text ได้รายการ
+    คำตอบทั้งหมด (anonymous) ดู api_evaluation_form_responses_summary"""
+
+    def test_rating_question_average_and_distribution(self, db, evaluator_user, curriculum, organization):
+        form = EvaluationForm.objects.create(
+            curriculum=curriculum, level="curriculum", title="แบบประเมิน",
+            schema={"questions": [{"key": "q1", "label": "ความพึงพอใจ", "type": "rating"}]},
+            is_required=True, created_by=evaluator_user,
+        )
+        for i, score in enumerate([5, 5, 3, 1]):
+            s = _make_user(f"summary_student_{i}", "student", organization)
+            EvaluationResponse.objects.create(form=form, student=s, answers={"q1": score})
+
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get(f"/military/api/v1/curriculum/evaluation-forms/{form.id}/responses/summary/")
+        assert resp.status_code == 200
+        q = resp.json()["questions"][0]
+        assert q["type"] == "rating"
+        assert q["average"] == 3.5
+        assert q["distribution"] == {"1": 1, "2": 0, "3": 1, "4": 0, "5": 2}
+        assert q["response_count"] == 4
+
+    def test_text_question_lists_all_answers(self, db, evaluator_user, curriculum, organization):
+        form = EvaluationForm.objects.create(
+            curriculum=curriculum, level="curriculum", title="แบบประเมิน",
+            schema={"questions": [{"key": "q2", "label": "ข้อเสนอแนะ", "type": "text"}]},
+            is_required=True, created_by=evaluator_user,
+        )
+        s1 = _make_user("summary_text_student_1", "student", organization)
+        s2 = _make_user("summary_text_student_2", "student", organization)
+        EvaluationResponse.objects.create(form=form, student=s1, answers={"q2": "สอนดีมาก"})
+        EvaluationResponse.objects.create(form=form, student=s2, answers={"q2": "   "})  # ว่าง (whitespace) ไม่ควรถูกนับ
+
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get(f"/military/api/v1/curriculum/evaluation-forms/{form.id}/responses/summary/")
+        q = resp.json()["questions"][0]
+        assert q["type"] == "text"
+        assert q["answers"] == ["สอนดีมาก"]
+        assert q["response_count"] == 1
+
+    def test_old_schema_without_type_defaults_to_text(self, db, evaluator_user, curriculum, organization):
+        """แบบประเมินเก่าก่อนมี field type — สร้างตรงผ่าน ORM (ข้าม validation
+        ของ view) จำลองข้อมูลเก่าในระบบจริง ต้องไม่ crash และถือเป็น text"""
+        form = EvaluationForm.objects.create(
+            curriculum=curriculum, level="curriculum", title="แบบประเมินเก่า",
+            schema={"questions": [{"key": "q1", "label": "ความเห็น"}]},
+            is_required=True, created_by=evaluator_user,
+        )
+        s = _make_user("summary_legacy_student", "student", organization)
+        EvaluationResponse.objects.create(form=form, student=s, answers={"q1": "ok"})
+
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get(f"/military/api/v1/curriculum/evaluation-forms/{form.id}/responses/summary/")
+        assert resp.status_code == 200
+        assert resp.json()["questions"][0]["type"] == "text"
 
 
 class TestEvaluationStatusDashboard:
