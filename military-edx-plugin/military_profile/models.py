@@ -229,6 +229,7 @@ class MilitaryUserProfile(models.Model):
     )
 
     rank = models.CharField(max_length=10, choices=RANK_CHOICES, blank=True, default="", verbose_name="ชั้นยศ")
+    rank_effective_date = models.DateField(null=True, blank=True, verbose_name="วันที่มีผลของยศปัจจุบัน")
     position = models.CharField(max_length=255, blank=True, default="", verbose_name="ตำแหน่ง")
     unit = models.CharField(max_length=255, verbose_name="หน่วยต้นสังกัด")
     sub_unit = models.CharField(max_length=255, blank=True, default="", verbose_name="หน่วยรอง")
