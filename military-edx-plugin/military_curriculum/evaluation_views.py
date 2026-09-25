@@ -35,6 +35,45 @@ def _form_summary(f: EvaluationForm) -> dict:
     }
 
 
+@require_role([ROLE_EVALUATOR, ROLE_ADMIN])
+def api_evaluator_curricula(request):
+    """
+    GET /military/api/v1/curriculum/evaluator/curricula/?academic_year=
+
+    รายการหลักสูตรสำหรับ evaluator เลือกเข้าไปตั้งแบบประเมิน/ดูสถานะ — เจ้าหน้าที่
+    ประเมินผลไม่รู้ curriculum_id ล่วงหน้า เดิมหน้าเว็บบังคับพิมพ์รหัสเอง
+    endpoint นี้แทนที่ด้วยรายการเลือกได้ (ค่าเริ่มต้นหน้าเว็บกรองปีล่าสุดเอง)
+
+    เห็นเฉพาะหลักสูตรที่ submitted/active/closed (ตัด draft ออก เพราะยังไม่มี
+    นักเรียนให้ประเมินจนกว่าจะส่งให้เตรียมพล) ไม่ org-scope (evaluator เป็น
+    ส่วนกลาง ต้องเห็นข้ามหน่วยเหมือน prep_personnel)
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    qs = Curriculum.objects.filter(status__in=["submitted", "active", "closed"])
+
+    academic_year = request.GET.get("academic_year", "").strip()
+    if academic_year:
+        try:
+            qs = qs.filter(academic_year=int(academic_year))
+        except ValueError:
+            return JsonResponse({"error": "academic_year ต้องเป็นตัวเลข"}, status=400)
+
+    results = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "batch_code": c.batch_code,
+            "academic_year": c.academic_year,
+            "organization_name": c.organization.name if c.organization_id else None,
+            "status": c.status,
+        }
+        for c in qs.select_related("organization").order_by("-academic_year", "name")
+    ]
+    return JsonResponse({"results": results, "count": len(results)})
+
+
 @csrf_exempt
 @require_role([ROLE_EVALUATOR, ROLE_ADMIN])
 def api_evaluation_forms(request):

@@ -37,6 +37,7 @@ from .grading_views import (
     api_co_instructor_detail,
 )
 from .evaluation_views import (
+    api_evaluator_curricula,
     api_evaluation_forms,
     api_evaluation_form_detail,
     api_evaluation_form_responses_summary,
@@ -89,6 +90,7 @@ urlpatterns = [
     path("api/v1/curriculum/my-courses/<int:curriculum_course_id>/co-instructors/<int:user_id>/", api_co_instructor_detail, name="api_co_instructor_detail"),
 
     # Evaluation Gatekeeper (evaluator) — Sprint 4
+    path("api/v1/curriculum/evaluator/curricula/", api_evaluator_curricula, name="api_evaluator_curricula"),
     path("api/v1/curriculum/evaluation-forms/", api_evaluation_forms, name="api_evaluation_forms"),
     path("api/v1/curriculum/evaluation-forms/<int:form_id>/", api_evaluation_form_detail, name="api_evaluation_form_detail"),
     path("api/v1/curriculum/evaluation-forms/<int:form_id>/responses/summary/", api_evaluation_form_responses_summary, name="api_evaluation_form_responses_summary"),
