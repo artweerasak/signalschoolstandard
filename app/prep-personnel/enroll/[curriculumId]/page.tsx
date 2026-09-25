@@ -174,7 +174,7 @@ export default function EnrollPage() {
                     className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 flex items-center justify-between gap-2
                       ${selected.has(p.id) ? "bg-purple-50" : "hover:bg-[#f7f5fa]"}`}>
                     <div className="min-w-0">
-                      <p className="font-medium text-[#2D0F42] truncate">{p.rank_display} {p.full_name}</p>
+                      <p className="font-medium text-[#2D0F42] truncate">{p.full_name}</p>
                       <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
                     </div>
                     {selected.has(p.id) && <span className="text-[#4A1A6B] shrink-0">✓ เลือกแล้ว</span>}
@@ -190,7 +190,7 @@ export default function EnrollPage() {
             {Array.from(selected.values()).map(p => (
               <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-[#2D0F42] truncate">{p.rank_display} {p.full_name}</p>
+                  <p className="text-sm font-medium text-[#2D0F42] truncate">{p.full_name}</p>
                   <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
                 </div>
                 <button onClick={() => removeSelected(p.id)} className="text-xs text-red-500 hover:underline shrink-0">ลบ</button>
@@ -236,7 +236,7 @@ export default function EnrollPage() {
                 <tr key={p.student_id} className="border-b border-[#f0ecf6]">
                   <td className="px-4 py-3">
                     {selected.get(p.student_id)
-                      ? <>{selected.get(p.student_id)!.rank_display} {selected.get(p.student_id)!.full_name}</>
+                      ? selected.get(p.student_id)!.full_name
                       : <span className="font-mono text-xs text-[#9a92a8]">{p.student_id}</span>}
                   </td>
                   <td className="px-4 py-3">
