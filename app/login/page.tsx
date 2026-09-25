@@ -6,12 +6,13 @@
  */
 
 import { useState, useEffect, Suspense } from "react"
-import Image from "next/image"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { loginWithMilitaryId } from "@/lib/auth"
 import { api } from "@/lib/api"
 import Button from "@/components/ui/Button"
+import NetworkBackground from "@/components/NetworkBackground"
+import Crest from "@/components/Crest"
 
 function validateNationalId(id: string): boolean {
   if (!/^\d{13}$/.test(id)) return false
@@ -114,43 +115,20 @@ function LoginPageInner() {
         aria-hidden="true"
       />
 
-      {/* อนุภาคทองลอยขึ้นเบา ๆ ตกแต่ง ต้นแบบจากจุดประดับใน signalschool.ac.th hero */}
-      {[
-        { left: "12%", size: 5, dur: 7, delay: 0, drift: 10 },
-        { left: "24%", size: 3, dur: 9, delay: 1.4, drift: -14 },
-        { left: "38%", size: 4, dur: 8, delay: 2.8, drift: 8 },
-        { left: "63%", size: 3, dur: 10, delay: 0.6, drift: -10 },
-        { left: "78%", size: 5, dur: 7.5, delay: 3.5, drift: 14 },
-        { left: "88%", size: 3, dur: 9.5, delay: 2, drift: -8 },
-      ].map((p, i) => (
-        <span
-          key={i}
-          aria-hidden="true"
-          className="absolute bottom-0 rounded-full bg-[#E8C96A] animate-[particle-rise_ease-in-out_infinite]"
-          style={{
-            left: p.left,
-            width: p.size, height: p.size,
-            animationDuration: `${p.dur}s`,
-            animationDelay: `${p.delay}s`,
-            ["--drift" as string]: `${p.drift}px`,
-            boxShadow: "0 0 6px 1px rgba(232,201,106,0.7)",
-          }}
-        />
-      ))}
+      {/* โหนดโครงข่ายเคลื่อนไหวเบา ๆ — ให้ความรู้สึกไฮเทค/data network */}
+      <NetworkBackground className="opacity-70" />
 
       <div className="relative w-full max-w-md">
-        {/* Crest ลอยเหนือการ์ด พร้อม glow ring */}
+        {/* Crest ลอยเหนือการ์ด พร้อม glow ring — วางบนแผ่นเหรียญวงกลม
+            (ไม่ยืดภาพตราให้ผิดสัดส่วนแบบเดิม ต้นฉบับเป็นทรงโล่สูง 209x276) */}
         <div className="flex justify-center -mb-10 relative z-10">
           <div className="relative">
             <span className="absolute inset-0 rounded-full blur-xl bg-[#C9A84C]/40 -z-10 scale-150 animate-[pulse-glow_3.5s_ease-in-out_infinite]" aria-hidden="true" />
             <span className="absolute -inset-3 rounded-full border border-dashed border-[#E8C96A]/40 -z-10 animate-[spin-slow_16s_linear_infinite]" aria-hidden="true" />
-            <Image
-              src="/signal_logo.png"
-              alt="กรมการทหารสื่อสาร"
-              width={92}
-              height={92}
-              className="rounded-full border-4 border-[#C9A84C] shadow-[0_8px_30px_rgba(201,168,76,0.35)] bg-white p-1"
+            <Crest
+              size={92}
               priority
+              className="border-4 border-[#C9A84C] shadow-[0_8px_30px_rgba(201,168,76,0.35)]"
             />
           </div>
         </div>

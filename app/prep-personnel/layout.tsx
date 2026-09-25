@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
-import Image from "next/image"
 import { api, CurrentUser } from "@/lib/api"
+import Crest from "@/components/Crest"
 
 const navItems = [
   { href: "/prep-personnel", label: "หลักสูตรรอดำเนินการ", icon: "📋" },
@@ -35,7 +35,7 @@ export default function PrepPersonnelLayout({ children }: { children: React.Reac
         <div className="p-4 border-b border-white/10 flex items-center gap-2">
           <div className="relative shrink-0">
             <span className="absolute inset-0 rounded-full blur-md bg-[#C9A84C]/30 -z-10 scale-125" aria-hidden="true" />
-            <Image src="/signal_logo.png" alt="logo" width={36} height={36} className="rounded-full border border-[#C9A84C]/50" />
+            <Crest size={36} className="border border-[#C9A84C]/50" />
           </div>
           <span className="font-bold text-sm leading-tight">แผนกเตรียมพล<br/>กพ.</span>
         </div>
