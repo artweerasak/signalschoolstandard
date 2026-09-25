@@ -13,14 +13,22 @@ const RANK_CHOICES = [
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "ผู้ดูแลระบบ",
+  org_admin: "ผู้ดูแลหน่วย",
   instructor: "ครูอาจารย์",
   student: "กำลังพล",
+  prep_school: "แผนกเตรียมการ",
+  prep_personnel: "แผนกเตรียมพล",
+  evaluator: "แผนกประเมินผล",
 }
 
 const ROLE_COLORS: Record<string, string> = {
   admin: "bg-purple-100 text-purple-700",
+  org_admin: "bg-indigo-100 text-indigo-700",
   instructor: "bg-blue-100 text-blue-700",
   student: "bg-green-100 text-green-700",
+  prep_school: "bg-amber-100 text-amber-700",
+  prep_personnel: "bg-orange-100 text-orange-700",
+  evaluator: "bg-rose-100 text-rose-700",
 }
 
 type FormData = {
@@ -371,8 +379,12 @@ export default function UsersPage() {
         >
           <option value="">บทบาททั้งหมด</option>
           <option value="admin">ผู้ดูแลระบบ</option>
+          <option value="org_admin">ผู้ดูแลหน่วย</option>
           <option value="instructor">ครูอาจารย์</option>
           <option value="student">กำลังพล</option>
+          <option value="prep_school">แผนกเตรียมการ</option>
+          <option value="prep_personnel">แผนกเตรียมพล</option>
+          <option value="evaluator">แผนกประเมินผล</option>
         </select>
         <select
           value={regionFilter}
@@ -590,7 +602,11 @@ export default function UsersPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
                   <option value="student">กำลังพล</option>
                   <option value="instructor">ครูอาจารย์</option>
+                  <option value="org_admin">ผู้ดูแลหน่วย</option>
                   <option value="admin">ผู้ดูแลระบบ</option>
+                  <option value="prep_school">แผนกเตรียมการ</option>
+                  <option value="prep_personnel">แผนกเตรียมพล</option>
+                  <option value="evaluator">แผนกประเมินผล</option>
                 </select>
               </Field>
 
