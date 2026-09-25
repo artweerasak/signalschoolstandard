@@ -241,6 +241,8 @@ export interface CurriculumSummary {
   name: string
   batch_code: string
   academic_year: number
+  start_date: string | null
+  end_date: string | null
   organization_id: number
   organization_name: string | null
   status: "draft" | "submitted" | "active" | "closed"
@@ -418,6 +420,15 @@ export interface CoInstructorRow {
 
 // ── Evaluation Gatekeeper (evaluator) ───────────────────────────────────────
 
+export interface EvaluatorCurriculumItem {
+  id: number
+  name: string
+  batch_code: string
+  academic_year: number
+  organization_name: string | null
+  status: "submitted" | "active" | "closed"
+}
+
 export interface EvaluationFormItem {
   id: number
   curriculum_id: number
@@ -440,6 +451,44 @@ export interface EvaluationStatusDashboard {
   curriculum_id: number
   curriculum_name: string
   results: EvaluationStatusRow[]
+  count: number
+}
+
+export interface GradingStatusRow {
+  curriculum_id: number
+  curriculum_name: string
+  academic_year: number
+  end_date: string | null
+  curriculum_course_id: number
+  course_display_name: string
+  enrolled_count: number
+  finalized_count: number
+  pending_count: number
+  instructors: { user_id: number; full_name: string; is_owner: boolean }[]
+  is_overdue: boolean
+}
+
+export interface GradingStatusReport {
+  results: GradingStatusRow[]
+  count: number
+}
+
+export interface CurriculumRankingRow {
+  student_id: number
+  full_name: string
+  rank_display: string
+  weighted_average: number | null
+  total_score: number
+  courses_graded: number
+  courses_total: number
+  is_complete: boolean
+  rank: number
+}
+
+export interface CurriculumRanking {
+  curriculum_id: number
+  curriculum_name: string
+  results: CurriculumRankingRow[]
   count: number
 }
 
@@ -959,6 +1008,7 @@ export const api = {
   },
   createCurriculum: (body: {
     name: string; batch_code: string; academic_year: number; organization_id?: number
+    start_date?: string | null; end_date?: string | null
     eligible_rank_class?: string; eligible_rank_min?: string; eligible_rank_max?: string
     eligible_min_years_in_rank?: number | null; eligible_personnel_type?: string; quota_total?: number
     region_quotas?: { army_region: string; quota: number }[]
@@ -966,6 +1016,7 @@ export const api = {
   getCurriculum: (id: number) => fetchAPI<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`),
   updateCurriculum: (id: number, body: Partial<{
     name: string; batch_code: string; academic_year: number
+    start_date: string | null; end_date: string | null
     eligible_rank_class: string; eligible_rank_min: string; eligible_rank_max: string
     eligible_min_years_in_rank: number | null; eligible_personnel_type: string; quota_total: number
   }>) => fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`, body, "PATCH"),
@@ -1052,6 +1103,10 @@ export const api = {
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/my-courses/${id}/co-instructors/${userId}/`, {}, "DELETE"),
 
   // ── Evaluation Gatekeeper (evaluator) ────────────────────────────────────
+  listEvaluatorCurricula: (academicYear?: number) => {
+    const qs = academicYear ? `?academic_year=${academicYear}` : ""
+    return fetchAPI<{ count: number; results: EvaluatorCurriculumItem[] }>(`api/v1/curriculum/evaluator/curricula/${qs}`)
+  },
   listEvaluationForms: (params?: { curriculum_id?: number; curriculum_course_id?: number }) => {
     const qs = new URLSearchParams()
     if (params?.curriculum_id) qs.set("curriculum_id", String(params.curriculum_id))
@@ -1066,6 +1121,14 @@ export const api = {
     fetchAPIPost<EvaluationFormItem>(`api/v1/curriculum/evaluation-forms/${id}/`, body, "PATCH"),
   getEvaluationStatusDashboard: (curriculumId: number) =>
     fetchAPI<EvaluationStatusDashboard>(`api/v1/curriculum/dashboard/evaluation-status/?curriculum_id=${curriculumId}`),
+  getGradingStatusReport: (params?: { curriculum_id?: number; academic_year?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.curriculum_id) qs.set("curriculum_id", String(params.curriculum_id))
+    if (params?.academic_year) qs.set("academic_year", String(params.academic_year))
+    return fetchAPI<GradingStatusReport>(`api/v1/curriculum/reports/grading-status/?${qs}`)
+  },
+  getCurriculumRanking: (curriculumId: number) =>
+    fetchAPI<CurriculumRanking>(`api/v1/curriculum/curricula/${curriculumId}/ranking/`),
 
   // ── Student-facing ────────────────────────────────────────────────────────
   getPendingEvaluations: () =>
