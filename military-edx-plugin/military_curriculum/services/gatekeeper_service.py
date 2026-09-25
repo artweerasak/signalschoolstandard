@@ -62,3 +62,52 @@ def get_pending_evaluations(student, curriculum) -> list:
     )
     pending_ids = all_ids - answered_ids
     return list(m.EvaluationForm.objects.filter(id__in=pending_ids).select_related("curriculum_course"))
+
+
+def get_gated_transcript(student) -> list[dict]:
+    """ใช้เฉพาะใน /my/transcript/ endpoint (Sprint 5) — ไม่แตะ endpoint
+    คะแนนเดิมของ edX เลย คำนวณ FinalCourseResult เอง (finalize_course) ยัง
+    ทำงานเสมอไม่ว่า gate จะผ่านหรือไม่ — gate กระทบแค่ field ที่คืนใน
+    dict นี้ (grade_visible/final_score/passed = None ถ้ายังไม่ผ่าน gate)"""
+    results = []
+    # หนึ่งหลักสูตรอาจมีหลาย CurriculumEnrollmentRequest ไม่ได้ (unique_together
+    # curriculum+student) แต่ query ตรงๆ แล้ว dedupe เองแทน .distinct("field")
+    # ที่ใช้ได้เฉพาะ Postgres (production เป็น MySQL)
+    enrollment_requests = m.CurriculumEnrollmentRequest.objects.filter(
+        student=student, status__in=["completed", "partial_failed"]
+    ).select_related("curriculum")
+    seen_curriculum_ids = set()
+    for req in enrollment_requests:
+        if req.curriculum_id in seen_curriculum_ids:
+            continue
+        seen_curriculum_ids.add(req.curriculum_id)
+        curriculum = req.curriculum
+        curriculum_gate_ok = is_evaluation_complete(student, curriculum=curriculum)
+
+        courses_out = []
+        for cc in curriculum.courses.all().order_by("sequence_order"):
+            course_gate_ok = is_evaluation_complete(student, curriculum_course=cc)
+            final = m.FinalCourseResult.objects.filter(curriculum_course=cc, student=student).first()
+            visible = course_gate_ok
+            courses_out.append({
+                "course_id": cc.course_id,
+                "display_name": cc.display_name,
+                "credits": str(cc.credits),
+                "grade_visible": visible,
+                "final_score": (str(final.final_score) if final.final_score is not None else None) if (final and visible) else None,
+                "passed": (final.passed if visible else None) if final else None,
+                "gate_reason": None if visible else "pending_course_evaluation",
+            })
+
+        determined_passed = [c["passed"] for c in courses_out if c["passed"] is not None]
+        cert_available = curriculum_gate_ok and bool(determined_passed) and all(determined_passed)
+        results.append({
+            "curriculum_id": curriculum.id,
+            "curriculum_name": curriculum.name,
+            "batch_code": curriculum.batch_code,
+            "academic_year": curriculum.academic_year,
+            "courses": courses_out,
+            "certificate_available": cert_available,
+            "gate_reason": None if curriculum_gate_ok else "pending_curriculum_evaluation",
+        })
+    return results

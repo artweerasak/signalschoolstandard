@@ -38,6 +38,10 @@ from .evaluation_views import (
     api_pending_evaluations,
     api_submit_evaluation,
 )
+from .transcript_views import (
+    api_my_transcript,
+    api_my_certificate,
+)
 
 app_name = "military_curriculum"
 
@@ -77,4 +81,8 @@ urlpatterns = [
     # Student-facing
     path("api/v1/curriculum/my/evaluations/pending/", api_pending_evaluations, name="api_pending_evaluations"),
     path("api/v1/curriculum/my/evaluations/<int:form_id>/submit/", api_submit_evaluation, name="api_submit_evaluation"),
+
+    # Learner Transcript (student) — Sprint 5
+    path("api/v1/curriculum/my/transcript/", api_my_transcript, name="api_my_transcript"),
+    path("api/v1/curriculum/my/transcript/<int:curriculum_id>/certificate/", api_my_certificate, name="api_my_certificate"),
 ]
