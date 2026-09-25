@@ -15,12 +15,13 @@ import json
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
 from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL
 
-from .models import Curriculum, CurriculumEnrollmentRequest, ranks_in_range
+from .models import Curriculum, CurriculumEnrollmentRequest, CurriculumOrgQuota, ranks_in_range
 from .services.enrollment_service import (
     cascade_enroll_student,
     preview_cascade_enroll,
@@ -173,7 +174,7 @@ def api_eligible_density_report(request):
     except Curriculum.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
-    from military_profile.models import MilitaryUserProfile
+    from military_profile.models import ARMY_REGION_CHOICES, MilitaryUserProfile
 
     qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin")).select_related("organization")
 
@@ -183,14 +184,28 @@ def api_eligible_density_report(request):
     if c.eligible_rank_min or c.eligible_rank_max:
         qs = qs.filter(rank__in=ranks_in_range(c.eligible_rank_min, c.eligible_rank_max))
 
+    region_filter = request.GET.get("army_region", "").strip()
+    if region_filter:
+        if region_filter in ("none", "unspecified"):
+            qs = qs.filter(Q(organization__isnull=True) | Q(organization__army_region=""))
+        else:
+            qs = qs.filter(
+                Q(organization__army_region=region_filter)
+                | (Q(organization__isnull=True) & Q(army_region=region_filter))
+            )
+
     today = date.today()
     min_years = c.eligible_min_years_in_rank
+    region_labels = dict(ARMY_REGION_CHOICES)
 
     per_org: dict = {}
     for p in qs:
+        region = p.effective_army_region or ""
         bucket = per_org.setdefault(p.organization_id, {
             "organization_id": p.organization_id,
             "organization_name": p.organization.name if p.organization_id else "ไม่ระบุหน่วย",
+            "army_region": region,
+            "army_region_display": region_labels.get(region) or "ไม่ระบุ",
             "eligible_count": 0,
             "needs_verification_count": 0,
             "total_in_scope": 0,
@@ -226,6 +241,138 @@ def api_eligible_density_report(request):
         },
         "results": rows,
     })
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curriculum_org_quotas(request, curriculum_id: int):
+    """
+    GET  /military/api/v1/curriculum/curricula/{id}/org-quotas/
+    POST /military/api/v1/curriculum/curricula/{id}/org-quotas/  {"organization_id": 1, "quota": 5}
+
+    โควตาแยกตามหน่วยงานจริง (เช่น กรมการทหารสื่อสาร 5 นาย, รร.ส.สส. 2 นาย,
+    ส.1 2 นาย) — ต่างจาก CurriculumRegionQuota เดิมที่ตั้งได้แค่ตอนสร้าง
+    หลักสูตรและไม่มี UI แก้ไขเลย endpoint นี้แก้ไขได้ตลอดอายุหลักสูตร (upsert
+    ทีละหน่วยผ่าน POST) — ดู military_curriculum/models.py:CurriculumOrgQuota
+    """
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if request.method == "GET":
+        requested_by_org: dict = {}
+        filled_by_org: dict = {}
+        for req in c.enrollment_requests.select_related("student__military_profile"):
+            profile = getattr(req.student, "military_profile", None)
+            org_id = profile.organization_id if profile else None
+            requested_by_org[org_id] = requested_by_org.get(org_id, 0) + 1
+            if req.status == "completed":
+                filled_by_org[org_id] = filled_by_org.get(org_id, 0) + 1
+
+        rows = [
+            {
+                "organization_id": oq.organization_id,
+                "organization_name": oq.organization.name,
+                "quota": oq.quota,
+                "requested": requested_by_org.get(oq.organization_id, 0),
+                "filled": filled_by_org.get(oq.organization_id, 0),
+            }
+            for oq in c.org_quotas.select_related("organization").order_by("organization__name")
+        ]
+        return JsonResponse({
+            "curriculum_id": c.id,
+            "curriculum_name": c.name,
+            "national_quota": c.quota_total,
+            "national_requested": sum(requested_by_org.values()),
+            "national_filled": sum(filled_by_org.values()),
+            "org_quotas": rows,
+        })
+
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    organization_id = data.get("organization_id")
+    if not organization_id:
+        return JsonResponse({"error": "organization_id required"}, status=400)
+    try:
+        quota = int(data.get("quota", 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "quota ต้องเป็นตัวเลข"}, status=400)
+    if quota < 0:
+        return JsonResponse({"error": "quota ต้องไม่ติดลบ"}, status=400)
+
+    from military_profile.models import Organization
+    try:
+        org = Organization.objects.get(pk=organization_id)
+    except Organization.DoesNotExist:
+        return JsonResponse({"error": "ไม่พบหน่วยงานนี้"}, status=404)
+
+    oq, _ = CurriculumOrgQuota.objects.update_or_create(
+        curriculum=c, organization=org, defaults={"quota": quota},
+    )
+    return JsonResponse({"organization_id": org.id, "organization_name": org.name, "quota": oq.quota})
+
+
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curriculum_personnel_search(request):
+    """
+    GET /military/api/v1/curriculum/personnel-search/?q=&army_region=&page=&page_size=
+
+    ค้นหากำลังพลข้ามหน่วยทั้งหมด (ชื่อหรือหน่วย) — ใช้ในหน้าบรรจุกำลังพลของ
+    prep_personnel เพื่อเลือกคนแบบค้นหา+multi-select แทนพิมพ์ user_id เอง
+    ต่างจาก api_admin_users (military_profile) ที่ org_admin ถูกบังคับเห็นแค่
+    หน่วยตัวเอง เพราะ prep_personnel ต้องเห็นข้ามหน่วยเสมอ (เหมือน
+    api_quota_demand_report/api_eligible_density_report)
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    from military_profile.models import MilitaryUserProfile
+
+    qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin")).select_related("organization")
+
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(Q(full_name_th__icontains=q) | Q(unit__icontains=q))
+
+    region = request.GET.get("army_region", "").strip()
+    if region:
+        if region in ("none", "unspecified"):
+            qs = qs.filter(Q(organization__isnull=True) | Q(organization__army_region=""))
+        else:
+            qs = qs.filter(
+                Q(organization__army_region=region)
+                | (Q(organization__isnull=True) & Q(army_region=region))
+            )
+
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(50, int(request.GET.get("page_size", 20)))
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
+
+    qs = qs.order_by("full_name_th")
+    total = qs.count()
+    start = (page - 1) * page_size
+    results = [
+        {
+            "id": p.user_id,
+            "full_name": p.display_full_name,
+            "rank_display": p.get_rank_display(),
+            "unit": p.unit,
+            "organization_id": p.organization_id,
+            "organization_name": p.organization.name if p.organization_id else None,
+        }
+        for p in qs[start:start + page_size]
+    ]
+
+    return JsonResponse({"count": total, "page": page, "page_size": page_size, "results": results})
 
 
 @csrf_exempt

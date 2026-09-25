@@ -126,6 +126,31 @@ class CurriculumRegionQuota(models.Model):
         return f"{self.curriculum} — {self.army_region}: {self.quota}"
 
 
+class CurriculumOrgQuota(models.Model):
+    """โควตาแยกตามหน่วยงาน (organization) — สิ่งที่ prep_personnel ใช้จริงในการ
+    แบ่งโควตาให้แต่ละหน่วย (เช่น กรมการทหารสื่อสาร 5 นาย, รร.ส.สส. 2 นาย,
+    ส.1 2 นาย) ตั้ง/แก้ไขได้ตลอดผ่าน api_curriculum_org_quotas (ต่างจาก
+    CurriculumRegionQuota เดิมที่ตั้งได้แค่ตอนสร้างหลักสูตรเท่านั้นและไม่เคยมี
+    UI แก้ไขจริง — คงโมเดลเดิมไว้เพื่อไม่ทำลายข้อมูลเก่า แต่ฟีเจอร์ใหม่ใช้โมเดลนี้แทน"""
+
+    curriculum = models.ForeignKey(
+        Curriculum, on_delete=models.CASCADE, related_name="org_quotas",
+    )
+    organization = models.ForeignKey(
+        "military_profile.Organization", on_delete=models.CASCADE, related_name="curriculum_quotas",
+    )
+    quota = models.PositiveIntegerField(default=0, verbose_name="โควตา")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("curriculum", "organization")]
+        verbose_name = "โควตาตามหน่วยงาน"
+        verbose_name_plural = "โควตาตามหน่วยงาน"
+
+    def __str__(self):
+        return f"{self.curriculum} — {self.organization}: {self.quota}"
+
+
 class CurriculumCourse(models.Model):
     """วิชาย่อยในหลักสูตร — ผูกกับ course_id ของ edX (ไม่ duplicate ตัวคอร์ส)"""
 

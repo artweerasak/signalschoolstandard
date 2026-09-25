@@ -349,3 +349,119 @@ class TestCatchUpEnrollment:
         assert resp.json()["mode"] == "async"
         assert resp.json()["affected_count"] == 31
         assert mock_delay.call_count == 31
+
+
+class TestOrgQuotas:
+    """โควตาแยกตามหน่วยงานจริง (แก้ไขได้ตลอด ต่างจาก CurriculumRegionQuota
+    เดิมที่ตั้งได้แค่ตอนสร้างหลักสูตร) — ดู
+    military_curriculum/quota_views.py:api_curriculum_org_quotas"""
+
+    def test_set_quota_creates_row(self, db, prep_personnel_user, active_curriculum, organization):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.post(
+            f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/",
+            data=json.dumps({"organization_id": organization.id, "quota": 5}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["quota"] == 5
+
+        get_resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/")
+        rows = get_resp.json()["org_quotas"]
+        assert len(rows) == 1
+        assert rows[0]["organization_id"] == organization.id
+        assert rows[0]["quota"] == 5
+
+    def test_set_quota_upserts_not_duplicates(self, db, prep_personnel_user, active_curriculum, organization):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        for quota in (5, 8):
+            resp = client.post(
+                f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/",
+                data=json.dumps({"organization_id": organization.id, "quota": quota}),
+                content_type="application/json",
+            )
+            assert resp.status_code == 200
+
+        get_resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/")
+        rows = get_resp.json()["org_quotas"]
+        assert len(rows) == 1
+        assert rows[0]["quota"] == 8
+
+    def test_get_shows_requested_and_filled_per_org(self, db, prep_personnel_user, active_curriculum, organization):
+        student = _make_user("orgquota_student", "student", organization)
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=student, requested_by=prep_personnel_user,
+            status="completed", result_detail={"course-v1:X": "enrolled"},
+        )
+        client = Client()
+        client.force_login(prep_personnel_user)
+        client.post(
+            f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/",
+            data=json.dumps({"organization_id": organization.id, "quota": 10}),
+            content_type="application/json",
+        )
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/")
+        row = resp.json()["org_quotas"][0]
+        assert row["requested"] == 1
+        assert row["filled"] == 1
+
+    def test_set_quota_rejects_negative(self, db, prep_personnel_user, active_curriculum, organization):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.post(
+            f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/",
+            data=json.dumps({"organization_id": organization.id, "quota": -1}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_org_quotas_student_forbidden(self, db, active_curriculum, organization):
+        student = _make_user("orgquota_forbidden", "student", organization)
+        client = Client()
+        client.force_login(student)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/")
+        assert resp.status_code == 403
+
+
+class TestPersonnelSearch:
+    """ค้นหากำลังพลข้ามหน่วยสำหรับ prep_personnel เลือกคนมาบรรจุ — ดู
+    military_curriculum/quota_views.py:api_curriculum_personnel_search"""
+
+    def test_search_by_name(self, db, prep_personnel_user, organization):
+        _make_user("searchable_somchai", "student", organization)
+        _make_user("searchable_somying", "student", organization)
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get("/military/api/v1/curriculum/personnel-search/?q=somchai")
+        assert resp.status_code == 200
+        names = [r["full_name"] for r in resp.json()["results"]]
+        assert any("somchai" in n for n in names)
+        assert not any("somying" in n for n in names)
+
+    def test_search_excludes_admin_roles(self, db, prep_personnel_user, organization):
+        _make_user("search_admin_excl", "admin", organization)
+        _make_user("search_student_incl", "student", organization)
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get("/military/api/v1/curriculum/personnel-search/?q=search_")
+        names = [r["full_name"] for r in resp.json()["results"]]
+        assert any("search_student_incl" in n for n in names)
+        assert not any("search_admin_excl" in n for n in names)
+
+    def test_search_forbidden_for_student(self, db, organization):
+        student = _make_user("search_forbidden_student", "student", organization)
+        client = Client()
+        client.force_login(student)
+        resp = client.get("/military/api/v1/curriculum/personnel-search/?q=x")
+        assert resp.status_code == 403
+
+    def test_search_returns_organization_info(self, db, prep_personnel_user, organization):
+        _make_user("search_org_info_test", "student", organization)
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get("/military/api/v1/curriculum/personnel-search/?q=search_org_info")
+        row = resp.json()["results"][0]
+        assert row["organization_id"] == organization.id
+        assert row["organization_name"] == organization.name
