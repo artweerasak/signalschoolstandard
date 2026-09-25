@@ -91,6 +91,20 @@ class TestRankSelfEdit:
         student.military_profile.refresh_from_db()
         assert student.military_profile.rank_effective_date is None
 
+    def test_rank_effective_date_visible_via_get_profile(self, student):
+        client = Client()
+        client.force_login(student)
+        client.patch(
+            "/military/api/v1/my/profile/complete/",
+            data=json.dumps({"rank": "2LT", "rank_effective_date": "2025-01-15"}),
+            content_type="application/json",
+        )
+        resp = client.get("/military/api/v1/my/profile/")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["rank"] == "2LT"
+        assert body["rank_effective_date"] == "2025-01-15"
+
     def test_unrelated_fields_untouched_when_no_rank_in_body(self, student):
         client = Client()
         client.force_login(student)
