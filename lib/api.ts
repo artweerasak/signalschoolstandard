@@ -348,6 +348,42 @@ export interface CoInstructorRow {
   is_owner: boolean
 }
 
+// ── Evaluation Gatekeeper (evaluator) ───────────────────────────────────────
+
+export interface EvaluationFormItem {
+  id: number
+  curriculum_id: number
+  curriculum_course_id: number | null
+  level: "course" | "curriculum"
+  title: string
+  schema: unknown
+  is_required: boolean
+  is_active: boolean
+  response_count: number
+}
+
+export interface EvaluationStatusRow {
+  student_id: number
+  full_name: string
+  curriculum_evaluation_complete: boolean
+}
+
+export interface EvaluationStatusDashboard {
+  curriculum_id: number
+  curriculum_name: string
+  results: EvaluationStatusRow[]
+  count: number
+}
+
+export interface PendingEvaluationItem {
+  form_id: number
+  title: string
+  level: "course" | "curriculum"
+  curriculum_name: string
+  curriculum_course_name: string | null
+  schema: { questions?: { key: string; label: string; type?: string }[] }
+}
+
 export interface OrgMemberRow {
   user_id: number
   full_name: string
@@ -861,6 +897,28 @@ export const api = {
     fetchAPIPost<{ user_id: number; username: string }>(`api/v1/curriculum/my-courses/${id}/co-instructors/`, { user_id: userId }),
   removeCoInstructor: (id: number, userId: number) =>
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/my-courses/${id}/co-instructors/${userId}/`, {}, "DELETE"),
+
+  // ── Evaluation Gatekeeper (evaluator) ────────────────────────────────────
+  listEvaluationForms: (params?: { curriculum_id?: number; curriculum_course_id?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.curriculum_id) qs.set("curriculum_id", String(params.curriculum_id))
+    if (params?.curriculum_course_id) qs.set("curriculum_course_id", String(params.curriculum_course_id))
+    return fetchAPI<{ count: number; results: EvaluationFormItem[] }>(`api/v1/curriculum/evaluation-forms/?${qs}`)
+  },
+  createEvaluationForm: (body: {
+    curriculum_id: number; level: "course" | "curriculum"; title: string
+    schema: unknown; is_required?: boolean; curriculum_course_id?: number
+  }) => fetchAPIPost<EvaluationFormItem>("api/v1/curriculum/evaluation-forms/", body),
+  updateEvaluationForm: (id: number, body: Partial<{ title: string; schema: unknown; is_required: boolean; is_active: boolean }>) =>
+    fetchAPIPost<EvaluationFormItem>(`api/v1/curriculum/evaluation-forms/${id}/`, body, "PATCH"),
+  getEvaluationStatusDashboard: (curriculumId: number) =>
+    fetchAPI<EvaluationStatusDashboard>(`api/v1/curriculum/dashboard/evaluation-status/?curriculum_id=${curriculumId}`),
+
+  // ── Student-facing ────────────────────────────────────────────────────────
+  getPendingEvaluations: () =>
+    fetchAPI<{ count: number; results: PendingEvaluationItem[] }>("api/v1/curriculum/my/evaluations/pending/"),
+  submitEvaluation: (formId: number, answers: Record<string, unknown>) =>
+    fetchAPIPost<{ id: number; submitted_at: string }>(`api/v1/curriculum/my/evaluations/${formId}/submit/`, { answers }),
 
   // ── Video Folder Sharing ─────────────────────────────────────────────────
   getVideoShare: (courseSlug: string) =>
