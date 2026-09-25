@@ -418,6 +418,15 @@ export interface CoInstructorRow {
 
 // ── Evaluation Gatekeeper (evaluator) ───────────────────────────────────────
 
+export interface EvaluatorCurriculumItem {
+  id: number
+  name: string
+  batch_code: string
+  academic_year: number
+  organization_name: string | null
+  status: "submitted" | "active" | "closed"
+}
+
 export interface EvaluationFormItem {
   id: number
   curriculum_id: number
@@ -1052,6 +1061,10 @@ export const api = {
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/my-courses/${id}/co-instructors/${userId}/`, {}, "DELETE"),
 
   // ── Evaluation Gatekeeper (evaluator) ────────────────────────────────────
+  listEvaluatorCurricula: (academicYear?: number) => {
+    const qs = academicYear ? `?academic_year=${academicYear}` : ""
+    return fetchAPI<{ count: number; results: EvaluatorCurriculumItem[] }>(`api/v1/curriculum/evaluator/curricula/${qs}`)
+  },
   listEvaluationForms: (params?: { curriculum_id?: number; curriculum_course_id?: number }) => {
     const qs = new URLSearchParams()
     if (params?.curriculum_id) qs.set("curriculum_id", String(params.curriculum_id))

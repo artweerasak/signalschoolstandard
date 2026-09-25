@@ -4,12 +4,19 @@
  */
 "use client"
 
-import { useState } from "react"
-import { api, EvaluationFormItem, EvaluationStatusDashboard } from "@/lib/api"
+import { useEffect, useMemo, useState } from "react"
+import { api, EvaluationFormItem, EvaluationStatusDashboard, EvaluatorCurriculumItem } from "@/lib/api"
 import Card from "@/components/ui/Card"
 import PageHeader from "@/components/ui/PageHeader"
 import Button from "@/components/ui/Button"
 import StatusPill from "@/components/ui/StatusPill"
+
+const STATUS_LABELS: Record<string, string> = {
+  submitted: "ส่งแล้ว", active: "กำลังดำเนินการ", closed: "ปิดรุ่น",
+}
+const STATUS_TONES: Record<string, "info" | "success" | "neutral"> = {
+  submitted: "info", active: "success", closed: "neutral",
+}
 
 interface FormBuilderState {
   level: "course" | "curriculum"
@@ -24,8 +31,11 @@ const EMPTY_FORM: FormBuilderState = {
 }
 
 export default function EvaluatorPage() {
-  const [curriculumIdInput, setCurriculumIdInput] = useState("")
   const [curriculumId, setCurriculumId] = useState<number | null>(null)
+
+  const [curricula, setCurricula] = useState<EvaluatorCurriculumItem[]>([])
+  const [curriculaLoading, setCurriculaLoading] = useState(true)
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
 
   const [forms, setForms] = useState<EvaluationFormItem[]>([])
   const [dashboard, setDashboard] = useState<EvaluationStatusDashboard | null>(null)
@@ -37,6 +47,25 @@ export default function EvaluatorPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState("")
 
+  useEffect(() => {
+    api.listEvaluatorCurricula()
+      .then(r => {
+        setCurricula(r.results)
+        if (r.results.length > 0) setSelectedYear(r.results[0].academic_year) // เรียงปีล่าสุดมาก่อนแล้วจาก backend
+      })
+      .catch(() => setError("โหลดรายการหลักสูตรไม่สำเร็จ"))
+      .finally(() => setCurriculaLoading(false))
+  }, [])
+
+  const years = useMemo(
+    () => Array.from(new Set(curricula.map(c => c.academic_year))).sort((a, b) => b - a),
+    [curricula]
+  )
+  const curriculaForYear = useMemo(
+    () => curricula.filter(c => c.academic_year === selectedYear),
+    [curricula, selectedYear]
+  )
+
   const load = (id: number) => {
     setLoading(true)
     setError("")
@@ -45,13 +74,11 @@ export default function EvaluatorPage() {
       api.getEvaluationStatusDashboard(id),
     ])
       .then(([formsRes, dashRes]) => { setForms(formsRes.results); setDashboard(dashRes) })
-      .catch(() => setError("ไม่พบหลักสูตรนี้ หรือไม่สามารถโหลดข้อมูลได้"))
+      .catch(() => setError("ไม่สามารถโหลดข้อมูลหลักสูตรนี้ได้"))
       .finally(() => setLoading(false))
   }
 
-  const handleSearch = () => {
-    const id = Number(curriculumIdInput)
-    if (!id) { setError("กรุณากรอกรหัสหลักสูตร (curriculum_id)"); return }
+  const handleSelectCurriculum = (id: number) => {
     setCurriculumId(id)
     load(id)
   }
@@ -105,18 +132,43 @@ export default function EvaluatorPage() {
         description="สร้างแบบประเมินรายวิชา/หลักสูตรรวม และติดตามสถานะการประเมินของกำลังพล"
       />
 
-      <Card className="p-4 flex gap-2 items-end">
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-[#4a4456] mb-1">รหัสหลักสูตร (curriculum_id)</label>
-          <input type="text" value={curriculumIdInput} onChange={e => setCurriculumIdInput(e.target.value)}
-            placeholder="เช่น 5"
-            className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-        </div>
-        <Button onClick={handleSearch}>ค้นหา</Button>
-      </Card>
-
       {error && (
         <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-4 py-3 rounded-xl text-sm">{error}</div>
+      )}
+
+      {curriculaLoading ? (
+        <p className="text-[#9a92a8] text-sm">กำลังโหลดรายการหลักสูตร...</p>
+      ) : curricula.length === 0 ? (
+        <Card className="p-6 text-center text-sm text-[#9a92a8]">ยังไม่มีหลักสูตรที่ส่งให้แผนกเตรียมพลแล้ว</Card>
+      ) : (
+        <Card className="p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-[#6b6478]">ปีการศึกษา</label>
+            <select value={selectedYear ?? ""} onChange={e => setSelectedYear(Number(e.target.value))}
+              className="border border-[#d9d2e6] rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {curriculaForYear.length === 0 ? (
+              <p className="text-sm text-[#9a92a8] py-3">ไม่มีหลักสูตรของปีนี้</p>
+            ) : (
+              curriculaForYear.map(c => (
+                <button key={c.id} onClick={() => handleSelectCurriculum(c.id)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center justify-between gap-2 transition-colors
+                    ${curriculumId === c.id ? "bg-[#4A1A6B] text-white" : "hover:bg-[#f7f5fa] text-[#2D0F42]"}`}>
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{c.name} <span className={curriculumId === c.id ? "text-purple-200" : "text-[#9a92a8]"}>รุ่น {c.batch_code}</span></p>
+                    {c.organization_name && (
+                      <p className={`text-xs truncate ${curriculumId === c.id ? "text-purple-200" : "text-[#9a92a8]"}`}>{c.organization_name}</p>
+                    )}
+                  </div>
+                  <StatusPill tone={STATUS_TONES[c.status] ?? "neutral"}>{STATUS_LABELS[c.status] ?? c.status}</StatusPill>
+                </button>
+              ))
+            )}
+          </div>
+        </Card>
       )}
 
       {loading && <div className="py-8 text-center text-[#9a92a8]">กำลังโหลด...</div>}
