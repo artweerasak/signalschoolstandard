@@ -4375,7 +4375,10 @@ def api_video_upload(request):
     _orig_ext = _os.path.splitext(uploaded_file.name)[1].lower()
     if _orig_ext not in _VIDEO_ALLOWED_EXTS:
         return JsonResponse({'error': f'ไม่รองรับไฟล์ประเภท "{_orig_ext}" กรุณาอัปโหลดไฟล์วิดีโอเท่านั้น'}, status=400)
-    safe_name = _re.sub(r'[^\w\-_.]', '_', uploaded_file.name) or f"video_{_uuid_mod.uuid4().hex}"
+    # \w ใน Python ไม่นับวรรณยุกต์ไทย (Unicode category Mn) — ต้องเติม ก-๙
+    # เองเหมือน pattern ที่ใช้อยู่แล้วตอน rename subject (ดู _re.sub ตัวอื่นในไฟล์
+    # นี้) ไม่งั้นวรรณยุกต์ในชื่อไฟล์ทุกตัวโดนแทนด้วย _ (เช่น "สื่อสาร" → "ส__อสาร")
+    safe_name = _re.sub(r'[^\w\-_.ก-๙]', '_', uploaded_file.name) or f"video_{_uuid_mod.uuid4().hex}"
 
     file_path = _os.path.join(dest_dir, safe_name)
     base, ext = _os.path.splitext(safe_name)
@@ -4936,7 +4939,10 @@ def api_doc_upload(request):
     if _ext not in _DOC_ALLOWED_EXTS:
         return JsonResponse({'error': f'รองรับเฉพาะไฟล์ {", ".join(sorted(_DOC_ALLOWED_EXTS))}'}, status=400)
 
-    safe_name = _re.sub(r'[^\w\-_.]', '_', uploaded_file.name) or f"doc_{_uuid_mod.uuid4().hex}{_ext}"
+    # \w ใน Python ไม่นับวรรณยุกต์ไทย (Unicode category Mn) — ต้องเติม ก-๙
+    # เองเหมือน pattern ที่ใช้อยู่แล้วตอน rename subject (ดู _re.sub ตัวอื่นในไฟล์
+    # นี้) ไม่งั้นวรรณยุกต์ในชื่อไฟล์ทุกตัวโดนแทนด้วย _ (เช่น "สื่อสาร" → "ส__อสาร")
+    safe_name = _re.sub(r'[^\w\-_.ก-๙]', '_', uploaded_file.name) or f"doc_{_uuid_mod.uuid4().hex}{_ext}"
 
     # ถ้าเป็น Office file → แปลงเป็น PDF (เปลี่ยนนามสกุลเป็น .pdf)
     need_convert = _ext in _OFFICE_EXTS
