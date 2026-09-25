@@ -106,20 +106,44 @@ function LoginPageInner() {
       {/* พื้นหลัง gradient เข้ม + glow ตกแต่ง ต้นแบบจาก signalschool.ac.th hero */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#2D0F42] via-[#3a1456] to-[#180626]" aria-hidden="true" />
       <div
-        className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[560px] h-[560px] rounded-full bg-[#7B3FA0]/25 blur-[120px]"
+        className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[560px] h-[560px] rounded-full bg-[#7B3FA0]/25 blur-[120px] animate-[float-blob_11s_ease-in-out_infinite]"
         aria-hidden="true"
       />
       <div
-        className="absolute bottom-[-15%] right-[-5%] w-[420px] h-[420px] rounded-full bg-[#C9A84C]/15 blur-[110px]"
+        className="absolute bottom-[-15%] right-[-5%] w-[420px] h-[420px] rounded-full bg-[#C9A84C]/15 blur-[110px] animate-[float-blob_14s_ease-in-out_infinite_reverse]"
         aria-hidden="true"
       />
+
+      {/* อนุภาคทองลอยขึ้นเบา ๆ ตกแต่ง ต้นแบบจากจุดประดับใน signalschool.ac.th hero */}
+      {[
+        { left: "12%", size: 5, dur: 7, delay: 0, drift: 10 },
+        { left: "24%", size: 3, dur: 9, delay: 1.4, drift: -14 },
+        { left: "38%", size: 4, dur: 8, delay: 2.8, drift: 8 },
+        { left: "63%", size: 3, dur: 10, delay: 0.6, drift: -10 },
+        { left: "78%", size: 5, dur: 7.5, delay: 3.5, drift: 14 },
+        { left: "88%", size: 3, dur: 9.5, delay: 2, drift: -8 },
+      ].map((p, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="absolute bottom-0 rounded-full bg-[#E8C96A] animate-[particle-rise_ease-in-out_infinite]"
+          style={{
+            left: p.left,
+            width: p.size, height: p.size,
+            animationDuration: `${p.dur}s`,
+            animationDelay: `${p.delay}s`,
+            ["--drift" as string]: `${p.drift}px`,
+            boxShadow: "0 0 6px 1px rgba(232,201,106,0.7)",
+          }}
+        />
+      ))}
 
       <div className="relative w-full max-w-md">
         {/* Crest ลอยเหนือการ์ด พร้อม glow ring */}
         <div className="flex justify-center -mb-10 relative z-10">
           <div className="relative">
-            <span className="absolute inset-0 rounded-full blur-xl bg-[#C9A84C]/40 -z-10 scale-150" aria-hidden="true" />
-            <span className="absolute -inset-3 rounded-full border border-[#E8C96A]/30 -z-10" aria-hidden="true" />
+            <span className="absolute inset-0 rounded-full blur-xl bg-[#C9A84C]/40 -z-10 scale-150 animate-[pulse-glow_3.5s_ease-in-out_infinite]" aria-hidden="true" />
+            <span className="absolute -inset-3 rounded-full border border-dashed border-[#E8C96A]/40 -z-10 animate-[spin-slow_16s_linear_infinite]" aria-hidden="true" />
             <Image
               src="/signal_logo.png"
               alt="กรมการทหารสื่อสาร"

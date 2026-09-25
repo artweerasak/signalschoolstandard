@@ -46,6 +46,31 @@ body {
   font-family: var(--font-body), 'Noto Sans Thai', Arial, Helvetica, sans-serif;
 }
 
+/* ── Animation — เอฟเฟกต์เคลื่อนไหวเบา ๆ สำหรับหน้าที่ต้องการความหรูหรา
+   ทันสมัย (เช่น hero ของหน้า login) ใช้ผ่าน Tailwind arbitrary animate-[...]
+   ให้ reuse ได้ทุกหน้า ไม่ผูกกับหน้าใดหน้าหนึ่ง ── */
+@keyframes float-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(3%, -4%) scale(1.08); }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 0.9;  transform: scale(1.08); }
+}
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+@keyframes particle-rise {
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 0.8; }
+  100% { transform: translateY(-140px) translateX(var(--drift, 12px)); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+}
+
 /* ── Print: ซ่อน sidebar/header ของ dashboard layout ทุกหน้า และคลาย
    overflow/height ที่ล็อกไว้สำหรับ scroll บนจอ ไม่งั้นพิมพ์ออกมาจะโดนตัด
    เหลือแค่ส่วนที่มองเห็นบนจอตอนกดพิมพ์ ── */
