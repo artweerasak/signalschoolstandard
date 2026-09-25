@@ -330,17 +330,17 @@ export default function DocumentsPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-800">จัดการเอกสาร / ตำราเรียน (PDF)</h1>
-        <p className="text-gray-500 mt-1 text-sm">เอกสารแยกตามหมวดหมู่ — คุณจะเห็นเฉพาะไฟล์ที่คุณอัปโหลด · มีแถบแสดงความคืบหน้า</p>
+        <h1 className="text-2xl font-bold text-[#2D0F42]">จัดการเอกสาร / ตำราเรียน (PDF)</h1>
+        <p className="text-[#6b6478] mt-1 text-sm">เอกสารแยกตามหมวดหมู่ — คุณจะเห็นเฉพาะไฟล์ที่คุณอัปโหลด · มีแถบแสดงความคืบหน้า</p>
       </div>
 
       {/* Subject Management */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-700 text-sm">📁 หมวดหมู่เอกสาร</h2>
-          <span className="text-xs text-gray-400">{subjects.length} หมวดหมู่</span>
+      <div className="bg-white border border-[#e6e1ee] rounded-xl overflow-hidden">
+        <div className="px-4 py-3 bg-[#f7f5fa] border-b border-[#e6e1ee] flex items-center justify-between">
+          <h2 className="font-semibold text-[#4a4456] text-sm">📁 หมวดหมู่เอกสาร</h2>
+          <span className="text-xs text-[#9a92a8]">{subjects.length} หมวดหมู่</span>
         </div>
-        <div className="px-4 py-3 border-b border-gray-100 flex gap-2">
+        <div className="px-4 py-3 border-b border-[#f0ecf6] flex gap-2">
           <input type="text" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && createSubject()}
             placeholder="ชื่อหมวดหมู่ใหม่ เช่น คู่มือวิทยุ, บทที่ 1"
@@ -351,20 +351,20 @@ export default function DocumentsPage() {
           </button>
         </div>
         {loadingSubjects ? (
-          <div className="p-4 text-center text-gray-400 text-sm">กำลังโหลด...</div>
+          <div className="p-4 text-center text-[#9a92a8] text-sm">กำลังโหลด...</div>
         ) : subjects.length === 0 ? (
-          <div className="p-4 text-center text-gray-400 text-sm">ยังไม่มีหมวดหมู่ — สร้างด้านบน</div>
+          <div className="p-4 text-center text-[#9a92a8] text-sm">ยังไม่มีหมวดหมู่ — สร้างด้านบน</div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-[#f0ecf6]">
             {subjects.map(s => (
               <div key={s.name} onClick={() => setSelectedSubject(s.name)}
                 className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-colors
-                  ${selectedSubject === s.name ? 'bg-purple-50 border-l-4 border-l-[#4A1A6B]' : 'hover:bg-gray-50'}`}>
+                  ${selectedSubject === s.name ? 'bg-purple-50 border-l-4 border-l-[#4A1A6B]' : 'hover:bg-[#f7f5fa]'}`}>
                 <span className="text-lg">📁</span>
-                <span className={`flex-1 text-sm font-medium ${selectedSubject === s.name ? 'text-[#4A1A6B]' : 'text-gray-700'}`}>
+                <span className={`flex-1 text-sm font-medium ${selectedSubject === s.name ? 'text-[#4A1A6B]' : 'text-[#4a4456]'}`}>
                   {s.name}
                 </span>
-                <span className="text-xs text-gray-400">{s.file_count} ไฟล์</span>
+                <span className="text-xs text-[#9a92a8]">{s.file_count} ไฟล์</span>
                 <button onClick={e => { e.stopPropagation(); renameSubject(s.name); }}
                   className="text-xs text-blue-400 hover:text-blue-600 px-2 py-0.5 rounded hover:bg-blue-50">แก้ไข</button>
                 <button onClick={e => { e.stopPropagation(); deleteSubject(s.name); }}
@@ -389,20 +389,20 @@ export default function DocumentsPage() {
             className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all
               ${dragging ? 'border-purple-500 bg-purple-50'
                 : isUploading ? 'border-yellow-400 bg-yellow-50 cursor-default'
-                : 'border-gray-300 hover:border-purple-400 hover:bg-gray-50'}`}
+                : 'border-gray-300 hover:border-purple-400 hover:bg-[#f7f5fa]'}`}
           >
             {isUploading ? (
               <div className="space-y-2">
                 <div className="text-yellow-600 font-medium">กำลังอัปโหลดเข้า "{selectedSubject}"</div>
-                <p className="text-xs text-gray-500">อย่าปิดหน้านี้ระหว่างอัปโหลด</p>
+                <p className="text-xs text-[#6b6478]">อย่าปิดหน้านี้ระหว่างอัปโหลด</p>
               </div>
             ) : (
               <div className="space-y-2">
                 <div className="text-4xl">📄</div>
-                <div className="text-gray-600 font-medium">
+                <div className="text-[#6b6478] font-medium">
                   ลากไฟล์มาวาง → <span className="text-[#4A1A6B] font-semibold">{selectedSubject}</span>
                 </div>
-                <div className="text-gray-400 text-sm">หรือคลิกเพื่อเลือกไฟล์ · PDF / Word / PowerPoint / Excel · รองรับหลายไฟล์</div>
+                <div className="text-[#9a92a8] text-sm">หรือคลิกเพื่อเลือกไฟล์ · PDF / Word / PowerPoint / Excel · รองรับหลายไฟล์</div>
                 <div className="text-xs text-purple-500 bg-purple-50 rounded-lg px-3 py-1.5 inline-block mt-1">
                   ⚡ Word / PPT / Excel จะถูกแปลงเป็น PDF อัตโนมัติ
                 </div>
@@ -421,19 +421,19 @@ export default function DocumentsPage() {
           {uploadQueue.length > 0 && (
             <div className="mt-3 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600">
+                <span className="text-sm font-medium text-[#6b6478]">
                   คิวอัปโหลด ({doneCount}/{uploadQueue.length} เสร็จ{errorCount > 0 ? `, ${errorCount} ผิดพลาด` : ''})
                 </span>
                 {!isUploading && (
                   <button onClick={() => setUploadQueue([])}
-                    className="text-xs text-gray-400 hover:text-gray-600">ล้างคิว</button>
+                    className="text-xs text-[#9a92a8] hover:text-[#6b6478]">ล้างคิว</button>
                 )}
               </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {uploadQueue.map(item => (
-                  <div key={item.id} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+                  <div key={item.id} className="bg-white border border-[#e6e1ee] rounded-lg px-3 py-2">
                     <div className="flex items-center justify-between gap-3 mb-1">
-                      <span className="text-xs text-gray-700 truncate flex-1">{fileIcon(item.file.name)} {item.file.name}</span>
+                      <span className="text-xs text-[#4a4456] truncate flex-1">{fileIcon(item.file.name)} {item.file.name}</span>
                       <span className="text-xs shrink-0">
                         {item.status === 'done' && <span className="text-green-600">✓ เสร็จ{fileIsOffice(item.file.name) ? ' (PDF)' : ''}</span>}
                         {item.status === 'error' && <span className="text-red-500">✕ ผิดพลาด</span>}
@@ -443,11 +443,11 @@ export default function DocumentsPage() {
                             {fileIsOffice(item.file.name) ? '🔄 กำลังแปลง PDF...' : 'กำลังบันทึก...'}
                           </span>
                         )}
-                        {item.status === 'pending' && <span className="text-gray-400">รอ...</span>}
+                        {item.status === 'pending' && <span className="text-[#9a92a8]">รอ...</span>}
                       </span>
                     </div>
                     {(item.status === 'uploading' || item.status === 'done') && (
-                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                      <div className="w-full bg-[#f0ecf6] rounded-full h-1.5">
                         <div className={`h-1.5 rounded-full transition-all ${item.status === 'done' ? 'bg-green-500' : 'bg-purple-500'}`}
                           style={{ width: `${item.progress}%` }} />
                       </div>
@@ -465,26 +465,26 @@ export default function DocumentsPage() {
           )}
         </div>
       ) : (
-        <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center text-gray-400 text-sm">
+        <div className="border-2 border-dashed border-[#e6e1ee] rounded-xl p-8 text-center text-[#9a92a8] text-sm">
           เลือกหมวดหมู่ด้านบนก่อนอัปโหลดเอกสาร
         </div>
       )}
 
       {/* Filter + File list */}
       <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-gray-600">กรองตามหมวดหมู่:</span>
+        <span className="text-sm font-medium text-[#6b6478]">กรองตามหมวดหมู่:</span>
         <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
           <option value="">ทั้งหมด</option>
           {subjects.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
         </select>
-        <span className="text-sm text-gray-400">{myFiles.length} ไฟล์ของฉัน</span>
+        <span className="text-sm text-[#9a92a8]">{myFiles.length} ไฟล์ของฉัน</span>
       </div>
 
       {loadingFiles ? (
-        <div className="text-center text-gray-400 py-8">กำลังโหลด...</div>
+        <div className="text-center text-[#9a92a8] py-8">กำลังโหลด...</div>
       ) : myFiles.length === 0 && sharedFiles.length === 0 ? (
-        <div className="text-center text-gray-400 py-8 border border-dashed border-gray-200 rounded-xl">
+        <div className="text-center text-[#9a92a8] py-8 border border-dashed border-[#e6e1ee] rounded-xl">
           ยังไม่มีเอกสาร{filterSubject ? ` ในหมวด "${filterSubject}"` : ''}
         </div>
       ) : (
@@ -493,34 +493,34 @@ export default function DocumentsPage() {
           {Object.entries(myGrouped).map(([subjectName, docs]) => {
             const count = shareCounts[subjectName] ?? 0;
             return (
-              <div key={subjectName} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+              <div key={subjectName} className="bg-white border border-[#e6e1ee] rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-[#f7f5fa] border-b border-[#e6e1ee] flex items-center gap-2">
                   <span>📁</span>
-                  <span className="font-semibold text-gray-700 text-sm flex-1">{subjectName}</span>
-                  <span className="text-xs text-gray-400">{docs.length} ไฟล์</span>
+                  <span className="font-semibold text-[#4a4456] text-sm flex-1">{subjectName}</span>
+                  <span className="text-xs text-[#9a92a8]">{docs.length} ไฟล์</span>
                   <button
                     onClick={() => openShareModal(subjectName)}
                     className={`text-xs px-3 py-1 rounded-lg font-medium border transition-all ${
                       count > 0
                         ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200'
+                        : 'bg-[#f7f5fa] text-[#6b6478] border-[#e6e1ee] hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200'
                     }`}>
                     👥 แชร์{count > 0 ? ` (${count})` : ''}
                   </button>
                 </div>
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-[#f0ecf6]">
                   {docs.map(f => (
-                    <div key={f.url} className="px-4 py-3 flex items-center gap-4 hover:bg-gray-50">
+                    <div key={f.url} className="px-4 py-3 flex items-center gap-4 hover:bg-[#f7f5fa]">
                       <span className="text-xl">{fileIcon(f.name)}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-800 truncate text-sm">{f.name}</div>
-                        <div className="text-xs text-gray-400">
+                        <div className="font-medium text-[#2D0F42] truncate text-sm">{f.name}</div>
+                        <div className="text-xs text-[#9a92a8]">
                           {formatSize(f.size)} • {new Date(f.modified * 1000).toLocaleDateString('th-TH')}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <a href={'https://signalstandard.rta.mi.th' + f.url} target="_blank" rel="noopener noreferrer"
-                          className="text-xs px-3 py-1.5 rounded-lg font-medium bg-gray-50 text-gray-600 hover:bg-gray-100">
+                          className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[#f7f5fa] text-[#6b6478] hover:bg-[#f0ecf6]">
                           เปิด
                         </a>
                         <button onClick={() => copyUrl(f)}
@@ -542,7 +542,7 @@ export default function DocumentsPage() {
           {/* Shared with me */}
           {sharedFiles.length > 0 && (
             <div className="mt-6">
-              <h2 className="text-base font-semibold text-gray-700 mb-3">📄 เอกสารที่แชร์ให้ฉัน</h2>
+              <h2 className="text-base font-semibold text-[#4a4456] mb-3">📄 เอกสารที่แชร์ให้ฉัน</h2>
               {Object.entries(sharedGrouped).map(([key, docs]) => {
                 const [uploader, courseSlug] = key.split('::');
                 return (
@@ -553,19 +553,19 @@ export default function DocumentsPage() {
                       <span className="text-xs text-green-600">/ {courseSlug}</span>
                       <span className="text-xs text-green-600 ml-auto">{docs.length} ไฟล์</span>
                     </div>
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-[#f0ecf6]">
                       {docs.map(f => (
                         <div key={f.url} className="px-4 py-3 flex items-center gap-4 hover:bg-green-50">
                           <span className="text-xl">{fileIcon(f.name)}</span>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-800 truncate text-sm">{f.name}</div>
-                            <div className="text-xs text-gray-400">
+                            <div className="font-medium text-[#2D0F42] truncate text-sm">{f.name}</div>
+                            <div className="text-xs text-[#9a92a8]">
                               {formatSize(f.size)} • {new Date(f.modified * 1000).toLocaleDateString('th-TH')}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <a href={'https://signalstandard.rta.mi.th' + f.url} target="_blank" rel="noopener noreferrer"
-                              className="text-xs px-3 py-1.5 rounded-lg font-medium bg-gray-50 text-gray-600 hover:bg-gray-100">
+                              className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[#f7f5fa] text-[#6b6478] hover:bg-[#f0ecf6]">
                               เปิด
                             </a>
                             <button onClick={() => copyUrl(f)}
@@ -593,47 +593,47 @@ export default function DocumentsPage() {
       {shareFolder && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-gray-800">แชร์ folder เอกสาร</h3>
-                <p className="text-xs text-gray-500 mt-0.5">📁 {shareFolder} — ครูที่เลือกจะเห็นทุกไฟล์ใน folder นี้</p>
+                <h3 className="font-semibold text-[#2D0F42]">แชร์ folder เอกสาร</h3>
+                <p className="text-xs text-[#6b6478] mt-0.5">📁 {shareFolder} — ครูที่เลือกจะเห็นทุกไฟล์ใน folder นี้</p>
               </div>
               <button onClick={() => setShareFolder(null)}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+                className="text-[#9a92a8] hover:text-[#6b6478] text-xl leading-none">✕</button>
             </div>
-            <div className="px-5 py-3 border-b border-gray-100">
+            <div className="px-5 py-3 border-b border-[#f0ecf6]">
               <input type="text" placeholder="ค้นหาชื่อหรือ username..."
                 value={shareSearch} onChange={e => setShareSearch(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none" />
             </div>
-            <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 px-2 py-2">
+            <div className="max-h-72 overflow-y-auto divide-y divide-[#f0ecf6] px-2 py-2">
               {shareLoading ? (
-                <div className="text-center text-gray-400 py-6 text-sm">กำลังโหลด...</div>
+                <div className="text-center text-[#9a92a8] py-6 text-sm">กำลังโหลด...</div>
               ) : filteredShareInstructors.length === 0 ? (
-                <div className="text-center text-gray-400 py-6 text-sm">ไม่พบครูผู้สอนคนอื่น</div>
+                <div className="text-center text-[#9a92a8] py-6 text-sm">ไม่พบครูผู้สอนคนอื่น</div>
               ) : filteredShareInstructors.map(i => (
-                <div key={i.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50">
+                <div key={i.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#f7f5fa]">
                   <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-semibold text-sm shrink-0">
                     {(i.full_name || i.username)[0]?.toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-800 truncate">{i.full_name || i.username}</div>
-                    <div className="text-xs text-gray-400">@{i.username}</div>
+                    <div className="text-sm font-medium text-[#2D0F42] truncate">{i.full_name || i.username}</div>
+                    <div className="text-xs text-[#9a92a8]">@{i.username}</div>
                   </div>
                   <button onClick={() => toggleShare(shareFolder, i)}
                     className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
                       i.already_shared
                         ? 'bg-green-100 text-green-700 hover:bg-red-50 hover:text-red-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-purple-50 hover:text-purple-700'
+                        : 'bg-[#f0ecf6] text-[#6b6478] hover:bg-purple-50 hover:text-purple-700'
                     }`}>
                     {i.already_shared ? '✓ แชร์แล้ว' : '+ แชร์'}
                   </button>
                 </div>
               ))}
             </div>
-            <div className="px-5 py-3 border-t border-gray-100">
+            <div className="px-5 py-3 border-t border-[#f0ecf6]">
               <button onClick={() => setShareFolder(null)}
-                className="w-full py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">ปิด</button>
+                className="w-full py-2 text-sm text-[#6b6478] hover:text-[#2D0F42] font-medium">ปิด</button>
             </div>
           </div>
         </div>

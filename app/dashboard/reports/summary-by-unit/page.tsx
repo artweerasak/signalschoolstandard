@@ -107,7 +107,7 @@ export default function SummaryByUnitPage() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h2 className="text-2xl font-bold text-[#2D0F42]">ภาพรวมมาตรฐานกำลังพล แยกตามหน่วย</h2>
-            <p className="text-sm text-gray-500 mt-1">สรุปจำนวนผู้เข้ารับการทดสอบ ผ่าน/ไม่ผ่าน ของแต่ละหน่วย (สำหรับพิมพ์ภาพรวม)</p>
+            <p className="text-sm text-[#6b6478] mt-1">สรุปจำนวนผู้เข้ารับการทดสอบ ผ่าน/ไม่ผ่าน ของแต่ละหน่วย (สำหรับพิมพ์ภาพรวม)</p>
           </div>
           <div className="flex gap-3 items-center">
             <button
@@ -119,7 +119,7 @@ export default function SummaryByUnitPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-wrap gap-3 items-center">
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-[#f0ecf6] flex flex-wrap gap-3 items-center">
           <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
             {ARMY_REGION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -139,19 +139,19 @@ export default function SummaryByUnitPage() {
 
         {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 text-sm font-medium text-gray-700">
+        <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#f0ecf6] text-sm font-medium text-[#4a4456]">
             {loading ? "กำลังโหลด..." : `${rows.length} หน่วย · กำลังพลรวม ${sum.total.toLocaleString()} นาย · ผ่าน ${sum.passed.toLocaleString()} · ไม่ผ่าน ${sum.not_passed.toLocaleString()} (${sumPct.toFixed(1)}%)`}
           </div>
           {loading ? (
-            <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+            <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
           ) : rows.length === 0 ? (
-            <div className="py-16 text-center text-gray-400">ไม่มีข้อมูลตามเงื่อนไขที่เลือก</div>
+            <div className="py-16 text-center text-[#9a92a8]">ไม่มีข้อมูลตามเงื่อนไขที่เลือก</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-xs text-[#6b6478] uppercase">
                     <th className="px-4 py-3 text-center w-14">ลำดับ</th>
                     <th className="px-4 py-3 text-left">หน่วย</th>
                     <th className="px-4 py-3 text-center">กำลังพล (นาย)</th>
@@ -163,17 +163,17 @@ export default function SummaryByUnitPage() {
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <tr key={r.key || i} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-2.5 text-center text-gray-400">{i + 1}</td>
+                    <tr key={r.key || i} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
+                      <td className="px-4 py-2.5 text-center text-[#9a92a8]">{i + 1}</td>
                       <td className="px-4 py-2.5 font-medium text-[#2D0F42]">{r.label || "ไม่ระบุหน่วย"}</td>
-                      <td className="px-4 py-2.5 text-center text-gray-700">{r.total.toLocaleString()}</td>
+                      <td className="px-4 py-2.5 text-center text-[#4a4456]">{r.total.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-center text-emerald-600 font-medium">{r.passed.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-center text-red-600 font-medium">{r.not_passed.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-center text-amber-600">{(r.pending_approval ?? 0).toLocaleString()}</td>
                       <td className={`px-4 py-2.5 text-center font-bold ${pctColor(r.percent_passed ?? 0)}`}>{(r.percent_passed ?? 0).toFixed(1)}%</td>
                     </tr>
                   ))}
-                  <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold text-[#2D0F42]">
+                  <tr className="border-t-2 border-gray-300 bg-[#f7f5fa] font-bold text-[#2D0F42]">
                     <td className="px-4 py-3 text-center" colSpan={2}>รวมทั้งสิ้น</td>
                     <td className="px-4 py-3 text-center">{sum.total.toLocaleString()}</td>
                     <td className="px-4 py-3 text-center text-emerald-700">{sum.passed.toLocaleString()}</td>
@@ -186,7 +186,7 @@ export default function SummaryByUnitPage() {
             </div>
           )}
         </div>
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-[#9a92a8]">
           หมายเหตุ: &quot;ไม่ผ่าน&quot; นับรวมผู้ที่ยังไม่ได้สอบ และผู้ที่สอบผ่านคะแนนแล้วแต่ยังรออนุมัติใบประกาศ (คอลัมน์ &quot;รออนุมัติ&quot; เป็นส่วนย่อยของไม่ผ่าน)
         </p>
       </div>

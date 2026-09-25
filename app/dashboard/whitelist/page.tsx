@@ -71,23 +71,23 @@ export default function WhitelistPage() {
     <div className="space-y-6 max-w-5xl">
       <div>
         <h2 className="text-2xl font-bold text-[#2D0F42]">รายชื่อผู้มีสิทธิ์สมัคร (Whitelist)</h2>
-        <p className="text-gray-500 text-sm mt-1">เลขบัตรประชาชนที่หน่วยอนุญาตให้สมัครสมาชิกได้ (เก็บแบบเข้ารหัส HMAC ไม่เก็บเลขดิบ)</p>
+        <p className="text-[#6b6478] text-sm mt-1">เลขบัตรประชาชนที่หน่วยอนุญาตให้สมัครสมาชิกได้ (เก็บแบบเข้ารหัส HMAC ไม่เก็บเลขดิบ)</p>
       </div>
 
       {/* Enforcement toggle */}
       <div className={`rounded-xl border p-5 flex items-center justify-between gap-4 ${enabled ? "bg-green-50 border-green-200" : "bg-yellow-50 border-yellow-200"}`}>
         <div>
-          <p className="font-semibold text-gray-800">
+          <p className="font-semibold text-[#2D0F42]">
             {enabled ? "🔒 บังคับ whitelist: เปิดอยู่" : "🔓 บังคับ whitelist: ปิดอยู่"}
           </p>
-          <p className="text-sm text-gray-600 mt-0.5">
+          <p className="text-sm text-[#6b6478] mt-0.5">
             {enabled
               ? `เฉพาะ ${activeCount.toLocaleString()} เลขบัตรในรายชื่อเท่านั้นที่สมัครได้`
               : "ตอนนี้ใครก็สมัครได้ (ยังต้องรอ admin อนุมัติ) — เปิดสวิตช์เมื่อโหลดรายชื่อครบแล้ว"}
           </p>
         </div>
         <button onClick={toggle} disabled={toggling}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 ${enabled ? "bg-gray-500 hover:bg-gray-600" : "bg-green-600 hover:bg-green-700"}`}>
+          className={`px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 ${enabled ? "bg-[#f7f5fa]0 hover:bg-gray-600" : "bg-green-600 hover:bg-green-700"}`}>
           {enabled ? "ปิดการบังคับ" : "เปิดการบังคับ"}
         </button>
       </div>
@@ -99,8 +99,8 @@ export default function WhitelistPage() {
       )}
 
       {/* Add box */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
-        <p className="font-semibold text-gray-800">เพิ่มเลขบัตรเข้ารายชื่อ</p>
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm p-5 space-y-3">
+        <p className="font-semibold text-[#2D0F42]">เพิ่มเลขบัตรเข้ารายชื่อ</p>
         <textarea value={addText} onChange={(e) => setAddText(e.target.value)} rows={5}
           placeholder="วางเลขบัตรประชาชน 13 หลัก (คั่นด้วยขึ้นบรรทัด, comma, เว้นวรรค ก็ได้)"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-[#7B3FA0] outline-none" />
@@ -128,15 +128,15 @@ export default function WhitelistPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา ชื่อ/หมายเหตุ/เลขที่ปิดบัง"
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-72 max-w-full" />
-        <span className="text-sm text-gray-500">ทั้งหมด {total.toLocaleString()} · เปิดใช้ {activeCount.toLocaleString()}</span>
+        <span className="text-sm text-[#6b6478]">ทั้งหมด {total.toLocaleString()} · เปิดใช้ {activeCount.toLocaleString()}</span>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="p-12 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">ยังไม่มีรายชื่อ</div>
+          <div className="p-12 text-center text-[#9a92a8]">ยังไม่มีรายชื่อ</div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
@@ -148,26 +148,26 @@ export default function WhitelistPage() {
                 <th className="px-4 py-3 text-left font-semibold">จัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[#f0ecf6]">
               {items.map((it) => (
-                <tr key={it.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-gray-800">{it.national_id_masked || "—"}
-                    {it.label && <span className="ml-2 text-gray-500">{it.label}</span>}</td>
-                  <td className="px-4 py-3 text-gray-600">{it.note || "—"}</td>
+                <tr key={it.id} className="hover:bg-[#f7f5fa]">
+                  <td className="px-4 py-3 font-mono text-[#2D0F42]">{it.national_id_masked || "—"}
+                    {it.label && <span className="ml-2 text-[#6b6478]">{it.label}</span>}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{it.note || "—"}</td>
                   <td className="px-4 py-3">
                     {it.used
                       ? <span className="inline-block px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">สมัครแล้ว</span>
                       : it.is_active
                         ? <span className="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs">เปิดใช้</span>
-                        : <span className="inline-block px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 text-xs">ปิด</span>}
+                        : <span className="inline-block px-2 py-0.5 rounded-full bg-gray-200 text-[#6b6478] text-xs">ปิด</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">
+                  <td className="px-4 py-3 text-[#6b6478] text-xs">
                     {new Date(it.created_at).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" })}
-                    {it.added_by && <span className="block text-gray-400">โดย {it.added_by}</span>}
+                    {it.added_by && <span className="block text-[#9a92a8]">โดย {it.added_by}</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => toggleActive(it)} className="text-xs px-2 py-1 rounded border border-gray-200 hover:bg-gray-50">
+                      <button onClick={() => toggleActive(it)} className="text-xs px-2 py-1 rounded border border-[#e6e1ee] hover:bg-[#f7f5fa]">
                         {it.is_active ? "ปิด" : "เปิด"}
                       </button>
                       <button onClick={() => removeItem(it.id)} className="text-xs px-2 py-1 rounded bg-red-100 text-red-600 hover:bg-red-200">ลบ</button>
@@ -183,12 +183,12 @@ export default function WhitelistPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-2 py-1 flex-wrap gap-2">
-          <span className="text-xs text-gray-500">หน้า {page} / {totalPages}</span>
+          <span className="text-xs text-[#6b6478]">หน้า {page} / {totalPages}</span>
           <div className="flex gap-1">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-              className="px-3 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">ก่อนหน้า</button>
+              className="px-3 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">ก่อนหน้า</button>
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-              className="px-3 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">ถัดไป</button>
+              className="px-3 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">ถัดไป</button>
           </div>
         </div>
       )}

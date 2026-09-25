@@ -40,12 +40,12 @@ function ProgressRow({ item }: { item: ComplianceByGroup }) {
   const textColor = pct >= 80 ? "text-emerald-600" : pct >= 60 ? "text-amber-600" : "text-red-600"
   return (
     <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-      <span className="text-sm text-gray-700 w-36 truncate shrink-0" title={item.label}>{item.label}</span>
+      <span className="text-sm text-[#4a4456] w-36 truncate shrink-0" title={item.label}>{item.label}</span>
       <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(pct,100)}%` }} />
       </div>
       <span className={`text-sm font-bold w-14 text-right ${textColor}`}>{pct.toFixed(1)}%</span>
-      <span className="text-xs text-gray-400 w-20 text-right">{item.passed}/{item.total}</span>
+      <span className="text-xs text-[#9a92a8] w-20 text-right">{item.passed}/{item.total}</span>
     </div>
   )
 }
@@ -95,7 +95,7 @@ export default function ReportsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#2D0F42]">รายงานมาตรฐานกำลังพล</h2>
-          <p className="text-sm text-gray-500 mt-1">สถานะการผ่านมาตรฐานหลักสูตรที่กำหนด</p>
+          <p className="text-sm text-[#6b6478] mt-1">สถานะการผ่านมาตรฐานหลักสูตรที่กำหนด</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <a href="/dashboard/reports/pdx-export"
@@ -137,7 +137,7 @@ export default function ReportsPage() {
       {loadingOverview ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => (
-            <div key={i} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 animate-pulse h-24" />
+            <div key={i} className="bg-white rounded-xl p-5 shadow-sm border border-[#f0ecf6] animate-pulse h-24" />
           ))}
         </div>
       ) : overview && (
@@ -148,25 +148,25 @@ export default function ReportsPage() {
             { label: "ยังไม่ผ่าน",     value: overview.not_passed.toLocaleString(), color: "text-red-600",     bg: "bg-red-50",     icon: "❌" },
             { label: "อัตราผ่าน",      value: `${passRate.toFixed(1)}%`,            color: passColor,          bg: "bg-white",      icon: "📊" },
           ].map((c) => (
-            <div key={c.label} className={`${c.bg} rounded-xl p-5 shadow-sm border border-gray-100`}>
+            <div key={c.label} className={`${c.bg} rounded-xl p-5 shadow-sm border border-[#f0ecf6]`}>
               <span className="text-2xl">{c.icon}</span>
               <p className={`text-3xl font-bold mt-1 ${c.color}`}>{c.value}</p>
-              <p className="text-xs text-gray-500 mt-1">{c.label}</p>
+              <p className="text-xs text-[#6b6478] mt-1">{c.label}</p>
             </div>
           ))}
         </div>
       )}
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="flex border-b border-gray-200 px-4 overflow-x-auto">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6]">
+        <div className="flex border-b border-[#e6e1ee] px-4 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
               className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-                tab === t.key ? "border-[#4A1A6B] text-[#4A1A6B]" : "border-transparent text-gray-500 hover:text-gray-700"
+                tab === t.key ? "border-[#4A1A6B] text-[#4A1A6B]" : "border-transparent text-[#6b6478] hover:text-[#4a4456]"
               }`}>
               {t.icon} {t.label}
             </button>
@@ -180,17 +180,17 @@ export default function ReportsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Donut */}
                 <div>
-                  <p className="text-sm font-semibold text-gray-700 mb-4">สัดส่วนผ่าน / ไม่ผ่าน</p>
+                  <p className="text-sm font-semibold text-[#4a4456] mb-4">สัดส่วนผ่าน / ไม่ผ่าน</p>
                   <div style={{ height: 260, position: "relative" }}>
                     <ChartBox type="donut" passed={overview.passed} notPassed={overview.not_passed} data={[]} />
                   </div>
                 </div>
                 {/* Progress bar */}
                 <div className="flex flex-col justify-center gap-4">
-                  <p className="text-sm font-semibold text-gray-700">ภาพรวมอัตราผ่านมาตรฐาน</p>
+                  <p className="text-sm font-semibold text-[#4a4456]">ภาพรวมอัตราผ่านมาตรฐาน</p>
                   <div>
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-500">อัตราผ่าน</span>
+                      <span className="text-[#6b6478]">อัตราผ่าน</span>
                       <span className={`font-bold text-lg ${passColor}`}>{passRate.toFixed(1)}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
@@ -210,14 +210,14 @@ export default function ReportsPage() {
                 </div>
               </div>
             ) : (
-              <div className="py-12 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>
+              <div className="py-12 text-center text-[#9a92a8] text-sm">กำลังโหลดข้อมูล...</div>
             )
           )}
 
           {/* ─── แท็บกลุ่ม ─── */}
           {tab !== "overview" && (
             loadingGroup ? (
-              <div className="py-12 text-center text-gray-400">
+              <div className="py-12 text-center text-[#9a92a8]">
                 <div className="inline-block w-8 h-8 border-4 border-[#4A1A6B] border-t-transparent rounded-full animate-spin mb-3" />
                 <p className="text-sm">กำลังโหลด...</p>
               </div>
@@ -227,7 +227,7 @@ export default function ReportsPage() {
                 <button onClick={() => setTab(tab)} className="text-xs text-[#4A1A6B] underline">ลองใหม่</button>
               </div>
             ) : groupData.length === 0 ? (
-              <p className="py-12 text-center text-sm text-gray-400">ไม่มีข้อมูล</p>
+              <p className="py-12 text-center text-sm text-[#9a92a8]">ไม่มีข้อมูล</p>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div style={{ height: 320, position: "relative" }}>

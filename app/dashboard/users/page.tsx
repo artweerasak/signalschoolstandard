@@ -173,13 +173,13 @@ function UnitDropdown({ value, orgId, onSelect }: {
         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600 font-medium">✓ ยืนยัน</span>
       )}
       {open && filtered.length > 0 && (
-        <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-56 overflow-auto text-sm">
+        <ul className="absolute z-50 w-full bg-white border border-[#e6e1ee] rounded-lg shadow-lg mt-1 max-h-56 overflow-auto text-sm">
           {filtered.map((o, i) => (
             <li key={o.id}
               onMouseDown={() => selectOrg(o)}
               className={`px-3 py-2.5 cursor-pointer hover:bg-purple-50 ${i === focused ? "bg-purple-100" : ""}`}>
               <span className="font-medium">{o.name}</span>
-              <span className="text-xs text-gray-400 ml-2">[{o.code}]</span>
+              <span className="text-xs text-[#9a92a8] ml-2">[{o.code}]</span>
               {o.army_region_display && o.army_region_display !== "ไม่ระบุ" && (
                 <span className="text-xs text-[#4A1A6B] ml-2">· {o.army_region_display}</span>
               )}
@@ -190,7 +190,7 @@ function UnitDropdown({ value, orgId, onSelect }: {
       {orgId && (() => {
         const matched = orgs.find(o => o.id === orgId)
         return matched ? (
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-[#9a92a8] mt-1">
             ทัพภาค: {matched.army_region_display && matched.army_region_display !== "ไม่ระบุ"
               ? <span className="text-[#4A1A6B] font-medium">{matched.army_region_display}</span>
               : "ยังไม่ได้ตั้งค่าที่หน่วยนี้ — แก้ที่หน้า จัดการหน่วยงาน"}
@@ -346,7 +346,7 @@ export default function UsersPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-[#4A1A6B]">จัดการผู้ใช้</h2>
-          <p className="text-sm text-gray-500 mt-0.5">ผู้ใช้ทั้งหมด {total} คน</p>
+          <p className="text-sm text-[#6b6478] mt-0.5">ผู้ใช้ทั้งหมด {total} คน</p>
         </div>
         <button
           onClick={openCreate}
@@ -404,9 +404,9 @@ export default function UsersPage() {
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="p-12 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : users.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">ไม่พบข้อมูล</div>
+          <div className="p-12 text-center text-[#9a92a8]">ไม่พบข้อมูล</div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
@@ -420,25 +420,25 @@ export default function UsersPage() {
                 <th className="px-4 py-3 text-left font-semibold">การดำเนินการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[#f0ecf6]">
               {users.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
+                <tr key={u.id} className="hover:bg-[#f7f5fa]">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{u.full_name}</p>
-                    <p className="text-gray-500 text-xs">{u.email}</p>
+                    <p className="font-medium text-[#2D0F42]">{u.full_name}</p>
+                    <p className="text-[#6b6478] text-xs">{u.email}</p>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">
+                  <td className="px-4 py-3 text-[#4a4456]">
                     <p>{u.rank_display}</p>
-                    {u.position && <p className="text-xs text-gray-400">{u.position}</p>}
+                    {u.position && <p className="text-xs text-[#9a92a8]">{u.position}</p>}
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{u.unit}</td>
-                  <td className="px-4 py-3 text-gray-700">
+                  <td className="px-4 py-3 text-[#4a4456]">{u.unit}</td>
+                  <td className="px-4 py-3 text-[#4a4456]">
                     {u.army_region_display === "ไม่ระบุ"
                       ? <span className="text-amber-600 text-xs font-medium">ไม่ระบุ</span>
                       : <span className="text-xs">{u.army_region_display}</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[u.role] ?? "bg-gray-100 text-gray-600"}`}>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[u.role] ?? "bg-[#f0ecf6] text-[#6b6478]"}`}>
                       {ROLE_LABELS[u.role] ?? u.role}
                     </span>
                   </td>
@@ -486,7 +486,7 @@ export default function UsersPage() {
                       )}
                       <button
                         onClick={() => setConfirmDelete(u)}
-                        className="text-gray-400 hover:text-red-700 hover:underline text-xs font-medium"
+                        className="text-[#9a92a8] hover:text-red-700 hover:underline text-xs font-medium"
                       >
                         ลบ
                       </button>
@@ -502,16 +502,16 @@ export default function UsersPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[#6b6478]">
             แสดง {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} รายการ
           </span>
           <div className="flex gap-1 items-center">
-            <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
-            <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+            <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">«</button>
+            <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">‹</button>
             <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{page}</span>
-            <span className="text-xs text-gray-400">/ {totalPages}</span>
-            <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
-            <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+            <span className="text-xs text-[#9a92a8]">/ {totalPages}</span>
+            <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">›</button>
+            <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">»</button>
           </div>
         </div>
       )}
@@ -520,11 +520,11 @@ export default function UsersPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-5 border-b border-[#e6e1ee] flex items-center justify-between">
               <h3 className="text-lg font-bold text-[#4A1A6B]">
                 {editUser ? "แก้ไขข้อมูลผู้ใช้" : "เพิ่มผู้ใช้ใหม่"}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              <button onClick={() => setShowModal(false)} className="text-[#9a92a8] hover:text-[#6b6478] text-xl">✕</button>
             </div>
             <div className="px-6 py-5 space-y-4">
               {error && (
@@ -540,7 +540,7 @@ export default function UsersPage() {
                       className={`flex-1 py-1.5 px-1 rounded-lg text-xs font-medium border-2 transition-all ${
                         form.personnel_type === val
                           ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
-                          : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400"
+                          : "border-[#e6e1ee] bg-[#f7f5fa] text-[#6b6478] hover:border-gray-400"
                       }`}>{label}</button>
                   ))}
                 </div>
@@ -569,7 +569,7 @@ export default function UsersPage() {
                           className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
                             form.gender === val
                               ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
-                              : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400"
+                              : "border-[#e6e1ee] bg-[#f7f5fa] text-[#6b6478] hover:border-gray-400"
                           }`}>{label}</button>
                       ))}
                     </div>
@@ -584,7 +584,7 @@ export default function UsersPage() {
                         className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
                           form.civilian_prefix === val
                             ? "border-[#4A1A6B] bg-[#F3E8FF] text-[#4A1A6B]"
-                            : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-400"
+                            : "border-[#e6e1ee] bg-[#f7f5fa] text-[#6b6478] hover:border-gray-400"
                         }`}>{label}</button>
                     ))}
                   </div>
@@ -659,7 +659,7 @@ export default function UsersPage() {
                         placeholder="(สุ่มอัตโนมัติ)"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                       <button type="button" onClick={() => setShowPassword(p => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9a92a8] hover:text-[#6b6478]">
                         <EyeIcon open={showPassword} />
                       </button>
                     </div>
@@ -671,7 +671,7 @@ export default function UsersPage() {
                         placeholder="พิมพ์ password อีกครั้ง"
                         className={("w-full border rounded-lg px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] ") + (passwordConfirmErr ? "border-red-400" : "border-gray-300")} />
                       <button type="button" onClick={() => setShowPassword(p => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9a92a8] hover:text-[#6b6478]">
                         <EyeIcon open={showPassword} />
                       </button>
                     </div>
@@ -687,19 +687,19 @@ export default function UsersPage() {
                   <input type="text" value={form.national_id} onChange={e => setForm(f => ({...f, national_id: e.target.value.replace(/\D/g,"").slice(0,13)}))}
                     maxLength={13} placeholder="13 หลัก"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                  {editUser && <p className="text-xs text-gray-400 mt-1">แก้เลขนี้จะเปลี่ยน username สำหรับ login ด้วย (ถ้า username ใหม่ยังไม่มีคนใช้)</p>}
+                  {editUser && <p className="text-xs text-[#9a92a8] mt-1">แก้เลขนี้จะเปลี่ยน username สำหรับ login ด้วย (ถ้า username ใหม่ยังไม่มีคนใช้)</p>}
                 </Field>
                 <Field label={form.personnel_type === "military" ? "เลขทหาร" : "เลขประจำตัว (ถ้ามี)"}>
                   <input type="text" value={form.military_id} onChange={e => setForm(f => ({...f, military_id: e.target.value.replace(/\D/g,"").slice(0,10)}))}
                     maxLength={10} placeholder={form.personnel_type === "military" ? "10 หลัก" : "ไม่บังคับ"}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                  {editUser && <p className="text-xs text-gray-400 mt-1">เลขนี้คือรหัสผ่าน login เริ่มต้น (ถ้ายังไม่เคยเปลี่ยนรหัสผ่านเอง)</p>}
+                  {editUser && <p className="text-xs text-[#9a92a8] mt-1">เลขนี้คือรหัสผ่าน login เริ่มต้น (ถ้ายังไม่เคยเปลี่ยนรหัสผ่านเอง)</p>}
                 </Field>
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex justify-end gap-3">
               <button onClick={() => setShowModal(false)}
-                className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50">
+                className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-[#6b6478] hover:bg-[#f7f5fa]">
                 ยกเลิก
               </button>
               <button onClick={handleSave} disabled={saving}
@@ -716,14 +716,14 @@ export default function UsersPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
             <div className="text-4xl mb-3">⚠️</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">ยืนยันการปิดใช้งาน</h3>
-            <p className="text-gray-600 text-sm mb-6">
+            <h3 className="text-lg font-bold text-[#2D0F42] mb-2">ยืนยันการปิดใช้งาน</h3>
+            <p className="text-[#6b6478] text-sm mb-6">
               ต้องการปิดใช้งานบัญชี <strong>{confirmDeactivate.full_name}</strong> ?
               <br />ผู้ใช้จะไม่สามารถเข้าสู่ระบบได้จนกว่าจะเปิดใช้งานอีกครั้ง
             </p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setConfirmDeactivate(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]">
                 ยกเลิก
               </button>
               <button onClick={() => handleDeactivate(confirmDeactivate)}
@@ -740,13 +740,13 @@ export default function UsersPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
             <div className="text-4xl mb-3">✅</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">ยืนยันการเปิดใช้งาน</h3>
-            <p className="text-gray-600 text-sm mb-6">
+            <h3 className="text-lg font-bold text-[#2D0F42] mb-2">ยืนยันการเปิดใช้งาน</h3>
+            <p className="text-[#6b6478] text-sm mb-6">
               ต้องการเปิดใช้งานบัญชี <strong>{confirmActivate.full_name}</strong> อีกครั้ง?
             </p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setConfirmActivate(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]">
                 ยกเลิก
               </button>
               <button onClick={() => handleActivate(confirmActivate)}
@@ -763,14 +763,14 @@ export default function UsersPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
             <div className="text-4xl mb-3">🗑️</div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">ยืนยันการลบผู้ใช้</h3>
-            <p className="text-gray-600 text-sm mb-2">
+            <h3 className="text-lg font-bold text-[#2D0F42] mb-2">ยืนยันการลบผู้ใช้</h3>
+            <p className="text-[#6b6478] text-sm mb-2">
               ต้องการลบบัญชี <strong>{confirmDelete.full_name}</strong> ออกจากระบบถาวร?
             </p>
             <p className="text-red-600 text-xs font-medium mb-6">⚠️ การลบนี้ไม่สามารถย้อนกลับได้ ข้อมูลทั้งหมดจะหายไป</p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => setConfirmDelete(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]">
                 ยกเลิก
               </button>
               <button onClick={() => handleHardDelete(confirmDelete)}
@@ -788,7 +788,7 @@ export default function UsersPage() {
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
+      <label className="block text-sm font-medium text-[#4a4456] mb-1">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}

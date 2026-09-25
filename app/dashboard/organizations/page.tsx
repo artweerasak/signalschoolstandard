@@ -102,17 +102,17 @@ export default function OrganizationsPage() {
         <h2 className="font-semibold mb-3">เพิ่มหน่วยงานใหม่</h2>
         <form onSubmit={handleCreate} className="flex gap-3 items-end">
           <div className="flex-1">
-            <label className="text-xs text-gray-500 mb-1 block">รหัสหน่วย</label>
+            <label className="text-xs text-[#6b6478] mb-1 block">รหัสหน่วย</label>
             <input value={form.code} onChange={e => setForm(p => ({...p, code: e.target.value}))}
               placeholder="เช่น มทบ.99" className={inputCls} required />
           </div>
           <div className="flex-[2]">
-            <label className="text-xs text-gray-500 mb-1 block">ชื่อหน่วยงาน</label>
+            <label className="text-xs text-[#6b6478] mb-1 block">ชื่อหน่วยงาน</label>
             <input value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))}
               placeholder="ชื่อเต็มของหน่วยงาน" className={inputCls} required />
           </div>
           <div className="flex-1">
-            <label className="text-xs text-gray-500 mb-1 block">ทัพภาค</label>
+            <label className="text-xs text-[#6b6478] mb-1 block">ทัพภาค</label>
             <select value={form.army_region} onChange={e => setForm(p => ({...p, army_region: e.target.value}))}
               className={inputCls}>
               {ARMY_REGION_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -132,12 +132,12 @@ export default function OrganizationsPage() {
             <option value="">ทุกทัพภาค</option>
             {ARMY_REGION_OPTIONS.filter(r => r.value).map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
-          <span className="text-sm text-gray-500 whitespace-nowrap">{filteredOrgs.length} หน่วย</span>
+          <span className="text-sm text-[#6b6478] whitespace-nowrap">{filteredOrgs.length} หน่วย</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+            <thead className="bg-[#f7f5fa] text-[#6b6478] text-xs uppercase">
               <tr>
                 <th className="px-4 py-3 text-left">รหัส</th>
                 <th className="px-4 py-3 text-left">ชื่อหน่วยงาน</th>
@@ -149,21 +149,21 @@ export default function OrganizationsPage() {
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={6} className="py-8 text-center text-gray-400">กำลังโหลด...</td></tr>
+                <tr><td colSpan={6} className="py-8 text-center text-[#9a92a8]">กำลังโหลด...</td></tr>
               ) : filteredOrgs.map(org => (
-                <tr key={org.id} className={`hover:bg-gray-50 ${!org.is_active ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600">{org.code}</td>
+                <tr key={org.id} className={`hover:bg-[#f7f5fa] ${!org.is_active ? "opacity-50" : ""}`}>
+                  <td className="px-4 py-3 font-mono text-xs text-[#6b6478]">{org.code}</td>
                   <td className="px-4 py-3 font-medium">{org.name}</td>
                   <td className="px-4 py-3">
                     {org.army_region ? (
                       <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-[#4A1A6B]">{org.army_region_display}</span>
                     ) : (
-                      <span className="text-xs text-gray-400">ไม่ระบุ</span>
+                      <span className="text-xs text-[#9a92a8]">ไม่ระบุ</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">{org.member_count ?? 0}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${org.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${org.is_active ? "bg-green-100 text-green-700" : "bg-[#f0ecf6] text-[#6b6478]"}`}>
                       {org.is_active ? "Active" : "Inactive"}
                     </span>
                   </td>
@@ -197,22 +197,22 @@ export default function OrganizationsPage() {
             <h3 className="font-bold mb-4">แก้ไขหน่วยงาน</h3>
             <form onSubmit={handleUpdate} className="space-y-3">
               <div>
-                <label className="text-xs text-gray-500">รหัสหน่วย</label>
+                <label className="text-xs text-[#6b6478]">รหัสหน่วย</label>
                 <input value={editOrg.code} onChange={e => setEditOrg(p => p && ({...p, code: e.target.value}))}
                   className={inputCls} required />
               </div>
               <div>
-                <label className="text-xs text-gray-500">ชื่อหน่วยงาน</label>
+                <label className="text-xs text-[#6b6478]">ชื่อหน่วยงาน</label>
                 <input value={editOrg.name} onChange={e => setEditOrg(p => p && ({...p, name: e.target.value}))}
                   className={inputCls} required />
               </div>
               <div>
-                <label className="text-xs text-gray-500">ทัพภาค</label>
+                <label className="text-xs text-[#6b6478]">ทัพภาค</label>
                 <select value={editOrg.army_region} onChange={e => setEditOrg(p => p && ({...p, army_region: e.target.value}))}
                   className={inputCls}>
                   {ARMY_REGION_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
-                <p className="text-xs text-gray-400 mt-1">กำลังพลทุกคนที่สังกัดหน่วยนี้จะได้ทัพภาคนี้โดยอัตโนมัติ</p>
+                <p className="text-xs text-[#9a92a8] mt-1">กำลังพลทุกคนที่สังกัดหน่วยนี้จะได้ทัพภาคนี้โดยอัตโนมัติ</p>
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="is_active" checked={editOrg.is_active}
@@ -222,7 +222,7 @@ export default function OrganizationsPage() {
               <div className="flex gap-2 pt-2">
                 <button type="submit" className={`${btnPrimary} flex-1`}>บันทึก</button>
                 <button type="button" onClick={() => setEditOrg(null)}
-                  className="flex-1 border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50">ยกเลิก</button>
+                  className="flex-1 border border-gray-300 rounded-lg py-2 text-sm hover:bg-[#f7f5fa]">ยกเลิก</button>
               </div>
             </form>
           </div>
@@ -234,10 +234,10 @@ export default function OrganizationsPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <h3 className="font-bold mb-1">โอนย้ายกำลังพลทั้งหมด</h3>
-            <p className="text-sm text-gray-500 mb-4">จาก: <strong>{transferFrom.name}</strong></p>
+            <p className="text-sm text-[#6b6478] mb-4">จาก: <strong>{transferFrom.name}</strong></p>
             <form onSubmit={handleBulkTransfer} className="space-y-3">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">หน่วยงานปลายทาง</label>
+                <label className="text-xs text-[#6b6478] mb-1 block">หน่วยงานปลายทาง</label>
                 <select value={targetOrgId} onChange={e => setTargetOrgId(Number(e.target.value))}
                   className={inputCls} required>
                   <option value="">-- เลือกหน่วยงาน --</option>
@@ -251,7 +251,7 @@ export default function OrganizationsPage() {
                   โอนย้ายทั้งหมด
                 </button>
                 <button type="button" onClick={() => { setTransferFrom(null); setTargetOrgId("") }}
-                  className="flex-1 border border-gray-300 rounded-lg py-2 text-sm hover:bg-gray-50">ยกเลิก</button>
+                  className="flex-1 border border-gray-300 rounded-lg py-2 text-sm hover:bg-[#f7f5fa]">ยกเลิก</button>
               </div>
             </form>
           </div>

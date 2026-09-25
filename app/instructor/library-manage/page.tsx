@@ -140,7 +140,7 @@ export default function LibraryManagePage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">📚 จัดการคลังข้อสอบ</h1>
-          <p className="text-gray-500 text-sm mt-1">ดู แก้ไข และลบข้อสอบในคลังข้อสอบของคุณ</p>
+          <p className="text-[#6b6478] text-sm mt-1">ดู แก้ไข และลบข้อสอบในคลังข้อสอบของคุณ</p>
         </div>
         <Link
           href="/instructor/import-questions"
@@ -152,7 +152,7 @@ export default function LibraryManagePage() {
 
       {/* Library selector */}
       {loadingLibs ? (
-        <div className="text-gray-400 text-sm">กำลังโหลด Library...</div>
+        <div className="text-[#9a92a8] text-sm">กำลังโหลด Library...</div>
       ) : libraries.length === 0 ? (
         <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4">
           คุณยังไม่มีคลังข้อสอบ{" "}
@@ -162,7 +162,7 @@ export default function LibraryManagePage() {
         </div>
       ) : (
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">เลือกคลังข้อสอบ</label>
+          <label className="block text-sm font-medium text-[#4a4456] mb-1">เลือกคลังข้อสอบ</label>
           <select
             value={selectedLib}
             onChange={(e) => { setSelectedLib(e.target.value); setSearch(""); }}
@@ -196,7 +196,7 @@ export default function LibraryManagePage() {
           {/* Table toolbar */}
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b">
             <div className="flex items-center gap-2 flex-1">
-              <span className="text-sm font-medium text-gray-700">
+              <span className="text-sm font-medium text-[#4a4456]">
                 {loadingBlocks
                   ? "กำลังโหลด..."
                   : `${blocks.length} ข้อ${checked.size > 0 ? ` • เลือก ${checked.size} ข้อ` : ""}`}
@@ -240,7 +240,7 @@ export default function LibraryManagePage() {
                 </button>
                 <button
                   onClick={() => setConfirmDelete(false)}
-                  className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                  className="px-4 py-2 border rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]"
                 >
                   ยกเลิก
                 </button>
@@ -250,19 +250,19 @@ export default function LibraryManagePage() {
 
           {/* Table */}
           {loadingBlocks ? (
-            <div className="p-8 text-center text-gray-400">
+            <div className="p-8 text-center text-[#9a92a8]">
               <div className="animate-spin text-3xl mb-2">⏳</div>
               กำลังโหลดข้อสอบ...
             </div>
           ) : filteredBlocks.length === 0 ? (
-            <div className="p-8 text-center text-gray-400">
+            <div className="p-8 text-center text-[#9a92a8]">
               {blocks.length === 0 ? "ไม่มีข้อสอบในคลังนี้" : "ไม่พบข้อสอบที่ค้นหา"}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  <tr className="bg-[#f7f5fa] text-left text-xs font-medium text-[#6b6478] uppercase tracking-wide">
                     <th className="px-4 py-3 w-10">
                       <input
                         type="checkbox"
@@ -278,11 +278,11 @@ export default function LibraryManagePage() {
                     <th className="px-4 py-3 w-32 text-right">รหัส</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#f0ecf6]">
                   {filteredBlocks.map((block, index) => (
                     <tr
                       key={block.usage_key}
-                      className={`hover:bg-gray-50 cursor-pointer transition ${
+                      className={`hover:bg-[#f7f5fa] cursor-pointer transition ${
                         checked.has(block.usage_key) ? "bg-red-50" : ""
                       }`}
                       onClick={() => toggleOne(block.usage_key)}
@@ -296,10 +296,10 @@ export default function LibraryManagePage() {
                           className="rounded"
                         />
                       </td>
-                      <td className="px-4 py-3 text-gray-400 font-mono">{index + 1}</td>
+                      <td className="px-4 py-3 text-[#9a92a8] font-mono">{index + 1}</td>
                       <td className="px-4 py-3">
                         <span
-                          className="font-medium text-gray-800 line-clamp-2"
+                          className="font-medium text-[#2D0F42] line-clamp-2"
                           title={block.display_name}
                         >
                           {block.display_name}
@@ -310,7 +310,7 @@ export default function LibraryManagePage() {
                           {block.block_type}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-400 font-mono text-xs">
+                      <td className="px-4 py-3 text-right text-[#9a92a8] font-mono text-xs">
                         {block.local_key}
                       </td>
                     </tr>
@@ -322,7 +322,7 @@ export default function LibraryManagePage() {
 
           {/* Footer */}
           {!loadingBlocks && filteredBlocks.length > 0 && (
-            <div className="px-4 py-2 border-t text-xs text-gray-400 flex items-center justify-between">
+            <div className="px-4 py-2 border-t text-xs text-[#9a92a8] flex items-center justify-between">
               <span>แสดง {filteredBlocks.length} จาก {blocks.length} ข้อ</span>
               {checked.size > 0 && (
                 <button

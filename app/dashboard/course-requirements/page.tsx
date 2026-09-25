@@ -118,10 +118,10 @@ function CourseCombobox({
           onFocus={handleFocus}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm pr-8
                      focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]
-                     disabled:bg-gray-50 disabled:text-gray-400"
+                     disabled:bg-[#f7f5fa] disabled:text-[#9a92a8]"
         />
         {searching && (
-          <span className="absolute right-2.5 top-2.5 text-gray-400 text-xs animate-pulse">
+          <span className="absolute right-2.5 top-2.5 text-[#9a92a8] text-xs animate-pulse">
             ⟳
           </span>
         )}
@@ -137,25 +137,25 @@ function CourseCombobox({
 
       {/* Dropdown */}
       {open && options.length > 0 && (
-        <ul className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg
+        <ul className="absolute z-50 mt-1 w-full bg-white border border-[#e6e1ee] rounded-lg shadow-lg
                        max-h-56 overflow-y-auto text-sm">
           {options.map((opt) => (
             <li
               key={opt.id}
               onMouseDown={(e) => { e.preventDefault(); handleSelect(opt) }}
               className={`px-3 py-2.5 cursor-pointer hover:bg-purple-50 ${
-                opt.id === courseId ? "bg-purple-50 text-[#4A1A6B] font-medium" : "text-gray-700"
+                opt.id === courseId ? "bg-purple-50 text-[#4A1A6B] font-medium" : "text-[#4a4456]"
               }`}
             >
               <span className="block font-medium">{opt.name}</span>
-              <span className="block text-xs text-gray-400 font-mono truncate">{opt.id}</span>
+              <span className="block text-xs text-[#9a92a8] font-mono truncate">{opt.id}</span>
             </li>
           ))}
         </ul>
       )}
 
       {open && !searching && query.trim() && options.length === 0 && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow px-3 py-3 text-sm text-gray-400 text-center">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-[#e6e1ee] rounded-lg shadow px-3 py-3 text-sm text-[#9a92a8] text-center">
           ไม่พบหลักสูตรที่ตรงกัน
         </div>
       )}
@@ -245,7 +245,7 @@ export default function CourseRequirementsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-[#2D0F42]">กำหนดหลักสูตรตามระดับชั้น</h2>
-          <p className="text-sm text-gray-500 mt-1">กำหนดว่าระดับชั้นใดต้องผ่านหลักสูตรอะไรบ้าง</p>
+          <p className="text-sm text-[#6b6478] mt-1">กำหนดว่าระดับชั้นใดต้องผ่านหลักสูตรอะไรบ้าง</p>
         </div>
         <button
           onClick={openAdd}
@@ -260,25 +260,25 @@ export default function CourseRequirementsPage() {
       )}
 
       {loading ? (
-        <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+        <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
       ) : requirements.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 py-16 text-center text-gray-400">
+        <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] py-16 text-center text-[#9a92a8]">
           <p className="text-lg mb-2">ยังไม่มีการกำหนดหลักสูตร</p>
           <p className="text-sm">คลิก &ldquo;+ เพิ่มหลักสูตร&rdquo; เพื่อเริ่มกำหนดมาตรฐาน</p>
         </div>
       ) : (
         <div className="space-y-4">
           {grouped.map((group) => (
-            <div key={group.value} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div key={group.value} className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
               <div className="px-5 py-3 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
                 <span className="bg-[#4A1A6B] text-white text-xs font-semibold px-2.5 py-1 rounded-full">
                   {group.label}
                 </span>
-                <span className="text-xs text-gray-400">{group.items.length} หลักสูตร</span>
+                <span className="text-xs text-[#9a92a8]">{group.items.length} หลักสูตร</span>
               </div>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs text-gray-400 uppercase">
+                  <tr className="border-b border-[#f0ecf6] text-left text-xs text-[#9a92a8] uppercase">
                     <th className="px-5 py-2.5">ชื่อหลักสูตร</th>
                     <th className="px-5 py-2.5 hidden md:table-cell">Course ID</th>
                     <th className="px-5 py-2.5">สถานะ</th>
@@ -287,9 +287,9 @@ export default function CourseRequirementsPage() {
                 </thead>
                 <tbody>
                   {group.items.map((item) => (
-                    <tr key={item.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                      <td className="px-5 py-3 text-gray-800 font-medium">{item.course_name}</td>
-                      <td className="px-5 py-3 font-mono text-xs text-gray-400 hidden md:table-cell max-w-xs truncate">
+                    <tr key={item.id} className="border-b border-gray-50 last:border-0 hover:bg-[#f7f5fa]">
+                      <td className="px-5 py-3 text-[#2D0F42] font-medium">{item.course_name}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-[#9a92a8] hidden md:table-cell max-w-xs truncate">
                         {item.course_id}
                       </td>
                       <td className="px-5 py-3">
@@ -298,7 +298,7 @@ export default function CourseRequirementsPage() {
                           className={`text-xs font-medium px-3 py-1 rounded-full transition-colors ${
                             item.is_active
                               ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                              : "bg-[#f0ecf6] text-[#6b6478] hover:bg-gray-200"
                           }`}
                         >
                           {item.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"}
@@ -334,11 +334,11 @@ export default function CourseRequirementsPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
               <h3 className="font-bold text-[#2D0F42]">
                 {editItem ? "แก้ไขหลักสูตร" : "เพิ่มหลักสูตรใหม่"}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              <button onClick={() => setShowModal(false)} className="text-[#9a92a8] hover:text-[#6b6478] text-xl leading-none">✕</button>
             </div>
 
             <div className="px-6 py-5 space-y-4">
@@ -350,7 +350,7 @@ export default function CourseRequirementsPage() {
 
               {/* ระดับชั้น */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ระดับชั้น</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ระดับชั้น</label>
                 <select
                   value={form.rank_class}
                   onChange={(e) => setForm({ ...form, rank_class: e.target.value })}
@@ -365,10 +365,10 @@ export default function CourseRequirementsPage() {
 
               {/* Course Search */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">
                   ค้นหาหลักสูตร
                   {!form.course_id && (
-                    <span className="ml-1 text-xs text-gray-400 font-normal">(พิมพ์เพื่อค้นหา หรือคลิกเพื่อดูทั้งหมด)</span>
+                    <span className="ml-1 text-xs text-[#9a92a8] font-normal">(พิมพ์เพื่อค้นหา หรือคลิกเพื่อดูทั้งหมด)</span>
                   )}
                 </label>
                 <CourseCombobox
@@ -387,14 +387,14 @@ export default function CourseRequirementsPage() {
                   onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
                   className="w-4 h-4 accent-[#4A1A6B]"
                 />
-                <label htmlFor="is_active" className="text-sm text-gray-700">เปิดใช้งาน</label>
+                <label htmlFor="is_active" className="text-sm text-[#4a4456]">เปิดใช้งาน</label>
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                className="px-4 py-2 text-sm text-[#6b6478] hover:text-[#2D0F42]"
               >
                 ยกเลิก
               </button>

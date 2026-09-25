@@ -52,25 +52,25 @@ export default function MyEvaluationsPage() {
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#4A1A6B]">แบบประเมินที่ต้องทำ</h1>
-        <p className="text-sm text-gray-500 mt-1">ต้องทำแบบประเมินที่บังคับให้ครบก่อน จึงจะเห็นคะแนน/ดาวน์โหลดใบประกาศของหลักสูตรนั้นได้</p>
+        <p className="text-sm text-[#6b6478] mt-1">ต้องทำแบบประเมินที่บังคับให้ครบก่อน จึงจะเห็นคะแนน/ดาวน์โหลดใบประกาศของหลักสูตรนั้นได้</p>
       </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : pending.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">🎉 ไม่มีแบบประเมินค้างอยู่</div>
+          <div className="py-16 text-center text-[#9a92a8]">🎉 ไม่มีแบบประเมินค้างอยู่</div>
         ) : (
           <div className="divide-y">
             {pending.map(item => (
               <div key={item.form_id} className="p-4 flex items-center justify-between">
                 <div>
                   <p className="font-medium">{item.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-[#6b6478] mt-0.5">
                     {item.curriculum_name}{item.curriculum_course_name && ` — ${item.curriculum_course_name}`}
                   </p>
                 </div>
@@ -87,7 +87,7 @@ export default function MyEvaluationsPage() {
       {activeForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-[#e6e1ee]">
               <h3 className="font-bold text-[#2D0F42]">{activeForm.title}</h3>
             </div>
             <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
@@ -96,17 +96,17 @@ export default function MyEvaluationsPage() {
               )}
               {(activeForm.schema.questions || []).map(q => (
                 <div key={q.key}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{q.label}</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">{q.label}</label>
                   <textarea value={answers[q.key] || ""} onChange={e => setAnswers({ ...answers, [q.key]: e.target.value })}
                     rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
               ))}
               {(!activeForm.schema.questions || activeForm.schema.questions.length === 0) && (
-                <p className="text-sm text-gray-400">แบบประเมินนี้ไม่มีคำถาม กดยืนยันเพื่อบันทึกว่าได้ประเมินแล้ว</p>
+                <p className="text-sm text-[#9a92a8]">แบบประเมินนี้ไม่มีคำถาม กดยืนยันเพื่อบันทึกว่าได้ประเมินแล้ว</p>
               )}
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
-              <button onClick={() => setActiveForm(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">ยกเลิก</button>
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
+              <button onClick={() => setActiveForm(null)} className="px-4 py-2 text-sm text-[#6b6478] hover:text-[#2D0F42]">ยกเลิก</button>
               <button onClick={handleSubmit} disabled={submitting}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-6 py-2 rounded-lg disabled:opacity-50">
                 {submitting ? "กำลังส่ง..." : "ส่งแบบประเมิน"}

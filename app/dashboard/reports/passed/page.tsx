@@ -94,7 +94,7 @@ export default function PassedPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-[#2D0F42]">กำลังพลที่ผ่านมาตรฐาน</h2>
-            <p className="text-sm text-gray-500 mt-1">ผ่านมาตรฐานหลักสูตรที่กำหนดครบแล้ว (มีใบประกาศ) — สำหรับจัดทำบัญชีรายชื่อ</p>
+            <p className="text-sm text-[#6b6478] mt-1">ผ่านมาตรฐานหลักสูตรที่กำหนดครบแล้ว (มีใบประกาศ) — สำหรับจัดทำบัญชีรายชื่อ</p>
           </div>
           <div className="flex gap-3 items-center">
             <select value={printUnit} onChange={(e) => setPrintUnit(e.target.value)}
@@ -112,7 +112,7 @@ export default function PassedPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-wrap gap-3">
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-[#f0ecf6] flex flex-wrap gap-3">
           <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
             {ARMY_REGION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -129,19 +129,19 @@ export default function PassedPage() {
 
         {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 text-sm font-medium text-gray-700">
+        <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#f0ecf6] text-sm font-medium text-[#4a4456]">
             {loading ? "กำลังโหลด..." : `พบ ${data.length.toLocaleString()} ราย · ${units.length} หน่วย · หน้า ${page}/${totalPages}`}
           </div>
           {loading ? (
-            <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+            <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
           ) : data.length === 0 ? (
-            <div className="py-16 text-center text-gray-400">ไม่มีข้อมูลตามเงื่อนไขที่เลือก</div>
+            <div className="py-16 text-center text-[#9a92a8]">ไม่มีข้อมูลตามเงื่อนไขที่เลือก</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                  <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                     <th className="px-4 py-3">ชื่อ-สกุล</th>
                     <th className="px-4 py-3">ยศ</th>
                     <th className="px-4 py-3">ระดับชั้น</th>
@@ -153,12 +153,12 @@ export default function PassedPage() {
                 </thead>
                 <tbody>
                   {pageRows.map((p) => (
-                    <tr key={p.user_id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <tr key={p.user_id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
                       <td className="px-4 py-3 font-medium text-[#2D0F42]">{p.full_name}</td>
-                      <td className="px-4 py-3 text-gray-700">{p.rank_display || p.rank}</td>
-                      <td className="px-4 py-3 text-gray-600">{p.rank_class_display}</td>
-                      <td className="px-4 py-3 text-gray-600">{p.unit}{p.sub_unit ? ` / ${p.sub_unit}` : ""}</td>
-                      <td className="px-4 py-3 text-gray-600">{p.army_region_display || "-"}</td>
+                      <td className="px-4 py-3 text-[#4a4456]">{p.rank_display || p.rank}</td>
+                      <td className="px-4 py-3 text-[#6b6478]">{p.rank_class_display}</td>
+                      <td className="px-4 py-3 text-[#6b6478]">{p.unit}{p.sub_unit ? ` / ${p.sub_unit}` : ""}</td>
+                      <td className="px-4 py-3 text-[#6b6478]">{p.army_region_display || "-"}</td>
                       <td className="px-4 py-3">
                         {p.passed_courses.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
@@ -166,9 +166,9 @@ export default function PassedPage() {
                               <span key={c} className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
                             ))}
                           </div>
-                        ) : <span className="text-gray-400 text-xs">-</span>}
+                        ) : <span className="text-[#9a92a8] text-xs">-</span>}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
+                      <td className="px-4 py-3 text-xs text-[#6b6478]">
                         {p.contact_email && <div>{p.contact_email}</div>}
                         {p.phone_number && <div>{p.phone_number}</div>}
                       </td>
@@ -179,12 +179,12 @@ export default function PassedPage() {
             </div>
           )}
           {!loading && data.length > PER_PAGE && (
-            <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-center gap-3 px-6 py-4 border-t border-[#f0ecf6]">
               <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
-                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50">◀ ก่อนหน้า</button>
-              <span className="text-sm text-gray-600">หน้า {page} / {totalPages}</span>
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-[#f7f5fa]">◀ ก่อนหน้า</button>
+              <span className="text-sm text-[#6b6478]">หน้า {page} / {totalPages}</span>
               <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50">ถัดไป ▶</button>
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-[#f7f5fa]">ถัดไป ▶</button>
             </div>
           )}
         </div>

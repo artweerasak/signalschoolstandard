@@ -170,7 +170,7 @@ export default function ImportQuestionsPage() {
   return (
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-2">📥 นำเข้าข้อสอบจากเอกสาร</h1>
-      <p className="text-gray-500 mb-6">
+      <p className="text-[#6b6478] mb-6">
         อัปโหลดไฟล์ .docx / .doc / .txt แล้วระบบจะ parse ข้อสอบอัตโนมัติ และนำเข้าสู่คลังข้อสอบ
       </p>
 
@@ -180,10 +180,10 @@ export default function ImportQuestionsPage() {
           <div key={s} className="flex items-center gap-2">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold
               ${step === s ? "bg-blue-600 text-white" :
-                (["upload","preview","done"].indexOf(step) > i ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500")}`}>
+                (["upload","preview","done"].indexOf(step) > i ? "bg-green-500 text-white" : "bg-gray-200 text-[#6b6478]")}`}>
               {["upload","preview","done"].indexOf(step) > i ? "✓" : i + 1}
             </div>
-            <span className={step === s ? "font-semibold text-blue-600" : "text-gray-400"}>
+            <span className={step === s ? "font-semibold text-blue-600" : "text-[#9a92a8]"}>
               {["อัปโหลด", "ตรวจสอบ", "เสร็จสิ้น"][i]}
             </span>
             {i < 2 && <div className="w-8 h-px bg-gray-300" />}
@@ -202,11 +202,11 @@ export default function ImportQuestionsPage() {
         <div className="space-y-4">
           {/* Library selector + delete */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#4a4456] mb-1">
               เลือกคลังข้อสอบ (Library) ปลายทาง
             </label>
             {!librariesLoaded ? (
-              <p className="text-sm text-gray-400">กำลังโหลด...</p>
+              <p className="text-sm text-[#9a92a8]">กำลังโหลด...</p>
             ) : libraries.length === 0 ? (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
                 <p className="font-semibold text-yellow-800 mb-1">⚠️ ยังไม่มีคลังข้อสอบ</p>
@@ -269,7 +269,7 @@ export default function ImportQuestionsPage() {
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(null)}
-                  className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                  className="px-4 py-2 border rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]"
                 >
                   ยกเลิก
                 </button>
@@ -284,19 +284,19 @@ export default function ImportQuestionsPage() {
             onDragLeave={() => setDragging(false)}
             onClick={() => fileRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition
-              ${dragging ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"}`}
+              ${dragging ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-[#f7f5fa]"}`}
           >
             <div className="text-4xl mb-3">📄</div>
             {file ? (
               <div>
                 <p className="font-semibold text-green-600">{file.name}</p>
-                <p className="text-sm text-gray-400">{(file.size / 1024).toFixed(0)} KB</p>
+                <p className="text-sm text-[#9a92a8]">{(file.size / 1024).toFixed(0)} KB</p>
               </div>
             ) : (
               <div>
-                <p className="font-medium text-gray-600">ลาก-วาง ไฟล์ที่นี่</p>
-                <p className="text-sm text-gray-400 mt-1">.docx · .doc · .txt</p>
-                <p className="text-sm text-gray-400">หรือคลิกเพื่อเลือกไฟล์</p>
+                <p className="font-medium text-[#6b6478]">ลาก-วาง ไฟล์ที่นี่</p>
+                <p className="text-sm text-[#9a92a8] mt-1">.docx · .doc · .txt</p>
+                <p className="text-sm text-[#9a92a8]">หรือคลิกเพื่อเลือกไฟล์</p>
               </div>
             )}
           </div>
@@ -349,9 +349,9 @@ export default function ImportQuestionsPage() {
               <div className="text-2xl font-bold text-green-700">{parseResult.total}</div>
               <div className="text-sm text-green-600">ข้อสอบที่พบ</div>
             </div>
-            <div className={`border rounded-lg px-4 py-3 flex-1 text-center ${parseResult.errors.length > 0 ? "bg-yellow-50 border-yellow-200" : "bg-gray-50 border-gray-200"}`}>
-              <div className={`text-2xl font-bold ${parseResult.errors.length > 0 ? "text-yellow-700" : "text-gray-400"}`}>{parseResult.errors.length}</div>
-              <div className={`text-sm ${parseResult.errors.length > 0 ? "text-yellow-600" : "text-gray-400"}`}>ข้อที่มีปัญหา</div>
+            <div className={`border rounded-lg px-4 py-3 flex-1 text-center ${parseResult.errors.length > 0 ? "bg-yellow-50 border-yellow-200" : "bg-[#f7f5fa] border-[#e6e1ee]"}`}>
+              <div className={`text-2xl font-bold ${parseResult.errors.length > 0 ? "text-yellow-700" : "text-[#9a92a8]"}`}>{parseResult.errors.length}</div>
+              <div className={`text-sm ${parseResult.errors.length > 0 ? "text-yellow-600" : "text-[#9a92a8]"}`}>ข้อที่มีปัญหา</div>
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex-1 text-center">
               <div className="text-sm font-medium text-blue-700 break-all">{selectedLibTitle}</div>
@@ -369,7 +369,7 @@ export default function ImportQuestionsPage() {
           )}
 
           <div>
-            <p className="text-sm font-medium text-gray-600 mb-2">
+            <p className="text-sm font-medium text-[#6b6478] mb-2">
               ตัวอย่างข้อสอบ (แสดง {parseResult.questions.length} ข้อแรก
               {parseResult.total > 20 ? ` จาก ${parseResult.total} ข้อ` : ""})
             </p>
@@ -380,7 +380,7 @@ export default function ImportQuestionsPage() {
                   <div className="grid grid-cols-2 gap-1">
                     {q.choices.map((c) => (
                       <div key={c.letter} className={`text-xs px-2 py-1 rounded flex items-center gap-1
-                        ${c.letter === q.answer ? "bg-green-100 text-green-700 font-semibold" : "bg-gray-50 text-gray-600"}`}>
+                        ${c.letter === q.answer ? "bg-green-100 text-green-700 font-semibold" : "bg-[#f7f5fa] text-[#6b6478]"}`}>
                         <span>{LETTER_MAP[c.letter] || c.letter}.</span>
                         <span>{c.text}</span>
                         {c.letter === q.answer && <span className="ml-auto">✓</span>}
@@ -393,7 +393,7 @@ export default function ImportQuestionsPage() {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep("upload")} className="flex-1 py-3 border rounded-lg text-gray-600 hover:bg-gray-50">
+            <button onClick={() => setStep("upload")} className="flex-1 py-3 border rounded-lg text-[#6b6478] hover:bg-[#f7f5fa]">
               ← กลับแก้ไขไฟล์
             </button>
             <button
@@ -424,7 +424,7 @@ export default function ImportQuestionsPage() {
               </div>
             )}
           </div>
-          <p className="text-gray-500 text-sm">
+          <p className="text-[#6b6478] text-sm">
             นำเข้าเข้า Library: <strong>{selectedLibTitle}</strong>
           </p>
           {importResult.import_errors?.length > 0 && (
@@ -443,7 +443,7 @@ export default function ImportQuestionsPage() {
               href="https://studio-signalstandard.rta.mi.th"
               target="_blank"
               rel="noreferrer"
-              className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50"
+              className="px-6 py-2 border rounded-lg text-[#6b6478] hover:bg-[#f7f5fa]"
             >
               ไปที่ Studio →
             </a>

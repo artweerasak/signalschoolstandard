@@ -7,11 +7,15 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { api, SubmittedCurriculumItem } from "@/lib/api"
+import Card from "@/components/ui/Card"
+import PageHeader from "@/components/ui/PageHeader"
+import Button from "@/components/ui/Button"
+import StatusPill from "@/components/ui/StatusPill"
 
 const STATUS_LABELS: Record<string, string> = { submitted: "รอเปิดใช้งาน", active: "ใช้งาน" }
-const STATUS_COLORS: Record<string, string> = {
-  submitted: "bg-yellow-100 text-yellow-700",
-  active: "bg-emerald-100 text-emerald-700",
+const STATUS_TONES: Record<string, "warning" | "success"> = {
+  submitted: "warning",
+  active: "success",
 }
 
 export default function PrepPersonnelPage() {
@@ -45,24 +49,24 @@ export default function PrepPersonnelPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#4A1A6B]">หลักสูตรรอดำเนินการ</h1>
-        <p className="text-sm text-gray-500 mt-1">เปิดใช้งานหลักสูตรที่แผนกเตรียมการส่งมา แล้วบรรจุกำลังพลเข้าเรียน</p>
-      </div>
+      <PageHeader
+        title="หลักสูตรรอดำเนินการ"
+        description="เปิดใช้งานหลักสูตรที่แผนกเตรียมการส่งมา แล้วบรรจุกำลังพลเข้าเรียน"
+      />
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+        <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-4 py-3 rounded-xl text-sm">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <Card className="overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : curricula.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">ยังไม่มีหลักสูตรที่ส่งมา</div>
+          <div className="py-16 text-center text-[#9a92a8]">ยังไม่มีหลักสูตรที่ส่งมา</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+              <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                 <th className="px-4 py-3">ชื่อหลักสูตร</th>
                 <th className="px-4 py-3">หน่วยที่ส่ง</th>
                 <th className="px-4 py-3">รุ่น/ปี</th>
@@ -74,30 +78,29 @@ export default function PrepPersonnelPage() {
             </thead>
             <tbody>
               {curricula.map(c => (
-                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={c.id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
                   <td className="px-4 py-3 font-medium">{c.name}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">{c.organization_name || "-"}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.batch_code} / {c.academic_year}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.course_count}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.quota_total}</td>
+                  <td className="px-4 py-3 text-[#6b6478] text-xs">{c.organization_name || "-"}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.batch_code} / {c.academic_year}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.course_count}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.quota_total}</td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs font-medium px-3 py-1 rounded-full ${STATUS_COLORS[c.status]}`}>
+                    <StatusPill tone={STATUS_TONES[c.status] || "neutral"}>
                       {STATUS_LABELS[c.status] || c.status}
-                    </span>
+                    </StatusPill>
                   </td>
                   <td className="px-4 py-3">
                     {c.status === "submitted" ? (
-                      <button onClick={() => handleActivate(c.id)} disabled={activatingId === c.id}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg disabled:opacity-50">
+                      <Button size="sm" onClick={() => handleActivate(c.id)} disabled={activatingId === c.id}>
                         {activatingId === c.id ? "กำลังเปิด..." : "เปิดใช้งาน"}
-                      </button>
+                      </Button>
                     ) : (
                       <div className="flex gap-2">
                         <Link href={`/prep-personnel/quota-report/${c.id}`}
                           className="text-[#4A1A6B] hover:underline text-xs font-medium">
                           โควตา
                         </Link>
-                        <span className="text-gray-300">|</span>
+                        <span className="text-[#d9d2e6]">|</span>
                         <Link href={`/prep-personnel/enroll/${c.id}`}
                           className="text-[#4A1A6B] hover:underline text-xs font-medium">
                           บรรจุกำลังพล
@@ -110,7 +113,7 @@ export default function PrepPersonnelPage() {
             </tbody>
           </table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

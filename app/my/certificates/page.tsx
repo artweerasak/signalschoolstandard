@@ -14,7 +14,7 @@ const statusStyles: Record<string, string> = {
   active:  "bg-green-100 text-green-700",
   expired: "bg-red-100 text-red-700",
   renewed: "bg-blue-100 text-blue-700",
-  revoked: "bg-gray-100 text-gray-600",
+  revoked: "bg-[#f0ecf6] text-[#6b6478]",
 }
 
 function DaysLeftBadge({ days }: { days: number | null }) {
@@ -22,7 +22,7 @@ function DaysLeftBadge({ days }: { days: number | null }) {
   if (days < 0)   return <span className="text-red-500 text-xs">หมดอายุไปแล้ว {Math.abs(days)} วัน</span>
   if (days <= 7)  return <span className="text-red-600 font-bold text-xs">⚠️ เหลืออีก {days} วัน!</span>
   if (days <= 30) return <span className="text-yellow-600 text-xs">⚠️ เหลืออีก {days} วัน</span>
-  return <span className="text-gray-400 text-xs">เหลืออีก {days} วัน</span>
+  return <span className="text-[#9a92a8] text-xs">เหลืออีก {days} วัน</span>
 }
 
 interface BatchStatus {
@@ -71,8 +71,8 @@ function PendingBatchCard({ item }: { item: BatchStatus }) {
       msg: `ผ่านการประเมินแล้ว — รอเจ้าหน้าที่ดึงข้อมูลเข้าระบบ (อนุมัติ ${item.approve_date})`,
     },
     rejected: {
-      icon: "❌", bg: "bg-gray-50", border: "border-gray-200",
-      badge: "bg-gray-100 text-gray-600", badgeText: "ไม่ผ่าน",
+      icon: "❌", bg: "bg-[#f7f5fa]", border: "border-[#e6e1ee]",
+      badge: "bg-[#f0ecf6] text-[#6b6478]", badgeText: "ไม่ผ่าน",
       msg: "ไม่ผ่านเกณฑ์การอนุมัติ",
     },
   }
@@ -85,23 +85,23 @@ function PendingBatchCard({ item }: { item: BatchStatus }) {
         <div className="flex items-start gap-3 flex-1 min-w-0">
           <span className="text-2xl">{cfg.icon}</span>
           <div className="min-w-0">
-            <h3 className="font-semibold text-gray-800 truncate">{item.course_name || item.course_id}</h3>
-            <p className="text-xs text-gray-500 mt-0.5">{item.batch_name}</p>
-            <p className="text-sm text-gray-600 mt-2">{cfg.msg}</p>
+            <h3 className="font-semibold text-[#2D0F42] truncate">{item.course_name || item.course_id}</h3>
+            <p className="text-xs text-[#6b6478] mt-0.5">{item.batch_name}</p>
+            <p className="text-sm text-[#6b6478] mt-2">{cfg.msg}</p>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2 flex-shrink-0">
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${cfg.badge}`}>{cfg.badgeText}</span>
           {item.score != null && (
-            <span className="text-xs text-gray-500">คะแนน {item.score}%</span>
+            <span className="text-xs text-[#6b6478]">คะแนน {item.score}%</span>
           )}
         </div>
       </div>
 
       {/* Progress info */}
-      <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
+      <div className="mt-3 flex flex-wrap gap-4 text-xs text-[#6b6478]">
         {item.my_status === "not_passed" && daysToEnd >= 0 && (
-          <span className={`font-medium ${daysToEnd <= 7 ? "text-red-600" : daysToEnd <= 14 ? "text-yellow-600" : "text-gray-500"}`}>
+          <span className={`font-medium ${daysToEnd <= 7 ? "text-red-600" : daysToEnd <= 14 ? "text-yellow-600" : "text-[#6b6478]"}`}>
             {daysToEnd <= 7 ? "⚠️ " : ""}เหลือ {daysToEnd} วันก่อนปิดรอบ
           </span>
         )}
@@ -141,13 +141,13 @@ export default function MyCertificatesPage() {
     <div className="space-y-6 max-w-3xl">
       <div>
         <h2 className="text-2xl font-bold text-[#2D0F42]">ใบประกาศของฉัน</h2>
-        <p className="text-gray-500 text-sm mt-1">ติดตามสถานะใบประกาศและรอบการอนุมัติ</p>
+        <p className="text-[#6b6478] text-sm mt-1">ติดตามสถานะใบประกาศและรอบการอนุมัติ</p>
       </div>
 
       {loading ? (
         <div className="space-y-3">
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="bg-white rounded-xl p-5 border border-gray-100 animate-pulse h-24" />
+            <div key={i} className="bg-white rounded-xl p-5 border border-[#f0ecf6] animate-pulse h-24" />
           ))}
         </div>
       ) : (
@@ -155,7 +155,7 @@ export default function MyCertificatesPage() {
           {/* ── รอบการอนุมัติ ── */}
           {hasBatchItems && (
             <div className="space-y-3">
-              <h3 className="font-semibold text-gray-600 text-sm uppercase tracking-wider">สถานะรอบการอนุมัติ</h3>
+              <h3 className="font-semibold text-[#6b6478] text-sm uppercase tracking-wider">สถานะรอบการอนุมัติ</h3>
               {batchStatuses.map(item => (
                 <PendingBatchCard key={`${item.batch_id}-${item.course_id}`} item={item} />
               ))}
@@ -165,28 +165,28 @@ export default function MyCertificatesPage() {
           {/* ── ใบประกาศที่ได้รับแล้ว ── */}
           {certs.length > 0 && (
             <div className="space-y-3">
-              <h3 className="font-semibold text-gray-600 text-sm uppercase tracking-wider">ใบประกาศที่ได้รับแล้ว</h3>
+              <h3 className="font-semibold text-[#6b6478] text-sm uppercase tracking-wider">ใบประกาศที่ได้รับแล้ว</h3>
               {certs.map(cert => (
-                <div key={cert.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                <div key={cert.id} className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-800">{cert.course_name}</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">{cert.course_id}</p>
+                      <h3 className="font-semibold text-[#2D0F42]">{cert.course_name}</h3>
+                      <p className="text-xs text-[#9a92a8] mt-0.5">{cert.course_id}</p>
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${statusStyles[cert.status] ?? "bg-gray-100 text-gray-600"}`}>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${statusStyles[cert.status] ?? "bg-[#f0ecf6] text-[#6b6478]"}`}>
                       {cert.status_display}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
                     <div>
-                      <p className="text-xs text-gray-400">วันที่ได้รับ</p>
-                      <p className="text-gray-700">
+                      <p className="text-xs text-[#9a92a8]">วันที่ได้รับ</p>
+                      <p className="text-[#4a4456]">
                         {cert.issued_date ? new Date(cert.issued_date).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" }) : "—"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-400">วันหมดอายุ</p>
-                      <p className="text-gray-700">
+                      <p className="text-xs text-[#9a92a8]">วันหมดอายุ</p>
+                      <p className="text-[#4a4456]">
                         {cert.expiry_date ? new Date(cert.expiry_date).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" }) : "ไม่มีวันหมดอายุ"}
                       </p>
                     </div>
@@ -213,9 +213,9 @@ export default function MyCertificatesPage() {
 
           {/* Empty state */}
           {!hasBatchItems && certs.length === 0 && (
-            <div className="bg-white rounded-xl p-10 text-center border border-gray-100">
+            <div className="bg-white rounded-xl p-10 text-center border border-[#f0ecf6]">
               <p className="text-4xl mb-3">📜</p>
-              <p className="text-gray-500">ยังไม่มีใบประกาศหรือรอบที่เกี่ยวข้อง</p>
+              <p className="text-[#6b6478]">ยังไม่มีใบประกาศหรือรอบที่เกี่ยวข้อง</p>
             </div>
           )}
         </>
