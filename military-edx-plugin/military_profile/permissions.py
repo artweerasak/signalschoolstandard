@@ -57,6 +57,26 @@ def user_has_role(user, roles) -> bool:
     return bool(profile and profile.role in roles)
 
 
+def get_org_scope(request) -> tuple[bool, int | None]:
+    """คืน (is_unscoped_admin, org_id) สำหรับ endpoint ที่ต้องแยกสิทธิ์ระหว่าง
+    admin เต็ม (เห็นทุกหน่วย) กับ org_admin (ถูกบังคับเห็นแค่หน่วยตัวเอง)
+
+    - admin/is_staff: (True, None) ปกติ — หรือ (True, <n>) ถ้าส่ง ?org_id= มา
+      เพื่อกรองดูหน่วยเดียว (ยังเลือกได้อิสระ ไม่ใช่ scope บังคับ)
+    - org_admin: (False, <organization_id ของตัวเอง>) เสมอ ไม่สนใจ ?org_id=
+      ที่ส่งมา (ป้องกัน org_admin ปลอมพารามิเตอร์ดูหน่วยอื่น)
+    - org_admin ที่ยังไม่ผูกหน่วย (organization_id เป็น None): คืน (False, None)
+      — caller ต้อง handle เป็น 400 "ยังไม่ได้ผูกหน่วยงาน" เอง (ดูตัวอย่างใน
+      api_org_admin_dashboard/api_org_admin_users)
+    """
+    profile = getattr(request.user, "military_profile", None)
+    is_super = request.user.is_staff or (profile and profile.role == ROLE_ADMIN)
+    if is_super:
+        org_id = request.GET.get("org_id")
+        return True, (int(org_id) if org_id else None)
+    return False, (profile.organization_id if profile else None)
+
+
 # ---------------------------------------------------------------------------
 # Response helper
 # ---------------------------------------------------------------------------

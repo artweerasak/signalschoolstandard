@@ -12,13 +12,17 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from .api_views import _PERSONNEL_QS, _require_admin
+from military_profile.permissions import _require_org_admin, get_org_scope
 from military_profile.compliance import army_region_q, bulk_get_compliance_statuses
 from .exporters.pdx_exporter import export_pdx
 
 
-def _pdx_queryset(request):
-    """คิว MilitaryUserProfile ตาม filter: ทัพภาค + หลายหน่วย (ชื่อตรงเป๊ะ)"""
+def _pdx_queryset(request, org_id=None):
+    """คิว MilitaryUserProfile ตาม filter: ทัพภาค + หลายหน่วย (ชื่อตรงเป๊ะ)
+    + org_id (บังคับสำหรับ org_admin — ดู get_org_scope)"""
     qs = _PERSONNEL_QS()
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     region = request.GET.get("army_region", "").strip()
     if region:
         qs = qs.filter(army_region_q(region))
@@ -31,10 +35,16 @@ def _pdx_queryset(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_units_list(request):
-    """รายชื่อหน่วยจริงในระบบ (autocomplete) — กรองตามทัพภาคได้"""
+    """รายชื่อหน่วยจริงในระบบ (autocomplete) — กรองตามทัพภาคได้
+    org_admin เห็นแค่หน่วยตัวเอง (list จะมีแค่ 1 รายการ)"""
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
     qs = _PERSONNEL_QS()
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     region = request.GET.get("army_region", "").strip()
     if region:
         qs = qs.filter(army_region_q(region))
@@ -43,10 +53,14 @@ def api_units_list(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_export_count(request):
-    """จำนวนคนที่จะ export ตาม filter ปัจจุบัน (พร้อมยอดผ่าน/ไม่ผ่าน) ไว้พรีวิว"""
-    profiles = list(_pdx_queryset(request))
+    """จำนวนคนที่จะ export ตาม filter ปัจจุบัน (พร้อมยอดผ่าน/ไม่ผ่าน) ไว้พรีวิว
+    org_admin เห็นแค่หน่วยตัวเอง"""
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+    profiles = list(_pdx_queryset(request, org_id))
     statuses = bulk_get_compliance_statuses(profiles)
     passed = sum(1 for p in profiles if statuses.get(p.user_id) == "passed")
     total = len(profiles)
@@ -54,13 +68,17 @@ def api_export_count(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_export_pdx(request):
     """ส่งออกไฟล์ .xlsx ตามฟอร์ม PDX (เลขบัตร | ยศ ชื่อ-สกุล | สังกัด | ผลการศึกษา)
+    org_admin export ได้แค่หน่วยตัวเอง
 
     filter เพิ่ม: result = "passed" (เฉพาะผ่าน) | "not_passed" (เฉพาะไม่ผ่าน) | "" (ทั้งหมด)
     """
-    qs = _pdx_queryset(request).select_related("user").order_by("unit", "rank", "full_name_th")
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+    qs = _pdx_queryset(request, org_id).select_related("user").order_by("unit", "rank", "full_name_th")
     profiles = list(qs)
     statuses = bulk_get_compliance_statuses(profiles)
 

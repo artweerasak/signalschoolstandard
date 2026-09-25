@@ -20,7 +20,7 @@ from military_profile.models import (
 )
 from military_profile.compliance import get_compliance_status, bulk_compliance_stats
 from military_profile.permissions import (
-    _require_login, _require_admin, NON_PERSONNEL_ROLES,
+    _require_login, _require_admin, _require_org_admin, get_org_scope, NON_PERSONNEL_ROLES,
 )
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 
@@ -210,30 +210,41 @@ def _apply_profile_filters(queryset, filters: dict):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_compliance_overview(request):
     """
     GET /military/api/v1/reports/compliance/overview/
-    ภาพรวมสถานะผ่าน/ไม่ผ่านมาตรฐานทั้งระบบ
+    ภาพรวมสถานะผ่าน/ไม่ผ่านมาตรฐานทั้งระบบ — org_admin เห็นแค่หน่วยตัวเอง
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
     filters = _parse_filters(request)
     qs = _apply_profile_filters(_PERSONNEL_QS(), filters)
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     stats = bulk_compliance_stats(qs)
     return JsonResponse(stats)
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_compliance_by_region(request):
     """
     GET /military/api/v1/reports/compliance/by-region/
-    สถิติแยกตามกองทัพภาค
+    สถิติแยกตามกองทัพภาค — org_admin เห็นแค่หน่วยตัวเอง
     """
     from military_profile.compliance import army_region_q
+
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
 
     results = []
     for code, label in ARMY_REGION_CHOICES:
         qs = _PERSONNEL_QS().filter(army_region_q(code))
+        if org_id is not None:
+            qs = qs.filter(organization_id=org_id)
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
             results.append({"key": code, "label": label, **stats})
@@ -241,12 +252,15 @@ def api_compliance_by_region(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_compliance_by_rank_class(request):
     """
     GET /military/api/v1/reports/compliance/by-rank-class/
-    สถิติแยกตามระดับชั้น (ประทวน / สัญญาบัตร / พลทหาร)
+    สถิติแยกตามระดับชั้น (ประทวน / สัญญาบัตร / พลทหาร) — org_admin เห็นแค่หน่วยตัวเอง
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
     filters = _parse_filters(request)
     groups = [
         ("nco", "นายทหารประทวน", list(NCO_RANKS)),
@@ -259,6 +273,8 @@ def api_compliance_by_rank_class(request):
         if filters.get("army_region"):
             from military_profile.compliance import army_region_q
             qs = qs.filter(army_region_q(filters["army_region"]))
+        if org_id is not None:
+            qs = qs.filter(organization_id=org_id)
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
             results.append({"key": code, "label": label, **stats})
@@ -266,17 +282,22 @@ def api_compliance_by_rank_class(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_compliance_by_rank(request):
     """
     GET /military/api/v1/reports/compliance/by-rank/
-    สถิติแยกตามชั้นยศ
+    สถิติแยกตามชั้นยศ — org_admin เห็นแค่หน่วยตัวเอง
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
     filters = _parse_filters(request)
     results = []
     for code, label in RANK_CHOICES:
         qs = _PERSONNEL_QS().filter(rank=code)
         qs = _apply_profile_filters(qs, {k: v for k, v in filters.items() if k != "rank_class"})
+        if org_id is not None:
+            qs = qs.filter(organization_id=org_id)
         stats = bulk_compliance_stats(qs)
         if stats["total"] > 0:
             results.append({"key": code, "label": label, **stats})
@@ -284,15 +305,21 @@ def api_compliance_by_rank(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_compliance_by_unit(request):
     """
     GET /military/api/v1/reports/compliance/by-unit/
-    สถิติแยกตามหน่วยต้นสังกัด
+    สถิติแยกตามหน่วยต้นสังกัด — org_admin เห็นแค่หน่วยตัวเอง (ปกติจะมีแค่
+    หน่วยเดียวในผลลัพธ์ เพราะถูก filter ด้วย organization_id แล้ว)
     Optional filters: army_region, rank_class
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
     filters = _parse_filters(request)
     qs = _apply_profile_filters(_PERSONNEL_QS(), filters)
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     units = qs.values_list("unit", flat=True).distinct().order_by("unit")
 
     results = []
@@ -376,12 +403,16 @@ def api_compliance_not_passed(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_certificates_expiring(request):
     """
     GET /military/api/v1/reports/certificates/expiring/?days=30
-    ใบประกาศที่ใกล้หมดอายุ
+    ใบประกาศที่ใกล้หมดอายุ — org_admin เห็นแค่หน่วยตัวเอง
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+
     days = int(request.GET.get("days", 30))
     today = date.today()
     soon = today + timedelta(days=days)
@@ -392,6 +423,8 @@ def api_certificates_expiring(request):
         .select_related("user__military_profile", "user__military_profile__organization")
         .order_by("expiry_date")
     )
+    if org_id is not None:
+        records = records.filter(user__military_profile__organization_id=org_id)
 
     region_display_map = dict(ARMY_REGION_CHOICES)
     results = []
@@ -412,12 +445,16 @@ def api_certificates_expiring(request):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_certificates_expired(request):
     """
     GET /military/api/v1/reports/certificates/expired/
-    ใบประกาศที่หมดอายุแล้ว
+    ใบประกาศที่หมดอายุแล้ว — org_admin เห็นแค่หน่วยตัวเอง
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+
     filters = _parse_filters(request)
     qs = (UserCertificateExpiry.objects.filter(status="expired")
           .select_related("user__military_profile", "user__military_profile__organization"))
@@ -426,6 +463,8 @@ def api_certificates_expired(request):
         qs = qs.filter(army_region_q(filters["army_region"], prefix="user__military_profile"))
     if filters.get("unit"):
         qs = qs.filter(user__military_profile__unit__icontains=filters["unit"])
+    if org_id is not None:
+        qs = qs.filter(user__military_profile__organization_id=org_id)
     records = qs.order_by("-expiry_date")
 
     region_display_map = dict(ARMY_REGION_CHOICES)
