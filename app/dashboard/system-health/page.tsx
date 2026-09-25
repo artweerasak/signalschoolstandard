@@ -20,7 +20,7 @@ interface ConcurrentStatus {
 function GaugeBar({ pct, color }: { pct: number; color: string }) {
   const c = pct > 85 ? "bg-red-500" : pct > 60 ? "bg-yellow-500" : color
   return (
-    <div className="w-full bg-gray-100 rounded-full h-2.5 mt-1">
+    <div className="w-full bg-[#f0ecf6] rounded-full h-2.5 mt-1">
       <div className={`h-2.5 rounded-full transition-all duration-700 ${c}`} style={{ width: `${Math.min(pct, 100)}%` }} />
     </div>
   )
@@ -28,13 +28,13 @@ function GaugeBar({ pct, color }: { pct: number; color: string }) {
 
 function StatCard({ icon, label, value, sub }: { icon: string; label: string; value: string | number; sub?: string }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+    <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm p-5">
       <div className="flex items-center gap-3 mb-1">
         <span className="text-2xl">{icon}</span>
-        <span className="text-sm text-gray-500">{label}</span>
+        <span className="text-sm text-[#6b6478]">{label}</span>
       </div>
       <p className="text-3xl font-bold text-[#2D0F42]">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      {sub && <p className="text-xs text-[#9a92a8] mt-1">{sub}</p>}
     </div>
   )
 }
@@ -55,10 +55,10 @@ function ConcurrentUsersCard({ data, lastTick }: { data: ConcurrentStatus | null
     safePct > 60 ? "โหลดปานกลาง" : "ปกติ"
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
+    <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-gray-700">👥 ผู้ใช้งานพร้อมกัน (Real-time)</h2>
+          <h2 className="font-semibold text-[#4a4456]">👥 ผู้ใช้งานพร้อมกัน (Real-time)</h2>
           {/* pulse dot */}
           <span className="relative flex h-2.5 w-2.5">
             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${color.dot}`} />
@@ -73,19 +73,19 @@ function ConcurrentUsersCard({ data, lastTick }: { data: ConcurrentStatus | null
         <span className="text-5xl font-black text-[#2D0F42] tabular-nums leading-none">
           {active !== null ? safeActive : "—"}
         </span>
-        <span className="text-xl text-gray-400 pb-1">/ {limit} คน</span>
-        <span className="ml-auto text-sm font-semibold text-gray-500 pb-1">{safePct.toFixed(1)}%</span>
+        <span className="text-xl text-[#9a92a8] pb-1">/ {limit} คน</span>
+        <span className="ml-auto text-sm font-semibold text-[#6b6478] pb-1">{safePct.toFixed(1)}%</span>
       </div>
 
       {/* Gauge */}
       <div className="space-y-1">
-        <div className="w-full bg-gray-100 rounded-full h-4">
+        <div className="w-full bg-[#f0ecf6] rounded-full h-4">
           <div
             className={`h-4 rounded-full transition-all duration-700 ${color.bar}`}
             style={{ width: `${Math.min(safePct, 100)}%` }}
           />
         </div>
-        <div className="flex justify-between text-xs text-gray-400">
+        <div className="flex justify-between text-xs text-[#9a92a8]">
           <span>0</span>
           <span>{Math.round(limit * 0.6)} (60%)</span>
           <span>{Math.round(limit * 0.85)} (85%)</span>
@@ -94,13 +94,13 @@ function ConcurrentUsersCard({ data, lastTick }: { data: ConcurrentStatus | null
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 text-xs text-gray-500">
+      <div className="flex gap-4 text-xs text-[#6b6478]">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> ปกติ &lt;60%</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" /> ปานกลาง 60-85%</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> สูง &gt;85%</span>
       </div>
 
-      <p className="text-xs text-gray-400">อัปเดตทุก 10 วินาที · ล่าสุด {lastTick}</p>
+      <p className="text-xs text-[#9a92a8]">อัปเดตทุก 10 วินาที · ล่าสุด {lastTick}</p>
     </div>
   )
 }
@@ -143,7 +143,7 @@ export default function SystemHealthPage() {
     return () => { clearInterval(t1); clearInterval(t2) }
   }, [])
 
-  if (loading) return <div className="p-8 text-center text-gray-400">กำลังโหลด...</div>
+  if (loading) return <div className="p-8 text-center text-[#9a92a8]">กำลังโหลด...</div>
   if (!data)   return <div className="p-8 text-center text-red-400">ไม่สามารถโหลดข้อมูลได้</div>
 
   return (
@@ -151,7 +151,7 @@ export default function SystemHealthPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#2D0F42]">🖥️ สถานะระบบ</h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">อัปเดตล่าสุด: {lastUpdate}</span>
+          <span className="text-xs text-[#9a92a8]">อัปเดตล่าสุด: {lastUpdate}</span>
           <button onClick={() => { loadHealth(); loadConcurrent() }}
             className="px-3 py-1.5 bg-[#4A1A6B] text-white text-xs rounded-lg hover:bg-[#2D0F42]">
             รีเฟรช
@@ -163,24 +163,24 @@ export default function SystemHealthPage() {
       <ConcurrentUsersCard data={concurrent} lastTick={concurrentTick} />
 
       {/* Server Resources */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 className="font-semibold text-gray-700">ทรัพยากรเซิร์ฟเวอร์</h2>
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm p-6 space-y-5">
+        <h2 className="font-semibold text-[#4a4456]">ทรัพยากรเซิร์ฟเวอร์</h2>
         <div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">💿 Disk</span>
+            <span className="text-[#6b6478]">💿 Disk</span>
             <span className="font-medium">{data.disk.used_gb} / {data.disk.total_gb} GB ({data.disk.pct}%)</span>
           </div>
           <GaugeBar pct={data.disk.pct} color="bg-blue-500" />
         </div>
         <div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">🧠 RAM</span>
+            <span className="text-[#6b6478]">🧠 RAM</span>
             <span className="font-medium">{data.memory.used_gb} / {data.memory.total_gb} GB ({data.memory.pct}%)</span>
           </div>
           <GaugeBar pct={data.memory.pct} color="bg-purple-500" />
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600">🎬 พื้นที่วิดีโอ</span>
+          <span className="text-[#6b6478]">🎬 พื้นที่วิดีโอ</span>
           <span className="font-medium">{data.video_storage_gb} GB</span>
         </div>
       </div>
@@ -197,8 +197,8 @@ export default function SystemHealthPage() {
       </div>
 
       {/* Status indicators */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-        <h2 className="font-semibold text-gray-700 mb-4">สถานะ Services</h2>
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm p-6">
+        <h2 className="font-semibold text-[#4a4456] mb-4">สถานะ Services</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
             { name: "LMS (Open edX)", ok: true },
@@ -210,7 +210,7 @@ export default function SystemHealthPage() {
           ].map(s => (
             <div key={s.name} className="flex items-center gap-2 text-sm">
               <span className={`w-2 h-2 rounded-full ${s.ok ? "bg-green-500" : "bg-red-500"}`} />
-              <span className="text-gray-600">{s.name}</span>
+              <span className="text-[#6b6478]">{s.name}</span>
             </div>
           ))}
         </div>

@@ -18,10 +18,10 @@ function Card({ children }: { children: React.ReactNode }) {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
+    <div className="min-h-screen bg-[#f7f5fa] py-10 px-4">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow p-8 space-y-6">
         {/* หัวเรื่อง */}
-        <div className="flex items-start gap-3 border-b border-gray-100 pb-6">
+        <div className="flex items-start gap-3 border-b border-[#f0ecf6] pb-6">
           <div className="w-11 h-11 rounded-full bg-[#4A1A6B] flex items-center justify-center text-white text-lg shrink-0">
             ⚖️
           </div>
@@ -29,17 +29,17 @@ export default function PrivacyPage() {
             <h1 className="text-xl font-bold text-[#4A1A6B]">
               ประกาศความเป็นส่วนตัว (Privacy Notice)
             </h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-[#6b6478]">
               ระบบมาตรฐานความรู้ เหล่าทหารสื่อสาร · กรมการทหารสื่อสาร กองทัพบก
             </p>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-[#9a92a8]">
               ฉบับที่ 2 · มีผลบังคับใช้ 17 สิงหาคม 2569 · ปรับปรุงล่าสุด 17 สิงหาคม 2569
             </p>
           </div>
         </div>
 
         {/* คำนำ */}
-        <p className="text-sm text-gray-600 leading-relaxed">
+        <p className="text-sm text-[#6b6478] leading-relaxed">
           กรมการทหารสื่อสาร กองทัพบก (&ldquo;หน่วยงาน&rdquo;) ในฐานะ
           <strong> ผู้ควบคุมข้อมูลส่วนบุคคล </strong>
           จัดทำประกาศฉบับนี้เพื่อชี้แจงการเก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคลของกำลังพล
@@ -48,8 +48,8 @@ export default function PrivacyPage() {
         </p>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">1. ผู้ควบคุมข้อมูลส่วนบุคคล</h2>
-          <div className="text-sm text-gray-600 leading-relaxed">
+          <h2 className="font-semibold text-[#2D0F42]">1. ผู้ควบคุมข้อมูลส่วนบุคคล</h2>
+          <div className="text-sm text-[#6b6478] leading-relaxed">
             <p>กรมการทหารสื่อสาร กองทัพบก</p>
             <p>ที่อยู่: [โปรดระบุที่อยู่หน่วยให้ครบถ้วน]</p>
             <p>ระบบงาน: signalstandard.rta.mi.th</p>
@@ -57,8 +57,8 @@ export default function PrivacyPage() {
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">2. ข้อมูลส่วนบุคคลที่เก็บรวบรวม</h2>
-          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+          <h2 className="font-semibold text-[#2D0F42]">2. ข้อมูลส่วนบุคคลที่เก็บรวบรวม</h2>
+          <ul className="text-sm text-[#6b6478] space-y-1 list-disc list-inside">
             <li>ข้อมูลระบุตัวตน: เลขประจำตัวประชาชน เลขประจำตัวกำลังพล (ทหาร)</li>
             <li>ข้อมูลส่วนตัว: ชื่อ-นามสกุล ยศ เหล่า/สังกัด หน่วยต้นสังกัด วันเดือนปีเกิด</li>
             <li>ข้อมูลการศึกษา: หลักสูตรที่ลงทะเบียน ผลการเรียน ผลการสอบ และใบประกาศนียบัตร</li>
@@ -67,26 +67,26 @@ export default function PrivacyPage() {
               (Log) เพื่อความมั่นคงปลอดภัย
             </li>
           </ul>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[#6b6478]">
             เลขประจำตัวประชาชนและเลขประจำตัวกำลังพลถือเป็นข้อมูลที่ต้องได้รับการคุ้มครองเป็นพิเศษ
             และถูกจัดเก็บด้วยมาตรการเข้ารหัสตามข้อ 6
           </p>
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">3. วัตถุประสงค์และฐานทางกฎหมาย</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
+          <h2 className="font-semibold text-[#2D0F42]">3. วัตถุประสงค์และฐานทางกฎหมาย</h2>
+          <p className="text-sm text-[#6b6478] leading-relaxed">
             หน่วยงานประมวลผลข้อมูลส่วนบุคคลเพื่อวัตถุประสงค์ต่อไปนี้ โดยอาศัยฐานทางกฎหมายตาม PDPA
             มาตรา 24
           </p>
-          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+          <ul className="text-sm text-[#6b6478] space-y-1 list-disc list-inside">
             <li>การยืนยันตัวตนและการเข้าใช้งานระบบอย่างปลอดภัย</li>
             <li>การจัดการหลักสูตร การเรียน การสอบ และการประเมินผล</li>
             <li>การออก ตรวจสอบ และติดตามอายุใบประกาศนียบัตร</li>
             <li>การจัดทำรายงานและสถิติกำลังพลตามมาตรฐานที่ทางราชการกำหนด</li>
             <li>การรักษาความมั่นคงปลอดภัยของระบบและการตรวจสอบภายใน</li>
           </ul>
-          <p className="text-sm text-gray-600 leading-relaxed">
+          <p className="text-sm text-[#6b6478] leading-relaxed">
             ฐานทางกฎหมายที่ใช้ ได้แก่ <strong>ภารกิจสาธารณะ/การใช้อำนาจรัฐ</strong> (มาตรา 24(4)),
             <strong> ประโยชน์โดยชอบด้วยกฎหมาย</strong> (มาตรา 24(5)) และ
             <strong> การปฏิบัติหน้าที่ตามกฎหมาย</strong> ของหน่วยงานราชการ
@@ -94,8 +94,8 @@ export default function PrivacyPage() {
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">4. การเปิดเผยและการส่งต่อข้อมูล</h2>
-          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+          <h2 className="font-semibold text-[#2D0F42]">4. การเปิดเผยและการส่งต่อข้อมูล</h2>
+          <ul className="text-sm text-[#6b6478] space-y-1 list-disc list-inside">
             <li>เปิดเผยเฉพาะภายในหน่วยงานและส่วนราชการที่เกี่ยวข้องตามภารกิจเท่านั้น</li>
             <li>ไม่มีการจำหน่าย แลกเปลี่ยน หรือเปิดเผยข้อมูลเพื่อการตลาดแก่บุคคลภายนอก</li>
             <li>
@@ -109,8 +109,8 @@ export default function PrivacyPage() {
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">5. ระยะเวลาการเก็บรักษาข้อมูล</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
+          <h2 className="font-semibold text-[#2D0F42]">5. ระยะเวลาการเก็บรักษาข้อมูล</h2>
+          <p className="text-sm text-[#6b6478] leading-relaxed">
             หน่วยงานเก็บรักษาข้อมูลตลอดระยะเวลาที่เจ้าของข้อมูลปฏิบัติราชการและใช้งานระบบ
             และจะลบหรือทำให้ไม่สามารถระบุตัวบุคคลได้ภายใน 5 ปีหลังพ้นสภาพ
             เว้นแต่มีกฎหมายหรือระเบียบราชการกำหนดให้เก็บรักษานานกว่านั้น
@@ -119,8 +119,8 @@ export default function PrivacyPage() {
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">6. มาตรการรักษาความมั่นคงปลอดภัย</h2>
-          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+          <h2 className="font-semibold text-[#2D0F42]">6. มาตรการรักษาความมั่นคงปลอดภัย</h2>
+          <ul className="text-sm text-[#6b6478] space-y-1 list-disc list-inside">
             <li>เข้ารหัสข้อมูลระบุตัวตนด้วย AES-256-GCM ก่อนบันทึกลงฐานข้อมูล</li>
             <li>เข้ารหัสการรับส่งข้อมูลผ่านช่องทาง HTTPS/TLS ทั้งระบบ</li>
             <li>จำกัดสิทธิ์การเข้าถึงเฉพาะผู้ที่ได้รับอนุญาต (Least Privilege)</li>
@@ -130,30 +130,30 @@ export default function PrivacyPage() {
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">7. สิทธิของเจ้าของข้อมูลส่วนบุคคล</h2>
-          <p className="text-sm text-gray-600">
+          <h2 className="font-semibold text-[#2D0F42]">7. สิทธิของเจ้าของข้อมูลส่วนบุคคล</h2>
+          <p className="text-sm text-[#6b6478]">
             เจ้าของข้อมูลมีสิทธิตาม PDPA ดังนี้
           </p>
-          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+          <ul className="text-sm text-[#6b6478] space-y-1 list-disc list-inside">
             <li>สิทธิขอเข้าถึงและขอรับสำเนาข้อมูลของตน</li>
             <li>สิทธิขอแก้ไขข้อมูลให้ถูกต้องเป็นปัจจุบัน</li>
             <li>สิทธิขอลบหรือทำลายข้อมูลเมื่อพ้นสภาพราชการหรือหมดความจำเป็น</li>
             <li>สิทธิขอระงับการใช้ข้อมูล และสิทธิคัดค้านการประมวลผล</li>
             <li>สิทธิขอให้โอนย้ายข้อมูล และสิทธิร้องเรียน</li>
           </ul>
-          <p className="text-xs text-gray-500 leading-relaxed">
+          <p className="text-xs text-[#6b6478] leading-relaxed">
             การใช้สิทธิบางประการอาจถูกจำกัดตามที่กฎหมายกำหนด หรือเมื่อขัดต่อภารกิจด้านความมั่นคงและ
             ระเบียบของทางราชการ
           </p>
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">8. ช่องทางติดต่อและการร้องเรียน</h2>
-          <div className="text-sm text-gray-600 leading-relaxed">
+          <h2 className="font-semibold text-[#2D0F42]">8. ช่องทางติดต่อและการร้องเรียน</h2>
+          <div className="text-sm text-[#6b6478] leading-relaxed">
             <p>เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (DPO) กรมการทหารสื่อสาร</p>
             <p>อีเมล: [dpo@โดเมนของหน่วย]</p>
             <p>โทรศัพท์: [หมายเลขติดต่อหน่วย]</p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-[#6b6478] mt-1">
               หากเห็นว่าการประมวลผลข้อมูลไม่ชอบด้วยกฎหมาย เจ้าของข้อมูลมีสิทธิร้องเรียนต่อ
               สำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล (สคส.)
             </p>
@@ -161,14 +161,14 @@ export default function PrivacyPage() {
         </Card>
 
         <Card>
-          <h2 className="font-semibold text-gray-800">9. การทบทวนและปรับปรุงประกาศ</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
+          <h2 className="font-semibold text-[#2D0F42]">9. การทบทวนและปรับปรุงประกาศ</h2>
+          <p className="text-sm text-[#6b6478] leading-relaxed">
             หน่วยงานอาจทบทวนและปรับปรุงประกาศฉบับนี้เป็นครั้งคราวให้สอดคล้องกับกฎหมายและแนวปฏิบัติ
             โดยจะเผยแพร่ฉบับปรับปรุงบนระบบ และให้ถือวันที่มีผลบังคับใช้ตามที่ระบุไว้ด้านบน
           </p>
         </Card>
 
-        <div className="border-t border-gray-100 pt-4 flex items-center justify-between text-sm">
+        <div className="border-t border-[#f0ecf6] pt-4 flex items-center justify-between text-sm">
           <Link href="/login" className="text-[#4A1A6B] hover:underline">
             ← กลับหน้าเข้าสู่ระบบ
           </Link>

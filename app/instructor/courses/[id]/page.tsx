@@ -162,16 +162,16 @@ export default function CourseDetailPage() {
   return (
     <div>
       {/* Breadcrumb */}
-      <nav className="text-sm text-gray-500 mb-4 flex items-center gap-2">
+      <nav className="text-sm text-[#6b6478] mb-4 flex items-center gap-2">
         <Link href="/instructor" className="hover:text-[#4A1A6B]">หลักสูตรของฉัน</Link>
         <span>›</span>
-        <span className="text-gray-700">{courseId.split("+")[1] ?? courseId}</span>
+        <span className="text-[#4a4456]">{courseId.split("+")[1] ?? courseId}</span>
       </nav>
 
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-[#4A1A6B]">{courseId}</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="text-sm text-[#6b6478] mt-0.5">
             นักเรียน {students.length} คน
             {gradesLoaded && (
               <span className="ml-3">
@@ -193,7 +193,7 @@ export default function CourseDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-6 w-fit">
+      <div className="flex gap-1 bg-[#f0ecf6] rounded-lg p-1 mb-6 w-fit">
         {[
           { key: "students" as Tab, label: "👥 รายชื่อนักเรียน" },
           { key: "grades"   as Tab, label: "📊 คะแนน" },
@@ -204,7 +204,7 @@ export default function CourseDetailPage() {
             key={t.key}
             onClick={() => handleTabChange(t.key)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              tab === t.key ? "bg-white text-[#4A1A6B] shadow-sm" : "text-gray-500 hover:text-gray-700"
+              tab === t.key ? "bg-white text-[#4A1A6B] shadow-sm" : "text-[#6b6478] hover:text-[#4a4456]"
             }`}
           >
             {t.label}
@@ -216,9 +216,9 @@ export default function CourseDetailPage() {
       {tab === "students" && (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loadingStudents ? (
-            <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
+            <div className="p-12 text-center text-[#9a92a8]">กำลังโหลด...</div>
           ) : students.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">ยังไม่มีนักเรียนลงทะเบียน</div>
+            <div className="p-12 text-center text-[#9a92a8]">ยังไม่มีนักเรียนลงทะเบียน</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
@@ -231,17 +231,17 @@ export default function CourseDetailPage() {
                   <th className="px-4 py-3 text-left font-semibold">สถานะ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f0ecf6]">
                 {students.map((s, i) => (
-                  <tr key={s.username} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                  <tr key={s.username} className="hover:bg-[#f7f5fa]">
+                    <td className="px-4 py-3 text-[#9a92a8]">{i + 1}</td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{s.full_name}</p>
-                      <p className="text-gray-400 text-xs">{s.username}</p>
+                      <p className="font-medium text-[#2D0F42]">{s.full_name}</p>
+                      <p className="text-[#9a92a8] text-xs">{s.username}</p>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{s.rank}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.unit}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
+                    <td className="px-4 py-3 text-[#6b6478]">{s.rank}</td>
+                    <td className="px-4 py-3 text-[#6b6478]">{s.unit}</td>
+                    <td className="px-4 py-3 text-[#6b6478] text-xs">
                       {new Date(s.created).toLocaleDateString("th-TH")}
                     </td>
                     <td className="px-4 py-3">
@@ -271,18 +271,18 @@ export default function CourseDetailPage() {
           </div>
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loadingGrades ? (
-            <div className="p-12 text-center text-gray-400">กำลังโหลดคะแนน...</div>
+            <div className="p-12 text-center text-[#9a92a8]">กำลังโหลดคะแนน...</div>
           ) : grades.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">
+            <div className="p-12 text-center text-[#9a92a8]">
               {gradesSearch ? "ไม่พบนักเรียนที่ค้นหา" : "ยังไม่มีข้อมูลคะแนน"}
             </div>
           ) : (
             <>
               {/* Summary bar */}
-              <div className="px-6 py-4 bg-[#f5f3f7] border-b border-gray-200 flex gap-6 text-sm">
+              <div className="px-6 py-4 bg-[#f5f3f7] border-b border-[#e6e1ee] flex gap-6 text-sm">
                 <span className="text-green-700 font-semibold">✅ ผ่าน: {passCount} คน</span>
                 <span className="text-red-600 font-semibold">❌ ไม่ผ่าน: {failCount} คน</span>
-                <span className="text-gray-600">คะแนนเฉลี่ย: {
+                <span className="text-[#6b6478]">คะแนนเฉลี่ย: {
                   gradesSummary ? Math.round(gradesSummary.average_percent * 100) : 0
                 }%</span>
               </div>
@@ -297,12 +297,12 @@ export default function CourseDetailPage() {
                     <th className="px-4 py-3 text-left font-semibold">ผล</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#f0ecf6]">
                   {grades.map((g, i) => (
-                    <tr key={g.username} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-400">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800">{g.full_name}</td>
-                      <td className="px-4 py-3 font-mono text-gray-700">{g.username}</td>
+                    <tr key={g.username} className="hover:bg-[#f7f5fa]">
+                      <td className="px-4 py-3 text-[#9a92a8]">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-[#2D0F42]">{g.full_name}</td>
+                      <td className="px-4 py-3 font-mono text-[#4a4456]">{g.username}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="flex-1 bg-gray-200 rounded-full h-2">
@@ -314,7 +314,7 @@ export default function CourseDetailPage() {
                               }}
                             />
                           </div>
-                          <span className="text-gray-700 font-medium w-10 text-right">
+                          <span className="text-[#4a4456] font-medium w-10 text-right">
                             {Math.round(g.percent * 100)}
                           </span>
                         </div>
@@ -336,16 +336,16 @@ export default function CourseDetailPage() {
           {/* Pagination */}
           {gradesTotalPages > 1 && (
             <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-[#6b6478]">
                 แสดง {(gradesPage-1)*GRADES_PAGE_SIZE+1}–{Math.min(gradesPage*GRADES_PAGE_SIZE, gradesTotal)} จาก {gradesTotal.toLocaleString()} รายการ
               </span>
               <div className="flex gap-1 items-center">
-                <button onClick={() => setGradesPage(1)} disabled={gradesPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
-                <button onClick={() => setGradesPage(p=>Math.max(1,p-1))} disabled={gradesPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+                <button onClick={() => setGradesPage(1)} disabled={gradesPage===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">«</button>
+                <button onClick={() => setGradesPage(p=>Math.max(1,p-1))} disabled={gradesPage===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">‹</button>
                 <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{gradesPage}</span>
-                <span className="text-xs text-gray-400">/ {gradesTotalPages}</span>
-                <button onClick={() => setGradesPage(p=>Math.min(gradesTotalPages,p+1))} disabled={gradesPage===gradesTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
-                <button onClick={() => setGradesPage(gradesTotalPages)} disabled={gradesPage===gradesTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+                <span className="text-xs text-[#9a92a8]">/ {gradesTotalPages}</span>
+                <button onClick={() => setGradesPage(p=>Math.min(gradesTotalPages,p+1))} disabled={gradesPage===gradesTotalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">›</button>
+                <button onClick={() => setGradesPage(gradesTotalPages)} disabled={gradesPage===gradesTotalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">»</button>
               </div>
             </div>
           )}
@@ -368,13 +368,13 @@ export default function CourseDetailPage() {
           )}
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loadingExceeded ? (
-            <div className="p-12 text-center text-gray-400">กำลังตรวจสอบ...</div>
+            <div className="p-12 text-center text-[#9a92a8]">กำลังตรวจสอบ...</div>
           ) : !hasAttemptLimits ? (
-            <div className="p-12 text-center text-gray-400">
+            <div className="p-12 text-center text-[#9a92a8]">
               วิชานี้ยังไม่ได้ตั้งค่า &quot;Maximum Attempts&quot; ในข้อสอบข้อใดเลย — รายงานนี้ใช้ได้เฉพาะข้อสอบที่จำกัดจำนวนครั้งไว้ใน Studio เท่านั้น
             </div>
           ) : exceeded.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">
+            <div className="p-12 text-center text-[#9a92a8]">
               {exceededSearch ? "ไม่พบนักเรียนที่ค้นหา" : "✅ ไม่มีนักเรียนที่สอบครบจำนวนครั้งแล้วยังไม่ผ่าน"}
             </div>
           ) : (
@@ -383,7 +383,7 @@ export default function CourseDetailPage() {
                 <span className="text-amber-700 font-semibold">
                   ⚠️ สอบเกินจำนวนครั้งที่กำหนดแล้วแต่ยังไม่ผ่านวิชา: {exceededNotPassedCount} คน
                 </span>
-                <span className="text-gray-500">
+                <span className="text-[#6b6478]">
                   (ติดข้อสอบอย่างน้อย 1 ข้อที่ทำครบจำนวนครั้งแล้ว: {exceededTotal} คน)
                 </span>
               </div>
@@ -398,19 +398,19 @@ export default function CourseDetailPage() {
                     <th className="px-4 py-3 text-left font-semibold">ผลรวมวิชา</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#f0ecf6]">
                   {exceeded.map((e, i) => (
-                    <tr key={e.username} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-400">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800">{e.full_name}</td>
-                      <td className="px-4 py-3 font-mono text-gray-700">{e.username}</td>
-                      <td className="px-4 py-3 text-gray-600">
+                    <tr key={e.username} className="hover:bg-[#f7f5fa]">
+                      <td className="px-4 py-3 text-[#9a92a8]">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-[#2D0F42]">{e.full_name}</td>
+                      <td className="px-4 py-3 font-mono text-[#4a4456]">{e.username}</td>
+                      <td className="px-4 py-3 text-[#6b6478]">
                         <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium mr-1">
                           {e.stuck_count} ข้อ
                         </span>
-                        <span className="text-xs text-gray-400">{e.stuck_problems.join(", ")}</span>
+                        <span className="text-xs text-[#9a92a8]">{e.stuck_problems.join(", ")}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 font-medium">{Math.round(e.course_percent * 100)}%</td>
+                      <td className="px-4 py-3 text-[#4a4456] font-medium">{Math.round(e.course_percent * 100)}%</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${e.passed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
                           {e.passed ? "ผ่าน" : "ไม่ผ่าน"}
@@ -427,16 +427,16 @@ export default function CourseDetailPage() {
           {/* Pagination */}
           {exceededTotalPages > 1 && (
             <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-[#6b6478]">
                 แสดง {(exceededPage-1)*EXCEEDED_PAGE_SIZE+1}–{Math.min(exceededPage*EXCEEDED_PAGE_SIZE, exceededTotal)} จาก {exceededTotal.toLocaleString()} รายการ
               </span>
               <div className="flex gap-1 items-center">
-                <button onClick={() => setExceededPage(1)} disabled={exceededPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
-                <button onClick={() => setExceededPage(p=>Math.max(1,p-1))} disabled={exceededPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+                <button onClick={() => setExceededPage(1)} disabled={exceededPage===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">«</button>
+                <button onClick={() => setExceededPage(p=>Math.max(1,p-1))} disabled={exceededPage===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">‹</button>
                 <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{exceededPage}</span>
-                <span className="text-xs text-gray-400">/ {exceededTotalPages}</span>
-                <button onClick={() => setExceededPage(p=>Math.min(exceededTotalPages,p+1))} disabled={exceededPage===exceededTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
-                <button onClick={() => setExceededPage(exceededTotalPages)} disabled={exceededPage===exceededTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+                <span className="text-xs text-[#9a92a8]">/ {exceededTotalPages}</span>
+                <button onClick={() => setExceededPage(p=>Math.min(exceededTotalPages,p+1))} disabled={exceededPage===exceededTotalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">›</button>
+                <button onClick={() => setExceededPage(exceededTotalPages)} disabled={exceededPage===exceededTotalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">»</button>
               </div>
             </div>
           )}
@@ -447,8 +447,8 @@ export default function CourseDetailPage() {
       {tab === "prereq" && (
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="mb-4">
-            <h3 className="font-semibold text-gray-800">เงื่อนไขหลักสูตร</h3>
-            <p className="text-sm text-gray-500 mt-1">
+            <h3 className="font-semibold text-[#2D0F42]">เงื่อนไขหลักสูตร</h3>
+            <p className="text-sm text-[#6b6478] mt-1">
               กำหนดประเภทหลักสูตร ระดับบุคลากรที่มองเห็นได้ และวิชาที่ต้องสอบผ่านก่อน
             </p>
           </div>
@@ -460,25 +460,25 @@ export default function CourseDetailPage() {
           )}
 
           {loadingPrereq ? (
-            <div className="p-8 text-center text-gray-400">กำลังโหลด...</div>
+            <div className="p-8 text-center text-[#9a92a8]">กำลังโหลด...</div>
           ) : (
             <div className="space-y-6">
               {/* ประเภทหลักสูตร */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-2">ประเภทหลักสูตร</p>
+                <p className="text-xs font-semibold text-[#6b6478] mb-2">ประเภทหลักสูตร</p>
                 <div className="space-y-2 max-w-md">
-                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "general" ? "border-[#4A1A6B] bg-purple-50" : "border-gray-200"}`}>
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "general" ? "border-[#4A1A6B] bg-purple-50" : "border-[#e6e1ee]"}`}>
                     <input type="radio" checked={policyType === "general"} onChange={() => setPolicyType("general")} className="mt-0.5" />
                     <span className="text-sm">
-                      <span className="font-medium text-gray-800">หลักสูตรทั่วไป</span>
-                      <span className="block text-xs text-gray-500">ทุกระดับมองเห็นและเข้าเรียนได้ทันที</span>
+                      <span className="font-medium text-[#2D0F42]">หลักสูตรทั่วไป</span>
+                      <span className="block text-xs text-[#6b6478]">ทุกระดับมองเห็นและเข้าเรียนได้ทันที</span>
                     </span>
                   </label>
-                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "conditional" ? "border-amber-400 bg-amber-50" : "border-gray-200"}`}>
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "conditional" ? "border-amber-400 bg-amber-50" : "border-[#e6e1ee]"}`}>
                     <input type="radio" checked={policyType === "conditional"} onChange={() => setPolicyType("conditional")} className="mt-0.5" />
                     <span className="text-sm">
-                      <span className="font-medium text-gray-800">หลักสูตรตามเงื่อนไข</span>
-                      <span className="block text-xs text-gray-500">กำหนดระดับที่มองเห็น และวิชาบังคับก่อน</span>
+                      <span className="font-medium text-[#2D0F42]">หลักสูตรตามเงื่อนไข</span>
+                      <span className="block text-xs text-[#6b6478]">กำหนดระดับที่มองเห็น และวิชาบังคับก่อน</span>
                     </span>
                   </label>
                 </div>
@@ -488,14 +488,14 @@ export default function CourseDetailPage() {
                 <>
                   {/* ระดับบุคลากรที่มองเห็น/สมัครได้ */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-2">ระดับที่มองเห็น/สมัครได้ <span className="font-normal text-gray-400">(ไม่เลือก = ทุกระดับ)</span></p>
+                    <p className="text-xs font-semibold text-[#6b6478] mb-2">ระดับที่มองเห็น/สมัครได้ <span className="font-normal text-[#9a92a8]">(ไม่เลือก = ทุกระดับ)</span></p>
                     <div className="flex flex-wrap gap-2">
                       {RANK_CLASS_OPTIONS.map((r) => (
                         <button key={r.key} type="button" onClick={() => toggleRank(r.key)}
                           className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                             policyRanks.includes(r.key)
                               ? "bg-[#4A1A6B] text-white border-[#4A1A6B]"
-                              : "bg-white text-gray-600 border-gray-300 hover:border-[#4A1A6B]"}`}>
+                              : "bg-white text-[#6b6478] border-gray-300 hover:border-[#4A1A6B]"}`}>
                           {policyRanks.includes(r.key) ? "✓ " : ""}{r.label}
                         </button>
                       ))}
@@ -504,15 +504,15 @@ export default function CourseDetailPage() {
 
                   {/* วิชาบังคับก่อน */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-2">ต้องผ่านหลักสูตรเหล่านี้ก่อนจึงปลดล็อก</p>
+                    <p className="text-xs font-semibold text-[#6b6478] mb-2">ต้องผ่านหลักสูตรเหล่านี้ก่อนจึงปลดล็อก</p>
                     {prereqOptions.length === 0 ? (
-                      <p className="text-xs text-gray-400 py-4">ไม่มีหลักสูตรอื่นให้เลือก</p>
+                      <p className="text-xs text-[#9a92a8] py-4">ไม่มีหลักสูตรอื่นให้เลือก</p>
                     ) : (
-                      <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-gray-100">
+                      <div className="border border-[#e6e1ee] rounded-lg max-h-64 overflow-y-auto divide-y divide-[#f0ecf6]">
                         {prereqOptions.map((c) => (
-                          <label key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer">
+                          <label key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-[#f7f5fa] cursor-pointer">
                             <input type="checkbox" checked={prereqSelected.includes(c.id)} onChange={() => togglePrereq(c.id)} />
-                            <span className="text-gray-700">{c.name}</span>
+                            <span className="text-[#4a4456]">{c.name}</span>
                           </label>
                         ))}
                       </div>
@@ -521,13 +521,13 @@ export default function CourseDetailPage() {
                 </>
               )}
 
-              <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+              <div className="flex items-center gap-3 pt-2 border-t border-[#f0ecf6]">
                 <button onClick={savePrereq} disabled={savingPrereq}
                   className="bg-[#4A1A6B] text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-[#7B3FA0] disabled:opacity-50">
                   {savingPrereq ? "กำลังบันทึก..." : "บันทึกเงื่อนไข"}
                 </button>
                 {policyType === "conditional" && (
-                  <span className="text-xs text-gray-400">วิชาบังคับก่อน {prereqSelected.length} วิชา</span>
+                  <span className="text-xs text-[#9a92a8]">วิชาบังคับก่อน {prereqSelected.length} วิชา</span>
                 )}
               </div>
             </div>

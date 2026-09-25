@@ -105,18 +105,18 @@ export default function CurriculumDetailPage() {
     }
   }
 
-  if (loading) return <div className="flex h-full items-center justify-center text-gray-400">กำลังโหลด...</div>
+  if (loading) return <div className="flex h-full items-center justify-center text-[#9a92a8]">กำลังโหลด...</div>
   if (error) return <div className="p-6"><div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div></div>
   if (!curriculum) return null
 
   return (
     <div className="p-6 space-y-6">
       <div>
-        <Link href="/prep-school" className="text-sm text-gray-500 hover:text-[#4A1A6B]">← กลับรายการหลักสูตร</Link>
+        <Link href="/prep-school" className="text-sm text-[#6b6478] hover:text-[#4A1A6B]">← กลับรายการหลักสูตร</Link>
         <div className="flex items-center justify-between mt-2">
           <div>
             <h1 className="text-2xl font-bold text-[#4A1A6B]">{curriculum.name}</h1>
-            <p className="text-sm text-gray-500 mt-1">รุ่น {curriculum.batch_code} · ปีการศึกษา {curriculum.academic_year}</p>
+            <p className="text-sm text-[#6b6478] mt-1">รุ่น {curriculum.batch_code} · ปีการศึกษา {curriculum.academic_year}</p>
           </div>
           {isDraft && (
             <button onClick={handleSubmit} disabled={submitting}
@@ -129,19 +129,19 @@ export default function CurriculumDetailPage() {
 
       <div className="bg-white rounded-xl border shadow-sm p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div>
-          <p className="text-gray-400 text-xs">สถานะ</p>
+          <p className="text-[#9a92a8] text-xs">สถานะ</p>
           <p className="font-medium mt-0.5">{STATUS_LABELS[curriculum.status] || curriculum.status}</p>
         </div>
         <div>
-          <p className="text-gray-400 text-xs">หน่วยงาน</p>
+          <p className="text-[#9a92a8] text-xs">หน่วยงาน</p>
           <p className="font-medium mt-0.5">{curriculum.organization_name || "-"}</p>
         </div>
         <div>
-          <p className="text-gray-400 text-xs">โควตารวม</p>
+          <p className="text-[#9a92a8] text-xs">โควตารวม</p>
           <p className="font-medium mt-0.5">{curriculum.quota_total}</p>
         </div>
         <div>
-          <p className="text-gray-400 text-xs">ช่วงชั้นยศที่มีสิทธิ์</p>
+          <p className="text-[#9a92a8] text-xs">ช่วงชั้นยศที่มีสิทธิ์</p>
           <p className="font-medium mt-0.5">{curriculum.eligible_rank_class || "ไม่ระบุ"}</p>
         </div>
       </div>
@@ -156,13 +156,13 @@ export default function CurriculumDetailPage() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
         {curriculum.courses.length === 0 ? (
-          <div className="py-12 text-center text-gray-400 text-sm">ยังไม่มีวิชาในหลักสูตรนี้</div>
+          <div className="py-12 text-center text-[#9a92a8] text-sm">ยังไม่มีวิชาในหลักสูตรนี้</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+              <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                 <th className="px-4 py-3">ลำดับ</th>
                 <th className="px-4 py-3">ชื่อวิชา</th>
                 <th className="px-4 py-3">Course ID</th>
@@ -174,13 +174,13 @@ export default function CurriculumDetailPage() {
             </thead>
             <tbody>
               {curriculum.courses.map(c => (
-                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-500">{c.sequence_order}</td>
+                <tr key={c.id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
+                  <td className="px-4 py-3 text-[#6b6478]">{c.sequence_order}</td>
                   <td className="px-4 py-3 font-medium">{c.display_name} {c.is_required && <span className="text-xs text-red-500 ml-1">*บังคับ</span>}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600">{c.course_id}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.credit_hours}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.credits}</td>
-                  <td className="px-4 py-3 text-gray-600">
+                  <td className="px-4 py-3 font-mono text-xs text-[#6b6478]">{c.course_id}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.credit_hours}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.credits}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">
                     {c.assessment_type === "score" ? `คะแนน (ผ่าน ${c.passing_score ?? "-"})` : "ผ่าน/ไม่ผ่าน"}
                   </td>
                   {isDraft && (
@@ -200,42 +200,42 @@ export default function CurriculumDetailPage() {
       {showCourseModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
               <h3 className="font-bold text-[#2D0F42]">เพิ่มวิชาในหลักสูตร</h3>
-              <button onClick={() => setShowCourseModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={() => setShowCourseModal(false)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
             </div>
             <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
               {courseFormError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{courseFormError}</div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Course ID (edX)</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">Course ID (edX)</label>
                 <input type="text" placeholder="เช่น course-v1:Signal+SIG101+2570" value={courseForm.course_id}
                   onChange={e => setCourseForm({ ...courseForm, course_id: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อวิชา</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ชื่อวิชา</label>
                 <input type="text" value={courseForm.display_name}
                   onChange={e => setCourseForm({ ...courseForm, display_name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">จำนวนชั่วโมง</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">จำนวนชั่วโมง</label>
                   <input type="number" value={courseForm.credit_hours}
                     onChange={e => setCourseForm({ ...courseForm, credit_hours: Number(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">หน่วยกิต</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">หน่วยกิต</label>
                   <input type="number" value={courseForm.credits}
                     onChange={e => setCourseForm({ ...courseForm, credits: Number(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ประเภทการวัดผล</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ประเภทการวัดผล</label>
                 <select value={courseForm.assessment_type}
                   onChange={e => setCourseForm({ ...courseForm, assessment_type: e.target.value as "score" | "pass_fail" })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
@@ -245,7 +245,7 @@ export default function CurriculumDetailPage() {
               </div>
               {courseForm.assessment_type === "score" && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">คะแนนผ่าน (ไม่บังคับ)</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">คะแนนผ่าน (ไม่บังคับ)</label>
                   <input type="number" value={courseForm.passing_score}
                     onChange={e => setCourseForm({ ...courseForm, passing_score: e.target.value === "" ? "" : Number(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
@@ -255,11 +255,11 @@ export default function CurriculumDetailPage() {
                 <input type="checkbox" id="is_required" checked={courseForm.is_required}
                   onChange={e => setCourseForm({ ...courseForm, is_required: e.target.checked })}
                   className="w-4 h-4 accent-[#4A1A6B]" />
-                <label htmlFor="is_required" className="text-sm text-gray-700">วิชาบังคับ</label>
+                <label htmlFor="is_required" className="text-sm text-[#4a4456]">วิชาบังคับ</label>
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
-              <button onClick={() => setShowCourseModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
+              <button onClick={() => setShowCourseModal(false)} className="px-4 py-2 text-sm text-[#6b6478] hover:text-[#2D0F42]">
                 ยกเลิก
               </button>
               <button onClick={handleSaveCourse} disabled={savingCourse}

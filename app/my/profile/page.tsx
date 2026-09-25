@@ -73,7 +73,7 @@ function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () 
 
   if (!editing) {
     return (
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-5">
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-[#2D0F42]">วันเกิดและวันเริ่มรับราชการ</h3>
           <button onClick={() => { setEditing(true); setSuccess(false) }}
@@ -82,12 +82,12 @@ function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () 
         {success && <p className="text-green-600 text-sm mb-2">✓ บันทึกแล้ว</p>}
         <div className="space-y-2 text-sm">
           <div className="flex gap-4">
-            <span className="text-gray-400 w-36 shrink-0">วันเกิด</span>
-            <span className="text-gray-800 font-medium">{saved.birth_date ? formatDateTH(saved.birth_date) : "—"}</span>
+            <span className="text-[#9a92a8] w-36 shrink-0">วันเกิด</span>
+            <span className="text-[#2D0F42] font-medium">{saved.birth_date ? formatDateTH(saved.birth_date) : "—"}</span>
           </div>
           <div className="flex gap-4">
-            <span className="text-gray-400 w-36 shrink-0">วันเริ่มรับราชการ</span>
-            <span className="text-gray-800 font-medium">{saved.service_start_date ? formatDateTH(saved.service_start_date) : "—"}</span>
+            <span className="text-[#9a92a8] w-36 shrink-0">วันเริ่มรับราชการ</span>
+            <span className="text-[#2D0F42] font-medium">{saved.service_start_date ? formatDateTH(saved.service_start_date) : "—"}</span>
           </div>
         </div>
       </div>
@@ -102,12 +102,12 @@ function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () 
           {!hasAll && <p className="text-xs text-amber-600 mt-0.5">กรุณากรอกข้อมูลเพื่อให้ระบบคำนวณอายุและอายุราชการได้ถูกต้อง</p>}
         </div>
         {hasAll && (
-          <button onClick={() => setEditing(false)} className="text-sm text-gray-400 hover:text-gray-600">ยกเลิก</button>
+          <button onClick={() => setEditing(false)} className="text-sm text-[#9a92a8] hover:text-[#6b6478]">ยกเลิก</button>
         )}
       </div>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-sm text-gray-600 mb-1">
+          <label className="block text-sm text-[#6b6478] mb-1">
             วันเกิด {!initBirth && <span className="text-red-500">*</span>}
           </label>
           <input type="date" value={form.birth_date}
@@ -116,7 +116,7 @@ function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () 
             className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]" />
         </div>
         <div>
-          <label className="block text-sm text-gray-600 mb-1">
+          <label className="block text-sm text-[#6b6478] mb-1">
             วันเริ่มรับราชการ {!initSSD && <span className="text-red-500">*</span>}
           </label>
           <input type="date" value={form.service_start_date}
@@ -167,19 +167,19 @@ function EditContactSection({ profile, onDone }: { profile: MyProfile; onDone: (
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-6">
+    <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-6">
       <h3 className="font-semibold text-[#2D0F42] mb-1">ข้อมูลการติดต่อ</h3>
-      <p className="text-xs text-gray-400 mb-4">อีเมลและเบอร์โทรที่ระบุจะใช้สำหรับแจ้งข่าวสารจากระบบ</p>
+      <p className="text-xs text-[#9a92a8] mb-4">อีเมลและเบอร์โทรที่ระบุจะใช้สำหรับแจ้งข่าวสารจากระบบ</p>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-sm text-gray-600 mb-1">อีเมลติดต่อ</label>
+          <label className="block text-sm text-[#6b6478] mb-1">อีเมลติดต่อ</label>
           <input type="email" value={form.contact_email}
             onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))}
             placeholder="example@army.mi.th"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]" />
         </div>
         <div>
-          <label className="block text-sm text-gray-600 mb-1">เบอร์โทรศัพท์</label>
+          <label className="block text-sm text-[#6b6478] mb-1">เบอร์โทรศัพท์</label>
           <input type="tel" value={form.phone_number}
             onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))}
             placeholder="08XXXXXXXX"
@@ -227,15 +227,15 @@ function EditGenderSection({ profile, onDone }: { profile: MyProfile; onDone: ()
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-6">
+    <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-6">
       <h3 className="font-semibold text-[#2D0F42] mb-1">เพศ</h3>
-      <p className="text-xs text-gray-400 mb-4">ใช้สำหรับแสดงคำลงท้ายยศ "หญิง" ให้ถูกต้องในเอกสาร/ใบประกาศ</p>
+      <p className="text-xs text-[#9a92a8] mb-4">ใช้สำหรับแสดงคำลงท้ายยศ "หญิง" ให้ถูกต้องในเอกสาร/ใบประกาศ</p>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="flex gap-3">
           {(["M", "F"] as const).map((g) => (
             <label key={g}
               className={`flex-1 flex items-center justify-center gap-2 border rounded-lg py-2.5 text-sm cursor-pointer transition-colors
-                ${gender === g ? "border-[#7B3FA0] bg-purple-50 text-[#4A1A6B] font-medium" : "border-gray-300 text-gray-600"}`}>
+                ${gender === g ? "border-[#7B3FA0] bg-purple-50 text-[#4A1A6B] font-medium" : "border-gray-300 text-[#6b6478]"}`}>
               <input type="radio" name="gender" className="sr-only"
                 checked={gender === g} onChange={() => setGender(g)} />
               {g === "M" ? "ชาย" : "หญิง"}
@@ -256,8 +256,8 @@ function EditGenderSection({ profile, onDone }: { profile: MyProfile; onDone: ()
 function InfoRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="flex gap-4 py-3 border-b border-gray-50 last:border-0">
-      <span className="text-gray-400 text-sm w-36 shrink-0">{label}</span>
-      <span className="text-gray-800 text-sm font-medium">{value ?? "—"}</span>
+      <span className="text-[#9a92a8] text-sm w-36 shrink-0">{label}</span>
+      <span className="text-[#2D0F42] text-sm font-medium">{value ?? "—"}</span>
     </div>
   )
 }
@@ -293,11 +293,11 @@ function ChangePasswordSection() {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-6">
+    <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-6">
       <h3 className="font-semibold text-[#2D0F42] mb-4">เปลี่ยนรหัสผ่าน</h3>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-sm text-gray-600 mb-1">รหัสผ่านปัจจุบัน</label>
+          <label className="block text-sm text-[#6b6478] mb-1">รหัสผ่านปัจจุบัน</label>
           <input
             type="password"
             value={form.current_password}
@@ -308,7 +308,7 @@ function ChangePasswordSection() {
           />
         </div>
         <div>
-          <label className="block text-sm text-gray-600 mb-1">รหัสผ่านใหม่</label>
+          <label className="block text-sm text-[#6b6478] mb-1">รหัสผ่านใหม่</label>
           <input
             type="password"
             value={form.new_password}
@@ -319,7 +319,7 @@ function ChangePasswordSection() {
           />
         </div>
         <div>
-          <label className="block text-sm text-gray-600 mb-1">ยืนยันรหัสผ่านใหม่</label>
+          <label className="block text-sm text-[#6b6478] mb-1">ยืนยันรหัสผ่านใหม่</label>
           <input
             type="password"
             value={form.confirm_password}
@@ -339,7 +339,7 @@ function ChangePasswordSection() {
           {saving ? "กำลังบันทึก..." : "เปลี่ยนรหัสผ่าน"}
         </button>
       </form>
-      <p className="text-xs text-gray-400 mt-3">
+      <p className="text-xs text-[#9a92a8] mt-3">
         หากลืมรหัสผ่าน กรุณาติดต่อผู้ดูแลระบบเพื่อรีเซ็ตเป็น default (เลขทหาร)
       </p>
     </div>
@@ -363,7 +363,7 @@ export default function MyProfilePage() {
     return (
       <div className="max-w-xl space-y-4">
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+          <div key={i} className="h-10 bg-[#f0ecf6] rounded-lg animate-pulse" />
         ))}
       </div>
     )
@@ -373,7 +373,7 @@ export default function MyProfilePage() {
     <div className="space-y-6 max-w-xl">
       <div>
         <h2 className="text-2xl font-bold text-[#2D0F42]">ข้อมูลส่วนตัว</h2>
-        <p className="text-gray-500 text-sm mt-1">ข้อมูลประจำตัวในระบบ</p>
+        <p className="text-[#6b6478] text-sm mt-1">ข้อมูลประจำตัวในระบบ</p>
       </div>
 
       {/* Avatar card */}
@@ -392,7 +392,7 @@ export default function MyProfilePage() {
       </div>
 
       {/* Info table */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-6 py-2">
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-2">
         <InfoRow label="ชื่อ-นามสกุล" value={profile?.full_name} />
         <InfoRow label="ชั้นยศ" value={profile?.rank_display} />
         <InfoRow label="เพศ" value={(profile as any)?.gender_display} />
@@ -425,7 +425,7 @@ export default function MyProfilePage() {
       {/* Change Password */}
       <ChangePasswordSection />
 
-      <p className="text-xs text-gray-400 text-center">
+      <p className="text-xs text-[#9a92a8] text-center">
         หากข้อมูลไม่ถูกต้อง กรุณาติดต่อเจ้าหน้าที่ฝ่ายบุคลากร
       </p>
     </div>

@@ -45,7 +45,7 @@ function CourseCard({ course, onEnroll, onEnterCourse }: {
   const [imgOk, setImgOk] = useState(!!course.course_image_url)
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
+    <div className="bg-white rounded-2xl border border-[#f0ecf6] shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
       {/* Banner image */}
       <div className="h-40 bg-gradient-to-br from-[#4A1A6B] to-[#7B3FA0] relative flex items-center justify-center">
         {imgOk ? (
@@ -84,15 +84,15 @@ function CourseCard({ course, onEnroll, onEnterCourse }: {
 
       {/* Content */}
       <div className="p-4 flex-1 flex flex-col">
-        <h3 className="font-bold text-gray-800 text-sm leading-snug line-clamp-2">
+        <h3 className="font-bold text-[#2D0F42] text-sm leading-snug line-clamp-2">
           {course.name}
         </h3>
-        <p className="text-gray-500 text-xs mt-2 line-clamp-2 flex-1">
+        <p className="text-[#6b6478] text-xs mt-2 line-clamp-2 flex-1">
           {course.short_description}
         </p>
 
         {/* Meta */}
-        <div className="flex items-center gap-3 mt-3 text-xs text-gray-400">
+        <div className="flex items-center gap-3 mt-3 text-xs text-[#9a92a8]">
           {course.effort && <span>⏱ {course.effort}</span>}
           <span>👥 {course.enrollment_count} คน</span>
         </div>
@@ -119,7 +119,7 @@ function CourseCard({ course, onEnroll, onEnterCourse }: {
               ลงทะเบียน
             </button>
           ) : (
-            <button disabled className="w-full bg-gray-100 text-gray-400 text-sm py-2 rounded-lg cursor-not-allowed">
+            <button disabled className="w-full bg-[#f0ecf6] text-[#9a92a8] text-sm py-2 rounded-lg cursor-not-allowed">
               ปิดรับสมัคร
             </button>
           )}
@@ -245,7 +245,7 @@ export default function CoursesPage() {
 
       {/* Stats bar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm text-gray-500">
+        <div className="flex items-center gap-4 text-sm text-[#6b6478]">
           <span>พบ <strong className="text-[#4A1A6B]">{courses.length}</strong> หลักสูตร</span>
           {enrolledCount > 0 && (
             <span className="bg-green-50 text-green-700 px-2.5 py-0.5 rounded-full text-xs font-medium">
@@ -264,7 +264,7 @@ export default function CoursesPage() {
             className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-colors
               ${category === cat.key
                 ? "bg-[#4A1A6B] text-white"
-                : "bg-white text-gray-600 border border-gray-200 hover:border-[#4A1A6B] hover:text-[#4A1A6B]"
+                : "bg-white text-[#6b6478] border border-[#e6e1ee] hover:border-[#4A1A6B] hover:text-[#4A1A6B]"
               }`}
           >
             <span>{cat.icon}</span>{cat.label}
@@ -276,21 +276,21 @@ export default function CoursesPage() {
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 overflow-hidden animate-pulse">
-              <div className="h-40 bg-gray-100" />
+            <div key={i} className="bg-white rounded-2xl border border-[#f0ecf6] overflow-hidden animate-pulse">
+              <div className="h-40 bg-[#f0ecf6]" />
               <div className="p-4 space-y-2">
-                <div className="h-4 bg-gray-100 rounded w-3/4" />
-                <div className="h-3 bg-gray-100 rounded w-full" />
-                <div className="h-3 bg-gray-100 rounded w-2/3" />
-                <div className="h-8 bg-gray-100 rounded-lg mt-4" />
+                <div className="h-4 bg-[#f0ecf6] rounded w-3/4" />
+                <div className="h-3 bg-[#f0ecf6] rounded w-full" />
+                <div className="h-3 bg-[#f0ecf6] rounded w-2/3" />
+                <div className="h-8 bg-[#f0ecf6] rounded-lg mt-4" />
               </div>
             </div>
           ))}
         </div>
       ) : courses.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
+        <div className="bg-white rounded-2xl border border-[#f0ecf6] p-16 text-center">
           <p className="text-5xl mb-3">🔍</p>
-          <p className="text-gray-500 font-medium">ไม่พบหลักสูตรที่ค้นหา</p>
+          <p className="text-[#6b6478] font-medium">ไม่พบหลักสูตรที่ค้นหา</p>
           <button onClick={() => { setSearchInput(""); setCategory("") }}
             className="mt-3 text-[#4A1A6B] text-sm underline">ล้างตัวกรอง</button>
         </div>

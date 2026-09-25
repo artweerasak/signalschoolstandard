@@ -8,9 +8,9 @@ import { useEffect, useState } from "react"
 import { api, CertificateAlert } from "@/lib/api"
 
 function AlertTable({ data, loading, type }: { data: CertificateAlert[]; loading: boolean; type: "expiring" | "expired" }) {
-  if (loading) return <div className="py-10 text-center text-gray-400">กำลังโหลด...</div>
+  if (loading) return <div className="py-10 text-center text-[#9a92a8]">กำลังโหลด...</div>
   if (!data.length) return (
-    <div className="py-10 text-center text-gray-400">
+    <div className="py-10 text-center text-[#9a92a8]">
       {type === "expiring" ? "ไม่มีใบประกาศที่ใกล้หมดอายุ" : "ไม่มีใบประกาศที่หมดอายุแล้ว"}
     </div>
   )
@@ -18,7 +18,7 @@ function AlertTable({ data, loading, type }: { data: CertificateAlert[]; loading
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+          <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
             <th className="px-4 py-3">ชื่อ-สกุล</th>
             <th className="px-4 py-3">ยศ</th>
             <th className="px-4 py-3">หน่วย</th>
@@ -31,12 +31,12 @@ function AlertTable({ data, loading, type }: { data: CertificateAlert[]; loading
           {data.map((item, i) => {
             const isUrgent = type === "expiring" && item.days_left !== null && item.days_left <= 7
             return (
-              <tr key={`${item.user_id}-${item.course_id}-${i}`} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={`${item.user_id}-${item.course_id}-${i}`} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
                 <td className="px-4 py-3 font-medium text-[#2D0F42]">{item.full_name}</td>
-                <td className="px-4 py-3 text-gray-700">{item.rank}</td>
-                <td className="px-4 py-3 text-gray-600">{item.unit}</td>
-                <td className="px-4 py-3 text-gray-600 text-xs">{item.course_name || item.course_id}</td>
-                <td className="px-4 py-3 text-gray-600">{item.expiry_date}</td>
+                <td className="px-4 py-3 text-[#4a4456]">{item.rank}</td>
+                <td className="px-4 py-3 text-[#6b6478]">{item.unit}</td>
+                <td className="px-4 py-3 text-[#6b6478] text-xs">{item.course_name || item.course_id}</td>
+                <td className="px-4 py-3 text-[#6b6478]">{item.expiry_date}</td>
                 <td className="px-4 py-3">
                   {type === "expiring" && item.days_left !== null ? (
                     <span className={`font-semibold ${isUrgent ? "text-red-600" : "text-amber-600"}`}>
@@ -83,7 +83,7 @@ export default function CertificatesPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-[#2D0F42]">แจ้งเตือนใบประกาศ</h2>
-        <p className="text-sm text-gray-500 mt-1">ติดตามใบประกาศที่ใกล้หมดอายุหรือหมดอายุแล้ว</p>
+        <p className="text-sm text-[#6b6478] mt-1">ติดตามใบประกาศที่ใกล้หมดอายุหรือหมดอายุแล้ว</p>
       </div>
 
       {error && (
@@ -91,17 +91,17 @@ export default function CertificatesPage() {
       )}
 
       {/* Expiring soon */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6]">
+        <div className="px-6 py-4 border-b border-[#f0ecf6] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-amber-500 text-xl">⚠️</span>
             <div>
-              <h3 className="font-semibold text-gray-800">ใกล้หมดอายุ</h3>
-              <p className="text-xs text-gray-500">{expiring.length} รายการ</p>
+              <h3 className="font-semibold text-[#2D0F42]">ใกล้หมดอายุ</h3>
+              <p className="text-xs text-[#6b6478]">{expiring.length} รายการ</p>
             </div>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-500">แสดงภายใน</span>
+            <span className="text-[#6b6478]">แสดงภายใน</span>
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
@@ -119,12 +119,12 @@ export default function CertificatesPage() {
       </div>
 
       {/* Expired */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6]">
+        <div className="px-6 py-4 border-b border-[#f0ecf6] flex items-center gap-3">
           <span className="text-red-500 text-xl">🚨</span>
           <div>
-            <h3 className="font-semibold text-gray-800">หมดอายุแล้ว</h3>
-            <p className="text-xs text-gray-500">{expired.length} รายการ</p>
+            <h3 className="font-semibold text-[#2D0F42]">หมดอายุแล้ว</h3>
+            <p className="text-xs text-[#6b6478]">{expired.length} รายการ</p>
           </div>
         </div>
         <AlertTable data={expired} loading={loadingExpired} type="expired" />

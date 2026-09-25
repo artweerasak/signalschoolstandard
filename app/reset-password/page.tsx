@@ -53,8 +53,8 @@ export default function ResetPasswordPage() {
           {submitted ? (
             <div className="text-center space-y-4">
               <div className="text-5xl">✅</div>
-              <h2 className="font-bold text-gray-800">ส่งคำขอแล้ว</h2>
-              <p className="text-sm text-gray-500 leading-relaxed">
+              <h2 className="font-bold text-[#2D0F42]">ส่งคำขอแล้ว</h2>
+              <p className="text-sm text-[#6b6478] leading-relaxed">
                 ระบบได้รับคำขอรีเซ็ตรหัสผ่านของคุณแล้ว<br />
                 ผู้ดูแลระบบจะดำเนินการและแจ้งรหัสผ่านใหม่ผ่านช่องทางที่กำหนด
               </p>
@@ -65,11 +65,11 @@ export default function ResetPasswordPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
-              <p className="text-gray-600 text-sm leading-relaxed">
+              <p className="text-[#6b6478] text-sm leading-relaxed">
                 กรอกเลขบัตรประชาชนเพื่อขอรีเซ็ตรหัสผ่าน ระบบจะแจ้งให้ผู้ดูแลดำเนินการให้
               </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">
                   เลขบัตรประชาชน <span className="text-red-500">*</span>
                 </label>
                 <input type="text" value={nationalId} onChange={e => setNationalId(e.target.value)}

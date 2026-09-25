@@ -8,6 +8,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Sidebar from "@/components/Sidebar"
 import { api, CurrentUser } from "@/lib/api"
+import StatusPill from "@/components/ui/StatusPill"
 
 export default function InstructorLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -50,16 +51,14 @@ export default function InstructorLayout({ children }: { children: React.ReactNo
         userUnit={user?.unit}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-gray-200 pl-16 md:pl-6 pr-4 md:pr-6 py-4 flex items-center justify-between">
+        <header className="bg-white border-b border-[#e6e1ee] pl-16 md:pl-6 pr-4 md:pr-6 py-4 flex items-center justify-between">
           <h1 className="text-[#4A1A6B] font-bold text-sm sm:text-lg truncate">
             ระบบการเรียนการสอนออนไลน์ · กรมการทหารสื่อสาร
           </h1>
           {user && (
-            <span className="hidden sm:inline text-sm text-gray-500">
+            <span className="hidden sm:inline text-sm text-[#6b6478]">
               {user.rank ? `${user.rank} ` : ""}{user.full_name}
-              <span className="ml-2 bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                ครูอาจารย์
-              </span>
+              <span className="ml-2 inline-block"><StatusPill tone="info">ครูอาจารย์</StatusPill></span>
             </span>
           )}
         </header>

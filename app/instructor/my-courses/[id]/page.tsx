@@ -132,10 +132,10 @@ export default function CurriculumCourseDetailPage() {
 
   return (
     <div>
-      <nav className="text-sm text-gray-500 mb-4 flex items-center gap-2">
+      <nav className="text-sm text-[#6b6478] mb-4 flex items-center gap-2">
         <Link href="/instructor/my-courses" className="hover:text-[#4A1A6B]">คะแนน/วิชาในหลักสูตร</Link>
         <span>›</span>
-        <span className="text-gray-700">รายละเอียดวิชา</span>
+        <span className="text-[#4a4456]">รายละเอียดวิชา</span>
       </nav>
 
       <div className="flex items-center justify-between mb-6">
@@ -150,14 +150,14 @@ export default function CurriculumCourseDetailPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>
       )}
 
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-6 w-fit">
+      <div className="flex gap-1 bg-[#f0ecf6] rounded-lg p-1 mb-6 w-fit">
         {[
           { key: "roster" as Tab, label: "👥 รายชื่อ/คะแนน" },
           { key: "co-instructors" as Tab, label: "🧑‍🏫 ผู้ช่วยสอน" },
         ].map(t => (
           <button key={t.key} onClick={() => handleTabChange(t.key)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              tab === t.key ? "bg-white text-[#4A1A6B] shadow-sm" : "text-gray-500 hover:text-gray-700"
+              tab === t.key ? "bg-white text-[#4A1A6B] shadow-sm" : "text-[#6b6478] hover:text-[#4a4456]"
             }`}>
             {t.label}
           </button>
@@ -167,9 +167,9 @@ export default function CurriculumCourseDetailPage() {
       {tab === "roster" && (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loadingRoster ? (
-            <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
+            <div className="p-12 text-center text-[#9a92a8]">กำลังโหลด...</div>
           ) : roster.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">ยังไม่มีนักเรียนในวิชานี้</div>
+            <div className="p-12 text-center text-[#9a92a8]">ยังไม่มีนักเรียนในวิชานี้</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
@@ -183,13 +183,13 @@ export default function CurriculumCourseDetailPage() {
               </thead>
               <tbody className="divide-y">
                 {roster.map(r => (
-                  <tr key={r.student_id} className="hover:bg-gray-50">
+                  <tr key={r.student_id} className="hover:bg-[#f7f5fa]">
                     <td className="px-4 py-3 font-medium">{r.full_name}</td>
-                    <td className="px-4 py-3 text-gray-600">{r.manual_grade_count} รายการ</td>
-                    <td className="px-4 py-3 text-gray-600">{r.final_score ?? "-"}</td>
+                    <td className="px-4 py-3 text-[#6b6478]">{r.manual_grade_count} รายการ</td>
+                    <td className="px-4 py-3 text-[#6b6478]">{r.final_score ?? "-"}</td>
                     <td className="px-4 py-3">
                       {r.passed === null ? (
-                        <span className="text-gray-400 text-xs">ยังไม่ตัดสิน</span>
+                        <span className="text-[#9a92a8] text-xs">ยังไม่ตัดสิน</span>
                       ) : (
                         <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                           r.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
@@ -224,17 +224,17 @@ export default function CurriculumCourseDetailPage() {
           </div>
 
           {loadingCoInstructors ? (
-            <div className="py-8 text-center text-gray-400 text-sm">กำลังโหลด...</div>
+            <div className="py-8 text-center text-[#9a92a8] text-sm">กำลังโหลด...</div>
           ) : (
             <table className="w-full text-sm">
               <tbody className="divide-y">
                 {coInstructors.map(ci => (
                   <tr key={ci.user_id}>
-                    <td className="px-2 py-2 font-mono text-xs text-gray-500">{ci.user_id}</td>
+                    <td className="px-2 py-2 font-mono text-xs text-[#6b6478]">{ci.user_id}</td>
                     <td className="px-2 py-2">{ci.username}</td>
                     <td className="px-2 py-2">
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                        ci.is_owner ? "bg-purple-100 text-[#4A1A6B]" : "bg-gray-100 text-gray-600"
+                        ci.is_owner ? "bg-purple-100 text-[#4A1A6B]" : "bg-[#f0ecf6] text-[#6b6478]"
                       }`}>
                         {ci.is_owner ? "เจ้าของวิชา" : "ผู้ช่วยสอน"}
                       </span>
@@ -257,49 +257,49 @@ export default function CurriculumCourseDetailPage() {
       {showGradeModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
               <h3 className="font-bold text-[#2D0F42]">กรอกคะแนน</h3>
-              <button onClick={() => setShowGradeModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={() => setShowGradeModal(false)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
             </div>
             <div className="px-6 py-5 space-y-4">
               {gradeFormError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{gradeFormError}</div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">รายการคะแนน</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">รายการคะแนน</label>
                 <input type="text" placeholder="เช่น สอบภาคปฏิบัติ" value={gradeForm.component_name}
                   onChange={e => setGradeForm({ ...gradeForm, component_name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">คะแนนที่ได้</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">คะแนนที่ได้</label>
                   <input type="number" value={gradeForm.score}
                     onChange={e => setGradeForm({ ...gradeForm, score: Number(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">คะแนนเต็ม</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">คะแนนเต็ม</label>
                   <input type="number" value={gradeForm.max_score}
                     onChange={e => setGradeForm({ ...gradeForm, max_score: Number(e.target.value) })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">น้ำหนัก % ในเกรดสุดท้าย</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">น้ำหนัก % ในเกรดสุดท้าย</label>
                 <input type="number" value={gradeForm.weight}
                   onChange={e => setGradeForm({ ...gradeForm, weight: Number(e.target.value) })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                <p className="text-xs text-gray-400 mt-1">ส่วนที่เหลือจะคำนวณจากคะแนนอัตโนมัติของ e-Learning</p>
+                <p className="text-xs text-[#9a92a8] mt-1">ส่วนที่เหลือจะคำนวณจากคะแนนอัตโนมัติของ e-Learning</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ (ไม่บังคับ)</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">หมายเหตุ (ไม่บังคับ)</label>
                 <textarea value={gradeForm.notes} onChange={e => setGradeForm({ ...gradeForm, notes: e.target.value })}
                   rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
-              <button onClick={() => setShowGradeModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
+              <button onClick={() => setShowGradeModal(false)} className="px-4 py-2 text-sm text-[#6b6478] hover:text-[#2D0F42]">
                 ยกเลิก
               </button>
               <button onClick={handleSaveGrade} disabled={savingGrade}

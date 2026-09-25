@@ -157,7 +157,7 @@ export default function AdminCoursesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-[#4A1A6B]">จัดการหลักสูตร</h2>
-          <p className="text-sm text-gray-500 mt-0.5">หลักสูตรทั้งหมด {courses.length} หลักสูตร</p>
+          <p className="text-sm text-[#6b6478] mt-0.5">หลักสูตรทั้งหมด {courses.length} หลักสูตร</p>
         </div>
         <a
           href={STUDIO_URL}
@@ -176,9 +176,9 @@ export default function AdminCoursesPage() {
       )}
 
       {courses.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-[#9a92a8]">
           <p className="text-4xl mb-3">📚</p>
-          <p className="text-lg font-medium text-gray-600">ยังไม่มีหลักสูตร</p>
+          <p className="text-lg font-medium text-[#6b6478]">ยังไม่มีหลักสูตร</p>
           <p className="text-sm mt-1">ไปที่ Open edX Studio เพื่อสร้างหลักสูตรแรก</p>
         </div>
       ) : (
@@ -190,18 +190,18 @@ export default function AdminCoursesPage() {
               </div>
               <div className="p-4">
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <h3 className="font-semibold text-gray-900 line-clamp-2">{course.name}</h3>
+                  <h3 className="font-semibold text-[#2D0F42] line-clamp-2">{course.name}</h3>
                   <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
                     course.course_type === "conditional"
                       ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
                     {course.course_type === "conditional" ? "🔒 ตามเงื่อนไข" : "ทั่วไป"}
                   </span>
                 </div>
-                <p className="text-gray-500 text-xs mb-3 line-clamp-2">{course.short_description}</p>
+                <p className="text-[#6b6478] text-xs mb-3 line-clamp-2">{course.short_description}</p>
 
                 {/* Instructors */}
                 <div className="mb-3">
-                  <p className="text-xs text-gray-400 mb-1">ครูผู้สอน:</p>
+                  <p className="text-xs text-[#9a92a8] mb-1">ครูผู้สอน:</p>
                   {course.instructors.length === 0 ? (
                     <span className="text-xs text-orange-500">⚠️ ยังไม่มีครูผู้สอน</span>
                   ) : (
@@ -215,7 +215,7 @@ export default function AdminCoursesPage() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-gray-400 mb-4">
+                <div className="flex items-center justify-between text-xs text-[#9a92a8] mb-4">
                   <span>👥 {course.enrollment_count} คน</span>
                   {course.effort && <span>⏱ {course.effort}</span>}
                 </div>
@@ -244,7 +244,7 @@ export default function AdminCoursesPage() {
                     href={`${STUDIO_URL}/course/${course.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-xs text-[#6b6478] hover:bg-[#f7f5fa] transition-colors"
                   >
                     แก้ไข
                   </a>
@@ -267,9 +267,9 @@ export default function AdminCoursesPage() {
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-[#4A1A6B]">✏️ แก้ไขชื่อหลักสูตร</h3>
-              <button onClick={() => setRenameModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              <button onClick={() => setRenameModal(null)} className="text-[#9a92a8] hover:text-[#6b6478] text-xl">✕</button>
             </div>
-            <label className="block text-xs text-gray-500 mb-1">ชื่อหลักสูตร</label>
+            <label className="block text-xs text-[#6b6478] mb-1">ชื่อหลักสูตร</label>
             <input
               type="text"
               value={renameName}
@@ -288,7 +288,7 @@ export default function AdminCoursesPage() {
               </button>
               <button
                 onClick={() => setRenameModal(null)}
-                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]"
               >
                 ยกเลิก
               </button>
@@ -302,10 +302,10 @@ export default function AdminCoursesPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-lg font-bold text-red-600 mb-2">⚠️ ยืนยันการลบ course</h3>
-            <p className="text-sm text-gray-600 mb-1 font-medium">
+            <p className="text-sm text-[#6b6478] mb-1 font-medium">
               {courses.find((c) => c.id === confirmDelete)?.name}
             </p>
-            <p className="text-xs text-gray-400 mb-5">
+            <p className="text-xs text-[#9a92a8] mb-5">
               การลบจะลบเนื้อหา การลงทะเบียน และคะแนนทั้งหมดอย่างถาวร
             </p>
             <div className="flex gap-3">
@@ -318,7 +318,7 @@ export default function AdminCoursesPage() {
               </button>
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]"
               >
                 ยกเลิก
               </button>
@@ -333,14 +333,14 @@ export default function AdminCoursesPage() {
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-[#4A1A6B]">👨‍🏫 มอบหมายครูผู้สอน</h3>
-              <button onClick={() => setAssignModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              <button onClick={() => setAssignModal(null)} className="text-[#9a92a8] hover:text-[#6b6478] text-xl">✕</button>
             </div>
-            <p className="text-sm text-gray-600 mb-4 font-medium">{assignModal.name}</p>
+            <p className="text-sm text-[#6b6478] mb-4 font-medium">{assignModal.name}</p>
 
             {/* Current instructors */}
             {assignModal.instructors.length > 0 && (
               <div className="mb-4">
-                <p className="text-xs text-gray-500 mb-2">ครูผู้สอนปัจจุบัน:</p>
+                <p className="text-xs text-[#6b6478] mb-2">ครูผู้สอนปัจจุบัน:</p>
                 <div className="space-y-1">
                   {assignModal.instructors.map((ins) => (
                     <div key={ins.user_id} className="flex items-center justify-between bg-purple-50 rounded-lg px-3 py-2">
@@ -359,13 +359,13 @@ export default function AdminCoursesPage() {
             )}
 
             {/* Add instructor */}
-            <p className="text-xs text-gray-500 mb-2">เพิ่มครูผู้สอน:</p>
+            <p className="text-xs text-[#6b6478] mb-2">เพิ่มครูผู้สอน:</p>
             <div className="overflow-y-auto flex-1 space-y-1">
               {instructorUsers
                 .filter((u) => !assignModal.instructors.some((ins) => ins.user_id === u.id))
                 .map((u) => (
-                  <div key={u.id} className="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2 hover:bg-gray-50">
-                    <span className="text-sm text-gray-700">{u.full_name} <span className="text-gray-400">({u.username})</span></span>
+                  <div key={u.id} className="flex items-center justify-between border border-[#f0ecf6] rounded-lg px-3 py-2 hover:bg-[#f7f5fa]">
+                    <span className="text-sm text-[#4a4456]">{u.full_name} <span className="text-[#9a92a8]">({u.username})</span></span>
                     <button
                       onClick={() => handleAssign(assignModal.id, u.id, "add")}
                       disabled={assigning}
@@ -376,7 +376,7 @@ export default function AdminCoursesPage() {
                   </div>
                 ))}
               {instructorUsers.filter((u) => !assignModal.instructors.some((ins) => ins.user_id === u.id)).length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">ไม่มีครูที่สามารถเพิ่มได้</p>
+                <p className="text-sm text-[#9a92a8] text-center py-4">ไม่มีครูที่สามารถเพิ่มได้</p>
               )}
             </div>
           </div>
@@ -389,27 +389,27 @@ export default function AdminCoursesPage() {
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-[#4A1A6B]">⚙️ เงื่อนไขหลักสูตร</h3>
-              <button onClick={() => setPolicyModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              <button onClick={() => setPolicyModal(null)} className="text-[#9a92a8] hover:text-[#6b6478] text-xl">✕</button>
             </div>
-            <p className="text-sm text-gray-600 mb-4 font-medium">{policyModal.name}</p>
+            <p className="text-sm text-[#6b6478] mb-4 font-medium">{policyModal.name}</p>
 
             <div className="overflow-y-auto flex-1 space-y-5">
               {/* ประเภทหลักสูตร */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 mb-2">ประเภทหลักสูตร</p>
+                <p className="text-xs font-semibold text-[#6b6478] mb-2">ประเภทหลักสูตร</p>
                 <div className="space-y-2">
-                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "general" ? "border-[#4A1A6B] bg-purple-50" : "border-gray-200"}`}>
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "general" ? "border-[#4A1A6B] bg-purple-50" : "border-[#e6e1ee]"}`}>
                     <input type="radio" checked={policyType === "general"} onChange={() => setPolicyType("general")} className="mt-0.5" />
                     <span className="text-sm">
-                      <span className="font-medium text-gray-800">หลักสูตรทั่วไป</span>
-                      <span className="block text-xs text-gray-500">ทุกระดับมองเห็นและเข้าเรียนได้ทันที</span>
+                      <span className="font-medium text-[#2D0F42]">หลักสูตรทั่วไป</span>
+                      <span className="block text-xs text-[#6b6478]">ทุกระดับมองเห็นและเข้าเรียนได้ทันที</span>
                     </span>
                   </label>
-                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "conditional" ? "border-amber-400 bg-amber-50" : "border-gray-200"}`}>
+                  <label className={`flex items-start gap-2 border rounded-lg p-3 cursor-pointer ${policyType === "conditional" ? "border-amber-400 bg-amber-50" : "border-[#e6e1ee]"}`}>
                     <input type="radio" checked={policyType === "conditional"} onChange={() => setPolicyType("conditional")} className="mt-0.5" />
                     <span className="text-sm">
-                      <span className="font-medium text-gray-800">หลักสูตรตามเงื่อนไข</span>
-                      <span className="block text-xs text-gray-500">กำหนดระดับที่มองเห็น และวิชาบังคับก่อน</span>
+                      <span className="font-medium text-[#2D0F42]">หลักสูตรตามเงื่อนไข</span>
+                      <span className="block text-xs text-[#6b6478]">กำหนดระดับที่มองเห็น และวิชาบังคับก่อน</span>
                     </span>
                   </label>
                 </div>
@@ -419,7 +419,7 @@ export default function AdminCoursesPage() {
                 <>
                   {/* ระดับบุคลากรที่มองเห็น/สมัครได้ */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-2">ระดับที่มองเห็น/สมัครได้ <span className="font-normal text-gray-400">(ไม่เลือก = ทุกระดับ)</span></p>
+                    <p className="text-xs font-semibold text-[#6b6478] mb-2">ระดับที่มองเห็น/สมัครได้ <span className="font-normal text-[#9a92a8]">(ไม่เลือก = ทุกระดับ)</span></p>
                     <div className="flex flex-wrap gap-2">
                       {RANK_CLASS_OPTIONS.map((r) => (
                         <button key={r.key} type="button"
@@ -427,7 +427,7 @@ export default function AdminCoursesPage() {
                           className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                             policyRanks.includes(r.key)
                               ? "bg-[#4A1A6B] text-white border-[#4A1A6B]"
-                              : "bg-white text-gray-600 border-gray-300 hover:border-[#4A1A6B]"}`}>
+                              : "bg-white text-[#6b6478] border-gray-300 hover:border-[#4A1A6B]"}`}>
                           {policyRanks.includes(r.key) ? "✓ " : ""}{r.label}
                         </button>
                       ))}
@@ -436,17 +436,17 @@ export default function AdminCoursesPage() {
 
                   {/* วิชาบังคับก่อน */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-2">ต้องผ่านหลักสูตรเหล่านี้ก่อนจึงปลดล็อก</p>
-                    <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-100">
+                    <p className="text-xs font-semibold text-[#6b6478] mb-2">ต้องผ่านหลักสูตรเหล่านี้ก่อนจึงปลดล็อก</p>
+                    <div className="border border-[#e6e1ee] rounded-lg max-h-44 overflow-y-auto divide-y divide-[#f0ecf6]">
                       {courses.filter((c) => c.id !== policyModal.id).map((c) => (
-                        <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+                        <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-[#f7f5fa] cursor-pointer">
                           <input type="checkbox" checked={policyPrereqs.includes(c.id)}
                             onChange={() => setPolicyPrereqs((prev) => toggle(prev, c.id))} />
-                          <span className="text-gray-700 line-clamp-1">{c.name}</span>
+                          <span className="text-[#4a4456] line-clamp-1">{c.name}</span>
                         </label>
                       ))}
                       {courses.filter((c) => c.id !== policyModal.id).length === 0 && (
-                        <p className="text-xs text-gray-400 text-center py-4">ไม่มีหลักสูตรอื่นให้เลือก</p>
+                        <p className="text-xs text-[#9a92a8] text-center py-4">ไม่มีหลักสูตรอื่นให้เลือก</p>
                       )}
                     </div>
                   </div>
@@ -460,7 +460,7 @@ export default function AdminCoursesPage() {
                 {savingPolicy ? "กำลังบันทึก..." : "บันทึกเงื่อนไข"}
               </button>
               <button onClick={() => setPolicyModal(null)}
-                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]">
                 ยกเลิก
               </button>
             </div>

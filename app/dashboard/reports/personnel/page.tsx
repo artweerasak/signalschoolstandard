@@ -126,13 +126,13 @@ function PersonnelContent() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#2D0F42]">{title}</h2>
-          <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
+          <p className="text-sm text-[#6b6478] mt-1">{subtitle}</p>
         </div>
         <a href="/dashboard/reports" className="text-sm text-[#4A1A6B] hover:underline">← กลับหน้ารายงาน</a>
       </div>
 
       {/* Status Toggle */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-[#f0ecf6]">
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => { setStatus("not_passed"); setPage(1) }}
@@ -201,21 +201,21 @@ function PersonnelContent() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#f0ecf6] flex items-center justify-between">
+          <span className="text-sm font-medium text-[#4a4456]">
             {loading ? "กำลังโหลด..." : `พบ ${totalCount.toLocaleString()} ราย • หน้า ${page} จาก ${totalPages}`}
           </span>
         </div>
         {loading ? (
-          <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : data.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">ไม่มีข้อมูลตามเงื่อนไขที่เลือก</div>
+          <div className="py-16 text-center text-[#9a92a8]">ไม่มีข้อมูลตามเงื่อนไขที่เลือก</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                   <th className="px-4 py-3">#</th>
                   <th className="px-4 py-3">ชื่อ-สกุล</th>
                   <th className="px-4 py-3">ยศ</th>
@@ -235,15 +235,15 @@ function PersonnelContent() {
               </thead>
               <tbody>
                 {data.map((p, idx) => (
-                  <tr key={p.user_id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-400 text-xs">{(page - 1) * perPage + idx + 1}</td>
+                  <tr key={p.user_id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
+                    <td className="px-4 py-3 text-[#9a92a8] text-xs">{(page - 1) * perPage + idx + 1}</td>
                     <td className="px-4 py-3 font-medium text-[#2D0F42]">{p.full_name}</td>
-                    <td className="px-4 py-3 text-gray-700">{p.rank_display || p.rank}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.rank_class_display}</td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {p.unit}{p.sub_unit ? <span className="text-gray-400 text-xs"> / {p.sub_unit}</span> : ""}
+                    <td className="px-4 py-3 text-[#4a4456]">{p.rank_display || p.rank}</td>
+                    <td className="px-4 py-3 text-[#6b6478]">{p.rank_class_display}</td>
+                    <td className="px-4 py-3 text-[#6b6478]">
+                      {p.unit}{p.sub_unit ? <span className="text-[#9a92a8] text-xs"> / {p.sub_unit}</span> : ""}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{p.army_region_display || "-"}</td>
+                    <td className="px-4 py-3 text-[#6b6478]">{p.army_region_display || "-"}</td>
                     {isPassedMode ? (
                       <td className="px-4 py-3">
                         {(p as any).passed_courses?.length > 0 ? (
@@ -252,7 +252,7 @@ function PersonnelContent() {
                               <span key={c} className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
                             ))}
                           </div>
-                        ) : <span className="text-gray-400 text-xs">-</span>}
+                        ) : <span className="text-[#9a92a8] text-xs">-</span>}
                       </td>
                     ) : (
                       <>
@@ -263,7 +263,7 @@ function PersonnelContent() {
                                 <span key={c} className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
                               ))}
                             </div>
-                          ) : <span className="text-gray-400 text-xs">-</span>}
+                          ) : <span className="text-[#9a92a8] text-xs">-</span>}
                         </td>
                         <td className="px-4 py-3">
                           {p.expired_courses.length > 0 ? (
@@ -272,11 +272,11 @@ function PersonnelContent() {
                                 <span key={c} className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
                               ))}
                             </div>
-                          ) : <span className="text-gray-400 text-xs">-</span>}
+                          ) : <span className="text-[#9a92a8] text-xs">-</span>}
                         </td>
                       </>
                     )}
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td className="px-4 py-3 text-xs text-[#6b6478]">
                       {p.contact_email && <div>{p.contact_email}</div>}
                       {p.phone_number && <div>{p.phone_number}</div>}
                     </td>
@@ -289,28 +289,28 @@ function PersonnelContent() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-2 flex-wrap">
-            <span className="text-xs text-gray-500">
+          <div className="px-6 py-4 border-t border-[#f0ecf6] flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs text-[#6b6478]">
               แสดง {(page - 1) * perPage + 1}–{Math.min(page * perPage, totalCount)} จาก {totalCount.toLocaleString()} รายการ
             </span>
             <div className="flex items-center gap-1">
-              <button onClick={() => changePage(1)} disabled={page === 1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
-              <button onClick={() => changePage(page - 1)} disabled={page === 1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+              <button onClick={() => changePage(1)} disabled={page === 1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">«</button>
+              <button onClick={() => changePage(page - 1)} disabled={page === 1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">‹</button>
               {renderPageNumbers().map((p, i) =>
                 p === "..." ? (
-                  <span key={`e${i}`} className="px-2 py-1 text-xs text-gray-400">…</span>
+                  <span key={`e${i}`} className="px-2 py-1 text-xs text-[#9a92a8]">…</span>
                 ) : (
                   <button
                     key={p}
                     onClick={() => changePage(p as number)}
                     className={`px-2.5 py-1 text-xs border rounded transition-colors ${
-                      page === p ? "border-[#4A1A6B] bg-[#4A1A6B] text-white" : "border-gray-200 hover:bg-gray-50"
+                      page === p ? "border-[#4A1A6B] bg-[#4A1A6B] text-white" : "border-[#e6e1ee] hover:bg-[#f7f5fa]"
                     }`}
                   >{p}</button>
                 )
               )}
-              <button onClick={() => changePage(page + 1)} disabled={page === totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
-              <button onClick={() => changePage(totalPages)} disabled={page === totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+              <button onClick={() => changePage(page + 1)} disabled={page === totalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">›</button>
+              <button onClick={() => changePage(totalPages)} disabled={page === totalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">»</button>
             </div>
           </div>
         )}
@@ -321,7 +321,7 @@ function PersonnelContent() {
 
 export default function PersonnelPage() {
   return (
-    <Suspense fallback={<div className="py-16 text-center text-gray-400">กำลังโหลด...</div>}>
+    <Suspense fallback={<div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>}>
       <PersonnelContent />
     </Suspense>
   )

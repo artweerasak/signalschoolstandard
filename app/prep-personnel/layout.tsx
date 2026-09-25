@@ -27,25 +27,29 @@ export default function PrepPersonnelLayout({ children }: { children: React.Reac
       .finally(() => setLoading(false))
   }, [router])
 
-  if (loading) return <div className="flex h-screen items-center justify-center text-gray-400">กำลังโหลด...</div>
+  if (loading) return <div className="flex h-screen items-center justify-center text-[#9a92a8]">กำลังโหลด...</div>
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <aside className="w-56 bg-[#4A1A6B] text-white flex flex-col flex-shrink-0">
-        <div className="p-4 border-b border-purple-700 flex items-center gap-2">
-          <Image src="/signal_logo.png" alt="logo" width={36} height={36} className="rounded-full" />
+    <div className="flex h-screen bg-[#f7f5fa]">
+      <aside className="w-56 bg-gradient-to-b from-[#2D0F42] to-[#230a35] text-white flex flex-col flex-shrink-0">
+        <div className="p-4 border-b border-white/10 flex items-center gap-2">
+          <div className="relative shrink-0">
+            <span className="absolute inset-0 rounded-full blur-md bg-[#C9A84C]/30 -z-10 scale-125" aria-hidden="true" />
+            <Image src="/signal_logo.png" alt="logo" width={36} height={36} className="rounded-full border border-[#C9A84C]/50" />
+          </div>
           <span className="font-bold text-sm leading-tight">แผนกเตรียมพล<br/>กพ.</span>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {navItems.map(item => (
             <Link key={item.href} href={item.href}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors
-                ${pathname === item.href ? "bg-white/20 font-medium" : "hover:bg-white/10"}`}>
+              className={`relative flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-150
+                ${pathname === item.href ? "bg-white/10 font-medium" : "text-purple-200/80 hover:bg-white/5 hover:text-white"}`}>
+              {pathname === item.href && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-[#E8C96A]" aria-hidden="true" />}
               <span>{item.icon}</span>{item.label}
             </Link>
           ))}
         </nav>
-        <div className="p-4 border-t border-purple-700">
+        <div className="p-4 border-t border-white/10">
           <p className="text-xs text-purple-300 truncate">{user?.full_name || user?.username}</p>
           <Link href="/my" className="text-xs text-purple-400 hover:text-white mt-1 block">← กลับหน้าเรียน</Link>
         </div>

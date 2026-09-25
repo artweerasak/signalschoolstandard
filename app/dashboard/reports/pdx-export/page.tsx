@@ -120,24 +120,24 @@ export default function PdxExportPage() {
     <div className="max-w-3xl mx-auto p-4 sm:p-6">
       <div className="mb-4">
         <h2 className="text-2xl font-bold text-[#2D0F42]">📤 ส่งออกฟอร์ม PDX</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-[#6b6478] mt-1">
           ส่งออกรายชื่อกำลังพลเป็นไฟล์ Excel ตามฟอร์มสำหรับ <b>นำเข้าระบบ PDX ของ ทบ.</b>
         </p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-5">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] p-5 mb-5">
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">ขอบเขต (ทัพภาค)</label>
+            <label className="block text-sm font-semibold text-[#4a4456] mb-1.5">ขอบเขต (ทัพภาค)</label>
             <select value={region} onChange={(e) => setRegion(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#4A1A6B] outline-none">
               {REGIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+            <label className="block text-sm font-semibold text-[#4a4456] mb-1.5">
               เลือกหน่วย (เลือกได้หลายหน่วย)
-              <span className="text-gray-400 font-normal"> · {loadingUnits ? "กำลังโหลด..." : `${units.length} หน่วย`}</span>
+              <span className="text-[#9a92a8] font-normal"> · {loadingUnits ? "กำลังโหลด..." : `${units.length} หน่วย`}</span>
             </label>
             <input type="text" value={unitInput} list="unitlist"
               onChange={(e) => { setUnitInput(e.target.value); addUnit(e.target.value) }}
@@ -159,17 +159,17 @@ export default function PdxExportPage() {
                 <button onClick={() => removeUnit(u)} className="hover:text-red-600 font-bold">×</button>
               </span>
             ))}
-            <button onClick={() => setSelected([])} className="text-xs text-gray-400 hover:text-red-500 underline">ล้างทั้งหมด</button>
+            <button onClick={() => setSelected([])} className="text-xs text-[#9a92a8] hover:text-red-500 underline">ล้างทั้งหมด</button>
           </div>
         )}
 
         {/* เลือกผลการศึกษา */}
         <div className="mt-4">
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">ผลการศึกษาที่จะส่งออก</label>
+          <label className="block text-sm font-semibold text-[#4a4456] mb-1.5">ผลการศึกษาที่จะส่งออก</label>
           <div className="flex gap-2 flex-wrap">
             {RESULTS.map((r) => (
               <button key={r.value} type="button" onClick={() => setResult(r.value)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border ${result === r.value ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
+                className={`px-4 py-2 rounded-lg text-sm font-medium border ${result === r.value ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-[#6b6478] border-gray-300 hover:bg-[#f7f5fa]"}`}>
                 {r.label}
               </button>
             ))}
@@ -177,28 +177,28 @@ export default function PdxExportPage() {
         </div>
 
         {/* พรีวิวจำนวน */}
-        <div className="mt-4 bg-gray-50 rounded-lg px-4 py-3 text-sm">
+        <div className="mt-4 bg-[#f7f5fa] rounded-lg px-4 py-3 text-sm">
           {loadingCount ? (
-            <span className="text-gray-400">กำลังนับจำนวน...</span>
+            <span className="text-[#9a92a8]">กำลังนับจำนวน...</span>
           ) : count ? (
-            <span className="text-gray-700">
+            <span className="text-[#4a4456]">
               จะส่งออก <b className="text-[#2D0F42] text-base">{displayCount.toLocaleString()}</b> คน
               {result === "" && (
                 <>
-                  <span className="text-gray-400"> · </span>
+                  <span className="text-[#9a92a8]"> · </span>
                   <span className="text-emerald-600">ผ่าน {count.passed.toLocaleString()}</span>
-                  <span className="text-gray-400"> · </span>
+                  <span className="text-[#9a92a8]"> · </span>
                   <span className="text-red-500">ไม่ผ่าน {count.not_passed.toLocaleString()}</span>
                 </>
               )}
               {result === "passed" && <span className="text-emerald-600"> (เฉพาะผ่าน)</span>}
               {result === "not_passed" && <span className="text-red-500"> (เฉพาะไม่ผ่าน)</span>}
-              <span className="text-gray-400 block text-xs mt-0.5">
+              <span className="text-[#9a92a8] block text-xs mt-0.5">
                 ขอบเขต: {scopeText}{selected.length ? ` · ${selected.length} หน่วย` : " · ทุกหน่วย"}
               </span>
             </span>
           ) : (
-            <span className="text-gray-400">—</span>
+            <span className="text-[#9a92a8]">—</span>
           )}
         </div>
 
@@ -213,7 +213,7 @@ export default function PdxExportPage() {
         {done && <p className="mt-3 text-sm text-emerald-600">{done}</p>}
       </div>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 text-sm text-gray-700 leading-relaxed">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 text-sm text-[#4a4456] leading-relaxed">
         <h3 className="font-bold text-[#2D0F42] mb-2">📌 คำอธิบาย (สำหรับแอดมิน)</h3>
         <ul className="list-disc pl-5 space-y-1.5">
           <li><b>ไฟล์นี้คืออะไร:</b> รายชื่อกำลังพลพร้อมผลการศึกษา ในรูปแบบ 4 คอลัมน์ที่ระบบ <b>PDX</b> ของ ทบ. รับนำเข้าได้ทันที</li>

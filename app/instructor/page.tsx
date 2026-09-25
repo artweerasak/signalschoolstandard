@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { api, Course } from "@/lib/api"
+import Card from "@/components/ui/Card"
+import PageHeader from "@/components/ui/PageHeader"
+import Button from "@/components/ui/Button"
 
 const STUDIO_URL = process.env.NEXT_PUBLIC_STUDIO_URL ?? "https://studio-signalstandard.rta.mi.th"
 
@@ -45,50 +48,45 @@ export default function InstructorCoursesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-[#4A1A6B]">หลักสูตรที่ฉันสอน</h2>
-          <p className="text-sm text-gray-500 mt-0.5">หลักสูตรทั้งหมด {courses.length} หลักสูตร</p>
-        </div>
-        <a
-          href={STUDIO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 bg-[#4A1A6B] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#7B3FA0] transition-colors"
-        >
-          <span>🏫</span> Open edX Studio
-        </a>
-      </div>
+      <PageHeader
+        title="หลักสูตรที่ฉันสอน"
+        description={`หลักสูตรทั้งหมด ${courses.length} หลักสูตร`}
+        action={
+          <a href={STUDIO_URL} target="_blank" rel="noopener noreferrer">
+            <Button variant="secondary">🏫 Open edX Studio</Button>
+          </a>
+        }
+      />
 
       {error && (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-lg px-4 py-3 text-sm mb-6">
+        <div className="bg-[#fef3c7] border border-[#fde68a] text-[#b45309] rounded-xl px-4 py-3 text-sm mb-6">
           ⚠️ ไม่สามารถดึงข้อมูลจาก Open edX ได้: {error}
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 mb-6 text-sm text-blue-800">
+      <div className="bg-[#dbeafe] border border-blue-200 rounded-2xl px-5 py-4 mb-6 text-sm text-[#1d4ed8]">
         <p className="font-semibold mb-1">💡 การสร้างหลักสูตรใหม่</p>
         <p>ใช้ <strong>Open edX Studio</strong> (ปุ่มด้านบนขวา) เพื่อสร้างและแก้ไขเนื้อหาหลักสูตร
         หลังจากสร้างแล้ว หลักสูตรจะแสดงในหน้านี้อัตโนมัติ</p>
       </div>
 
       {courses.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+        <Card className="p-12 text-center text-[#9a92a8]">
           <p className="text-4xl mb-3">📚</p>
-          <p className="text-lg font-medium text-gray-600">ยังไม่มีหลักสูตร</p>
+          <p className="text-lg font-medium text-[#6b6478]">ยังไม่มีหลักสูตร</p>
           <p className="text-sm mt-1">ไปที่ Open edX Studio เพื่อสร้างหลักสูตรแรกของคุณ</p>
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {courses.map((course) => (
-            <div key={course.id} className="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+            <Card key={course.id} hoverable className="overflow-hidden">
               <div className="h-32 bg-gradient-to-br from-[#4A1A6B] to-[#7B3FA0] flex items-center justify-center">
                 <span className="text-4xl">📡</span>
               </div>
               <div className="p-4">
-                <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2">{course.name}</h3>
-                <p className="text-gray-500 text-xs mb-3 line-clamp-2">{course.short_description}</p>
-                <div className="flex items-center justify-between text-xs text-gray-400 mb-4">
+                <h3 className="font-semibold text-[#2D0F42] mb-1 line-clamp-2">{course.name}</h3>
+                <p className="text-[#6b6478] text-xs mb-3 line-clamp-2">{course.short_description}</p>
+                <div className="flex items-center justify-between text-xs text-[#9a92a8] mb-4">
                   <span>👥 {course.enrollment_count} คน</span>
                   {course.effort && <span>⏱ {course.effort}</span>}
                 </div>
@@ -109,7 +107,7 @@ export default function InstructorCoursesPage() {
                     href={`${STUDIO_URL}/course/${course.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="px-3 py-2 border border-[#d9d2e6] rounded-lg text-xs text-[#6b6478] hover:bg-[#f7f5fa] transition-colors"
                   >
                     แก้ไข
                   </a>
@@ -121,7 +119,7 @@ export default function InstructorCoursesPage() {
                   </button>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -129,10 +127,10 @@ export default function InstructorCoursesPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-lg font-bold text-red-600 mb-2">⚠️ ยืนยันการลบ course</h3>
-            <p className="text-sm text-gray-600 mb-1">
+            <p className="text-sm text-[#6b6478] mb-1">
               {courses.find((c) => c.id === confirmDelete)?.name}
             </p>
-            <p className="text-xs text-gray-400 mb-5">
+            <p className="text-xs text-[#9a92a8] mb-5">
               การลบจะลบเนื้อหา การลงทะเบียน และคะแนนทั้งหมดอย่างถาวร
             </p>
             <div className="flex gap-3">
@@ -145,7 +143,7 @@ export default function InstructorCoursesPage() {
               </button>
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                className="flex-1 border border-[#d9d2e6] py-2 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]"
               >
                 ยกเลิก
               </button>

@@ -72,10 +72,10 @@ export default function RegistrationsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-[#4A1A6B]">อนุมัติคำขอสมัครสมาชิก</h2>
-          <p className="text-sm text-gray-500 mt-0.5">ทั้งหมด {total} รายการ</p>
+          <p className="text-sm text-[#6b6478] mt-0.5">ทั้งหมด {total} รายการ</p>
         </div>
         {/* Status filter tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex gap-1 bg-[#f0ecf6] rounded-lg p-1">
           {[
             { value: "pending", label: "รอพิจารณา" },
             { value: "approved", label: "อนุมัติแล้ว" },
@@ -88,7 +88,7 @@ export default function RegistrationsPage() {
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 statusFilter === tab.value
                   ? "bg-white text-[#4A1A6B] shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
+                  : "text-[#6b6478] hover:text-[#4a4456]"
               }`}
             >
               {tab.label}
@@ -116,9 +116,9 @@ export default function RegistrationsPage() {
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="p-12 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">
+          <div className="p-12 text-center text-[#9a92a8]">
             {statusFilter === "pending" ? "✅ ไม่มีคำขอที่รอพิจารณา" : "ไม่พบรายการ"}
           </div>
         ) : (
@@ -132,38 +132,38 @@ export default function RegistrationsPage() {
                 <th className="px-4 py-3 text-left font-semibold">การดำเนินการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[#f0ecf6]">
               {items.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
+                <tr key={item.id} className="hover:bg-[#f7f5fa]">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{item.full_name_th}</p>
-                    {item.email && <p className="text-gray-500 text-xs">{item.email}</p>}
+                    <p className="font-medium text-[#2D0F42]">{item.full_name_th}</p>
+                    {item.email && <p className="text-[#6b6478] text-xs">{item.email}</p>}
                     {(item as any).thaid_verified && (
                       <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-medium">🪪 ThaID ยืนยันแล้ว</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-gray-700">{item.rank_display}</p>
-                    <p className="text-gray-500 text-xs">{item.unit}{(item as any).sub_unit ? ` / ${(item as any).sub_unit}` : ""}</p>
+                    <p className="text-[#4a4456]">{item.rank_display}</p>
+                    <p className="text-[#6b6478] text-xs">{item.unit}{(item as any).sub_unit ? ` / ${(item as any).sub_unit}` : ""}</p>
                     {(item as any).army_region_display && (item as any).army_region_display !== "ไม่ระบุ" && (
                       <p className="text-purple-500 text-xs">{(item as any).army_region_display}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">
+                  <td className="px-4 py-3 text-[#6b6478] text-xs">
                     {new Date(item.submitted_at).toLocaleDateString("th-TH", {
                       year: "numeric", month: "short", day: "numeric",
                       hour: "2-digit", minute: "2-digit"
                     })}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[item.status] ?? "bg-gray-100 text-gray-600"}`}>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[item.status] ?? "bg-[#f0ecf6] text-[#6b6478]"}`}>
                       {item.status_display}
                     </span>
                     {item.reject_reason && (
                       <p className="text-red-500 text-xs mt-0.5">{item.reject_reason}</p>
                     )}
                     {item.reviewed_by && (
-                      <p className="text-gray-400 text-xs mt-0.5">โดย {item.reviewed_by}</p>
+                      <p className="text-[#9a92a8] text-xs mt-0.5">โดย {item.reviewed_by}</p>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -194,16 +194,16 @@ export default function RegistrationsPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[#6b6478]">
             แสดง {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} รายการ
           </span>
           <div className="flex gap-1 items-center">
-            <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
-            <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+            <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">«</button>
+            <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">‹</button>
             <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{page}</span>
-            <span className="text-xs text-gray-400">/ {totalPages}</span>
-            <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
-            <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+            <span className="text-xs text-[#9a92a8]">/ {totalPages}</span>
+            <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">›</button>
+            <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 text-xs border border-[#e6e1ee] rounded hover:bg-[#f7f5fa] disabled:opacity-40">»</button>
           </div>
         </div>
       )}
@@ -212,24 +212,24 @@ export default function RegistrationsPage() {
       {selected && action && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-5 border-b border-gray-200">
+            <div className="px-6 py-5 border-b border-[#e6e1ee]">
               <h3 className="text-lg font-bold text-[#4A1A6B]">
                 {action === "approve" ? "✅ อนุมัติคำขอสมัครสมาชิก" : "❌ ปฏิเสธคำขอสมัครสมาชิก"}
               </h3>
             </div>
             <div className="px-6 py-5 space-y-4">
               {/* ข้อมูลผู้สมัคร */}
-              <div className="bg-gray-50 rounded-lg p-4 space-y-1 text-sm">
-                <p><span className="text-gray-500">ชื่อ:</span> <strong>{selected.full_name_th}</strong></p>
-                <p><span className="text-gray-500">ยศ:</span> {selected.rank_display}</p>
-                <p><span className="text-gray-500">หน่วย:</span> {selected.unit}{(selected as any).sub_unit ? ` / ${(selected as any).sub_unit}` : ""}</p>
+              <div className="bg-[#f7f5fa] rounded-lg p-4 space-y-1 text-sm">
+                <p><span className="text-[#6b6478]">ชื่อ:</span> <strong>{selected.full_name_th}</strong></p>
+                <p><span className="text-[#6b6478]">ยศ:</span> {selected.rank_display}</p>
+                <p><span className="text-[#6b6478]">หน่วย:</span> {selected.unit}{(selected as any).sub_unit ? ` / ${(selected as any).sub_unit}` : ""}</p>
                 {(selected as any).army_region_display && (selected as any).army_region_display !== "ไม่ระบุ" && (
-                  <p><span className="text-gray-500">ทัพภาค:</span> {(selected as any).army_region_display}</p>
+                  <p><span className="text-[#6b6478]">ทัพภาค:</span> {(selected as any).army_region_display}</p>
                 )}
                 {(selected as any).phone_number && (
-                  <p><span className="text-gray-500">เบอร์โทร:</span> {(selected as any).phone_number}</p>
+                  <p><span className="text-[#6b6478]">เบอร์โทร:</span> {(selected as any).phone_number}</p>
                 )}
-                {selected.email && <p><span className="text-gray-500">อีเมล:</span> {selected.email}</p>}
+                {selected.email && <p><span className="text-[#6b6478]">อีเมล:</span> {selected.email}</p>}
                 {(selected as any).thaid_verified && (
                   <p className="text-green-700 font-medium">🪪 ยืนยันตัวตนผ่าน ThaID แล้ว</p>
                 )}
@@ -241,7 +241,7 @@ export default function RegistrationsPage() {
 
               {action === "approve" ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">
                     Username สำหรับเข้าสู่ระบบ
                   </label>
                   <input
@@ -250,11 +250,11 @@ export default function RegistrationsPage() {
                     onChange={e => setApproveUsername(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
                   />
-                  <p className="text-gray-400 text-xs mt-1">Password จะถูกสุ่มอัตโนมัติ — แจ้ง user ให้เปลี่ยนรหัสผ่านหลัง login ครั้งแรก</p>
+                  <p className="text-[#9a92a8] text-xs mt-1">Password จะถูกสุ่มอัตโนมัติ — แจ้ง user ให้เปลี่ยนรหัสผ่านหลัง login ครั้งแรก</p>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผลที่ปฏิเสธ</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">เหตุผลที่ปฏิเสธ</label>
                   <textarea
                     value={rejectReason}
                     onChange={e => setRejectReason(e.target.value)}
@@ -265,10 +265,10 @@ export default function RegistrationsPage() {
                 </div>
               )}
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex justify-end gap-3">
               <button
                 onClick={() => { setSelected(null); setAction(null) }}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-[#6b6478] hover:bg-[#f7f5fa]"
               >
                 ยกเลิก
               </button>

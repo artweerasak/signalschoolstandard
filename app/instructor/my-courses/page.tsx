@@ -25,22 +25,22 @@ export default function InstructorMyCoursesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#2D0F42]">คะแนน / วิชาในหลักสูตร</h1>
-        <p className="text-sm text-gray-500 mt-1">จัดการรายชื่อนักเรียน คะแนน และผู้ช่วยสอนของวิชาที่ท่านรับผิดชอบ</p>
+        <p className="text-sm text-[#6b6478] mt-1">จัดการรายชื่อนักเรียน คะแนน และผู้ช่วยสอนของวิชาที่ท่านรับผิดชอบ</p>
       </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-gray-400">กำลังโหลด...</div>
+          <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
         ) : courses.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">ยังไม่มีวิชาในหลักสูตรที่ท่านรับผิดชอบ</div>
+          <div className="py-16 text-center text-[#9a92a8]">ยังไม่มีวิชาในหลักสูตรที่ท่านรับผิดชอบ</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+              <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                 <th className="px-4 py-3">ชื่อวิชา</th>
                 <th className="px-4 py-3">หลักสูตร</th>
                 <th className="px-4 py-3">บทบาท</th>
@@ -49,22 +49,22 @@ export default function InstructorMyCoursesPage() {
             </thead>
             <tbody>
               {courses.map(c => (
-                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={c.id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
                   <td className="px-4 py-3">
                     <Link href={`/instructor/my-courses/${c.id}`} className="text-[#4A1A6B] font-medium hover:underline">
                       {c.display_name}
                     </Link>
-                    <p className="text-xs text-gray-400 font-mono">{c.course_id}</p>
+                    <p className="text-xs text-[#9a92a8] font-mono">{c.course_id}</p>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{c.curriculum_name}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.curriculum_name}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                      c.is_owner ? "bg-purple-100 text-[#4A1A6B]" : "bg-gray-100 text-gray-600"
+                      c.is_owner ? "bg-purple-100 text-[#4A1A6B]" : "bg-[#f0ecf6] text-[#6b6478]"
                     }`}>
                       {c.is_owner ? "เจ้าของวิชา" : "ผู้ช่วยสอน"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{c.student_count}</td>
+                  <td className="px-4 py-3 text-[#6b6478]">{c.student_count}</td>
                 </tr>
               ))}
             </tbody>

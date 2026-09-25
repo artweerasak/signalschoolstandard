@@ -34,7 +34,7 @@ export default function MyTranscriptPage() {
     }
   }
 
-  if (loading) return <div className="p-6 text-center text-gray-400">กำลังโหลด...</div>
+  if (loading) return <div className="p-6 text-center text-[#9a92a8]">กำลังโหลด...</div>
   if (error) return <div className="p-6"><div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div></div>
   if (!data) return null
 
@@ -42,20 +42,20 @@ export default function MyTranscriptPage() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#4A1A6B]">ระเบียนประวัติการเรียน</h1>
-        <p className="text-sm text-gray-500 mt-1">หน่วยกิตสะสมทั้งหมด: <strong>{data.total_credits_earned}</strong> หน่วยกิต</p>
+        <p className="text-sm text-[#6b6478] mt-1">หน่วยกิตสะสมทั้งหมด: <strong>{data.total_credits_earned}</strong> หน่วยกิต</p>
       </div>
 
       {data.curricula.length === 0 ? (
-        <div className="bg-white rounded-xl border shadow-sm py-16 text-center text-gray-400">
+        <div className="bg-white rounded-xl border shadow-sm py-16 text-center text-[#9a92a8]">
           ยังไม่มีประวัติการเรียนในหลักสูตรใด
         </div>
       ) : (
         data.curricula.map(entry => (
-          <div key={entry.curriculum_id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div key={entry.curriculum_id} className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] overflow-hidden">
             <div className="p-4 border-b flex items-center justify-between">
               <div>
                 <p className="font-semibold text-[#2D0F42]">{entry.curriculum_name}</p>
-                <p className="text-xs text-gray-500">รุ่น {entry.batch_code} / {entry.academic_year}</p>
+                <p className="text-xs text-[#6b6478]">รุ่น {entry.batch_code} / {entry.academic_year}</p>
               </div>
               {entry.certificate_available ? (
                 <button onClick={() => handleDownload(entry.curriculum_id)}
@@ -73,7 +73,7 @@ export default function MyTranscriptPage() {
             )}
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                   <th className="px-4 py-3">วิชา</th>
                   <th className="px-4 py-3">หน่วยกิต</th>
                   <th className="px-4 py-3">คะแนน</th>
@@ -82,19 +82,19 @@ export default function MyTranscriptPage() {
               </thead>
               <tbody>
                 {entry.courses.map(c => (
-                  <tr key={c.course_id} className="border-b border-gray-100">
+                  <tr key={c.course_id} className="border-b border-[#f0ecf6]">
                     <td className="px-4 py-3">{c.display_name}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.credits}</td>
-                    <td className="px-4 py-3 text-gray-600">
+                    <td className="px-4 py-3 text-[#6b6478]">{c.credits}</td>
+                    <td className="px-4 py-3 text-[#6b6478]">
                       {c.grade_visible ? (c.final_score ?? "-") : (
                         <span className="text-xs text-yellow-700">{GATE_REASON_LABEL[c.gate_reason || ""] || "รอประเมิน"}</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       {!c.grade_visible ? (
-                        <span className="text-gray-400 text-xs">-</span>
+                        <span className="text-[#9a92a8] text-xs">-</span>
                       ) : c.passed === null ? (
-                        <span className="text-gray-400 text-xs">ยังไม่ตัดสิน</span>
+                        <span className="text-[#9a92a8] text-xs">ยังไม่ตัดสิน</span>
                       ) : (
                         <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                           c.passed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"

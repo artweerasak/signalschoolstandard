@@ -168,7 +168,7 @@ export default function BulkImportUsersPage() {
   return (
     <div className="max-w-5xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-1">👥 นำเข้าผู้ใช้จาก Excel</h1>
-      <p className="text-gray-500 text-sm mb-6">
+      <p className="text-[#6b6478] text-sm mb-6">
         อัปโหลดไฟล์ Excel เพื่อสร้างบัญชีผู้ใช้ทีละหลายคนพร้อมกัน รองรับไฟล์ขนาดไม่จำกัดจำนวน
       </p>
 
@@ -178,10 +178,10 @@ export default function BulkImportUsersPage() {
           <div key={s} className="flex items-center gap-2">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold
               ${step === s ? "bg-purple-700 text-white" :
-                (["upload","preview","importing","done"].indexOf(step) > i ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500")}`}>
+                (["upload","preview","importing","done"].indexOf(step) > i ? "bg-green-500 text-white" : "bg-gray-200 text-[#6b6478]")}`}>
               {["upload","preview","importing","done"].indexOf(step) > i ? "✓" : i + 1}
             </div>
-            <span className={step === s ? "font-semibold text-purple-700" : "text-gray-400"}>
+            <span className={step === s ? "font-semibold text-purple-700" : "text-[#9a92a8]"}>
               {["อัปโหลด", "ตรวจสอบ", "กำลังนำเข้า", "เสร็จสิ้น"][i]}
             </span>
             {i < 3 && <div className="w-8 h-px bg-gray-300" />}
@@ -217,14 +217,14 @@ export default function BulkImportUsersPage() {
 
           {/* Rank reference */}
           <details className="border rounded-lg">
-            <summary className="px-4 py-2 cursor-pointer text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <summary className="px-4 py-2 cursor-pointer text-sm font-medium text-[#4a4456] hover:bg-[#f7f5fa]">
               📖 รหัสยศที่รองรับ (คลิกเพื่อดู)
             </summary>
             <div className="px-4 pb-3 pt-1 grid grid-cols-3 sm:grid-cols-4 gap-1">
               {Object.entries(RANK_MAP).map(([code, label]) => (
                 <div key={code} className="flex gap-2 text-xs py-0.5">
                   <span className="font-mono font-bold text-purple-700 w-12">{code}</span>
-                  <span className="text-gray-600">{label}</span>
+                  <span className="text-[#6b6478]">{label}</span>
                 </div>
               ))}
             </div>
@@ -237,18 +237,18 @@ export default function BulkImportUsersPage() {
             onDragLeave={() => setDragging(false)}
             onClick={() => fileRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition
-              ${dragging ? "border-purple-500 bg-purple-50" : "border-gray-300 hover:border-purple-400 hover:bg-gray-50"}`}
+              ${dragging ? "border-purple-500 bg-purple-50" : "border-gray-300 hover:border-purple-400 hover:bg-[#f7f5fa]"}`}
           >
             <div className="text-4xl mb-3">📊</div>
             {file ? (
               <div>
                 <p className="font-semibold text-green-600">{file.name}</p>
-                <p className="text-sm text-gray-400">{(file.size / 1024).toFixed(0)} KB</p>
+                <p className="text-sm text-[#9a92a8]">{(file.size / 1024).toFixed(0)} KB</p>
               </div>
             ) : (
               <div>
-                <p className="font-medium text-gray-600">ลาก-วาง ไฟล์ Excel ที่นี่</p>
-                <p className="text-sm text-gray-400 mt-1">หรือคลิกเพื่อเลือกไฟล์ (.xlsx, .xls)</p>
+                <p className="font-medium text-[#6b6478]">ลาก-วาง ไฟล์ Excel ที่นี่</p>
+                <p className="text-sm text-[#9a92a8] mt-1">หรือคลิกเพื่อเลือกไฟล์ (.xlsx, .xls)</p>
               </div>
             )}
           </div>
@@ -279,11 +279,11 @@ export default function BulkImportUsersPage() {
               <div className="text-2xl font-bold text-green-700">{preview.total.toLocaleString()}</div>
               <div className="text-sm text-green-600">ผู้ใช้ที่พบในไฟล์</div>
             </div>
-            <div className={`border rounded-lg px-4 py-3 flex-1 text-center ${preview.parse_errors.length > 0 ? "bg-yellow-50 border-yellow-200" : "bg-gray-50 border-gray-200"}`}>
-              <div className={`text-2xl font-bold ${preview.parse_errors.length > 0 ? "text-yellow-700" : "text-gray-400"}`}>
+            <div className={`border rounded-lg px-4 py-3 flex-1 text-center ${preview.parse_errors.length > 0 ? "bg-yellow-50 border-yellow-200" : "bg-[#f7f5fa] border-[#e6e1ee]"}`}>
+              <div className={`text-2xl font-bold ${preview.parse_errors.length > 0 ? "text-yellow-700" : "text-[#9a92a8]"}`}>
                 {preview.parse_errors.length.toLocaleString()}
               </div>
-              <div className={`text-sm ${preview.parse_errors.length > 0 ? "text-yellow-600" : "text-gray-400"}`}>
+              <div className={`text-sm ${preview.parse_errors.length > 0 ? "text-yellow-600" : "text-[#9a92a8]"}`}>
                 แถวที่มีปัญหา
               </div>
             </div>
@@ -301,13 +301,13 @@ export default function BulkImportUsersPage() {
 
           {/* Preview table */}
           <div>
-            <p className="text-sm font-medium text-gray-600 mb-2">
+            <p className="text-sm font-medium text-[#6b6478] mb-2">
               ตัวอย่าง {preview.preview.length} รายการแรก (จาก {preview.total.toLocaleString()} รายการ)
             </p>
             <div className="overflow-x-auto rounded-lg border">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 text-left font-medium text-gray-500">
+                  <tr className="bg-[#f7f5fa] text-left font-medium text-[#6b6478]">
                     <th className="px-3 py-2">#</th>
                     <th className="px-3 py-2">Username</th>
                     <th className="px-3 py-2">ชื่อ-นามสกุล</th>
@@ -317,10 +317,10 @@ export default function BulkImportUsersPage() {
                     <th className="px-3 py-2">บทบาท</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#f0ecf6]">
                   {preview.preview.map((u, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 text-gray-400">{i + 1}</td>
+                    <tr key={i} className="hover:bg-[#f7f5fa]">
+                      <td className="px-3 py-2 text-[#9a92a8]">{i + 1}</td>
                       <td className="px-3 py-2 font-mono text-purple-700">{u.username}</td>
                       <td className="px-3 py-2 font-medium">{u.full_name_th}</td>
                       <td className="px-3 py-2">
@@ -333,7 +333,7 @@ export default function BulkImportUsersPage() {
                            u.personnel_type === "government" ? "พนักงานราชการ" : "ทหาร"}
                         </span>
                         {u.personnel_type === "military" && (
-                          <span className="ml-1 text-gray-400">{u.gender === "F" ? "♀หญิง" : "♂ชาย"}</span>
+                          <span className="ml-1 text-[#9a92a8]">{u.gender === "F" ? "♀หญิง" : "♂ชาย"}</span>
                         )}
                       </td>
                       <td className="px-3 py-2">
@@ -342,14 +342,14 @@ export default function BulkImportUsersPage() {
                             {RANK_MAP[u.rank] || u.rank || "-"}
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                          <span className="px-1.5 py-0.5 bg-[#f0ecf6] text-[#6b6478] rounded text-xs">
                             {u.civilian_prefix || "-"}
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">{u.unit}</td>
+                      <td className="px-3 py-2 text-[#6b6478]">{u.unit}</td>
                       <td className="px-3 py-2">
-                        <span className={`px-1.5 py-0.5 rounded text-xs ${u.role === "instructor" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${u.role === "instructor" ? "bg-blue-100 text-blue-700" : "bg-[#f0ecf6] text-[#6b6478]"}`}>
                           {u.role === "instructor" ? "ครูอาจารย์" : "นักเรียน"}
                         </span>
                       </td>
@@ -359,14 +359,14 @@ export default function BulkImportUsersPage() {
               </table>
             </div>
             {preview.total > 10 && (
-              <p className="text-xs text-gray-400 mt-1 text-right">
+              <p className="text-xs text-[#9a92a8] mt-1 text-right">
                 + อีก {(preview.total - 10).toLocaleString()} รายการที่จะนำเข้า
               </p>
             )}
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setStep("upload")} className="flex-1 py-3 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm">
+            <button onClick={() => setStep("upload")} className="flex-1 py-3 border rounded-lg text-[#6b6478] hover:bg-[#f7f5fa] text-sm">
               ← กลับแก้ไขไฟล์
             </button>
             <button
@@ -386,16 +386,16 @@ export default function BulkImportUsersPage() {
           <div className="text-center py-4">
             <div className="text-5xl mb-3 animate-pulse">⚙️</div>
             <h2 className="text-xl font-bold text-purple-700">กำลังนำเข้าข้อมูล...</h2>
-            <p className="text-gray-500 text-sm mt-1">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้</p>
+            <p className="text-[#6b6478] text-sm mt-1">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้</p>
           </div>
 
           {/* Progress bar */}
           <div className="bg-white border rounded-xl p-6 shadow-sm space-y-4">
             <div className="flex justify-between text-sm font-medium">
-              <span className="text-gray-600">ความคืบหน้า</span>
+              <span className="text-[#6b6478]">ความคืบหน้า</span>
               <span className="text-purple-700">{taskStatus.progress.toLocaleString()} / {taskStatus.total.toLocaleString()} คน ({progressPct}%)</span>
             </div>
-            <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+            <div className="w-full bg-[#f0ecf6] rounded-full h-4 overflow-hidden">
               <div
                 className="bg-purple-600 h-4 rounded-full transition-all duration-500"
                 style={{ width: `${progressPct}%` }}
@@ -405,20 +405,20 @@ export default function BulkImportUsersPage() {
             <div className="grid grid-cols-3 gap-3 pt-2">
               <div className="text-center">
                 <div className="text-xl font-bold text-green-600">{taskStatus.created.toLocaleString()}</div>
-                <div className="text-xs text-gray-400">สร้างแล้ว</div>
+                <div className="text-xs text-[#9a92a8]">สร้างแล้ว</div>
               </div>
               <div className="text-center">
                 <div className="text-xl font-bold text-yellow-600">{taskStatus.skipped.toLocaleString()}</div>
-                <div className="text-xs text-gray-400">ข้ามแล้ว (ซ้ำ)</div>
+                <div className="text-xs text-[#9a92a8]">ข้ามแล้ว (ซ้ำ)</div>
               </div>
               <div className="text-center">
                 <div className="text-xl font-bold text-red-600">{taskStatus.errors.length.toLocaleString()}</div>
-                <div className="text-xs text-gray-400">ข้อผิดพลาด</div>
+                <div className="text-xs text-[#9a92a8]">ข้อผิดพลาด</div>
               </div>
             </div>
           </div>
 
-          <p className="text-xs text-center text-gray-400">
+          <p className="text-xs text-center text-[#9a92a8]">
             ระบบกำลังสร้างบัญชีในเบื้องหลัง อาจใช้เวลาสักครู่ขึ้นอยู่กับจำนวนผู้ใช้
           </p>
         </div>
@@ -478,7 +478,7 @@ export default function BulkImportUsersPage() {
             </button>
             <a
               href="/dashboard/users"
-              className="px-6 py-2 border rounded-lg text-gray-600 hover:bg-gray-50"
+              className="px-6 py-2 border rounded-lg text-[#6b6478] hover:bg-[#f7f5fa]"
             >
               ดูรายชื่อผู้ใช้ →
             </a>
