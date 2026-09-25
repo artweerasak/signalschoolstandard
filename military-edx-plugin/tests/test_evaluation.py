@@ -238,3 +238,76 @@ class TestStudentFacingEndpoints:
         client = Client()
         resp = client.get("/military/api/v1/curriculum/my/evaluations/pending/")
         assert resp.status_code == 401
+
+
+class TestEvaluatorCurriculaList:
+    """หน้า evaluator เดิมบังคับพิมพ์ curriculum_id เอง — endpoint นี้แทนที่
+    ด้วยรายการเลือกได้ (ดู military_curriculum/evaluation_views.py:api_evaluator_curricula)"""
+
+    def test_lists_submitted_active_closed_not_draft(self, db, organization, evaluator_user):
+        creator = _make_user("evc_creator", "prep_school", organization)
+        Curriculum.objects.create(
+            name="ร่าง", batch_code="1", academic_year=2570,
+            organization=organization, created_by=creator, status="draft",
+        )
+        Curriculum.objects.create(
+            name="ส่งแล้ว", batch_code="2", academic_year=2570,
+            organization=organization, created_by=creator, status="submitted",
+        )
+        Curriculum.objects.create(
+            name="ใช้งาน", batch_code="3", academic_year=2570,
+            organization=organization, created_by=creator, status="active",
+        )
+        Curriculum.objects.create(
+            name="ปิดรุ่น", batch_code="4", academic_year=2570,
+            organization=organization, created_by=creator, status="closed",
+        )
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get("/military/api/v1/curriculum/evaluator/curricula/")
+        assert resp.status_code == 200
+        names = {r["name"] for r in resp.json()["results"]}
+        assert names == {"ส่งแล้ว", "ใช้งาน", "ปิดรุ่น"}
+
+    def test_filters_by_academic_year(self, db, organization, evaluator_user):
+        creator = _make_user("evc_creator_yr", "prep_school", organization)
+        Curriculum.objects.create(
+            name="ปีเก่า", batch_code="1", academic_year=2569,
+            organization=organization, created_by=creator, status="active",
+        )
+        Curriculum.objects.create(
+            name="ปีล่าสุด", batch_code="1", academic_year=2570,
+            organization=organization, created_by=creator, status="active",
+        )
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get("/military/api/v1/curriculum/evaluator/curricula/?academic_year=2570")
+        assert resp.status_code == 200
+        names = {r["name"] for r in resp.json()["results"]}
+        assert names == {"ปีล่าสุด"}
+
+    def test_sees_curricula_across_all_units(self, db, evaluator_user):
+        org_a = Organization.objects.create(name="หน่วย ก เอวาล", code="EVC-A")
+        org_b = Organization.objects.create(name="หน่วย ข เอวาล", code="EVC-B")
+        creator_a = _make_user("evc_creator_a", "prep_school", org_a)
+        creator_b = _make_user("evc_creator_b", "prep_school", org_b)
+        Curriculum.objects.create(
+            name="หน่วย ก", batch_code="1", academic_year=2570,
+            organization=org_a, created_by=creator_a, status="active",
+        )
+        Curriculum.objects.create(
+            name="หน่วย ข", batch_code="1", academic_year=2570,
+            organization=org_b, created_by=creator_b, status="active",
+        )
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get("/military/api/v1/curriculum/evaluator/curricula/")
+        names = {r["name"] for r in resp.json()["results"]}
+        assert names == {"หน่วย ก", "หน่วย ข"}
+
+    def test_student_forbidden(self, db, organization):
+        student = _make_user("evc_forbidden_student", "student", organization)
+        client = Client()
+        client.force_login(student)
+        resp = client.get("/military/api/v1/curriculum/evaluator/curricula/")
+        assert resp.status_code == 403
