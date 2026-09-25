@@ -96,6 +96,11 @@ export default function PrepPersonnelPage() {
                       </Button>
                     ) : (
                       <div className="flex gap-2">
+                        <Link href={`/prep-personnel/eligible-density/${c.id}`}
+                          className="text-[#4A1A6B] hover:underline text-xs font-medium">
+                          ความคับคั่งผู้มีสิทธิ์
+                        </Link>
+                        <span className="text-[#d9d2e6]">|</span>
                         <Link href={`/prep-personnel/quota-report/${c.id}`}
                           className="text-[#4A1A6B] hover:underline text-xs font-medium">
                           โควตา

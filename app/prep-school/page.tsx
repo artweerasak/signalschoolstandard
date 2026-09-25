@@ -25,16 +25,34 @@ const STATUS_TONES: Record<string, "neutral" | "warning" | "success" | "error"> 
   closed: "error",
 }
 
+// ต้องตรงกับ RANK_CHOICES/PERSONNEL_TYPE_CHOICES ใน military_profile/models.py เป๊ะ
+const RANK_CHOICES = [
+  ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
+  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],["CSGT_S","จ่าสิบเอกพิเศษ"],
+  ["WO1","พันจ่าตรี"],["WO2","พันจ่าโท"],["WO3","พันจ่าเอก"],
+  ["2LT","ร้อยตรี"],["1LT","ร้อยโท"],["CPT","ร้อยเอก"],
+  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],["COL_S","พันเอกพิเศษ"],
+  ["BGEN","พลตรี"],["MGEN","พลโท"],["GEN","พลเอก"],
+]
+const PERSONNEL_TYPE_CHOICES = [
+  ["military", "ทหาร"], ["civilian", "ลูกจ้างประจำ"], ["government", "พนักงานราชการ"],
+]
+
 interface FormData {
   name: string
   batch_code: string
   academic_year: number
   eligible_rank_class: string
+  eligible_rank_min: string
+  eligible_rank_max: string
+  eligible_min_years_in_rank: string
+  eligible_personnel_type: string
   quota_total: number
 }
 const EMPTY_FORM: FormData = {
   name: "", batch_code: "", academic_year: new Date().getFullYear() + 543,
-  eligible_rank_class: "", quota_total: 0,
+  eligible_rank_class: "", eligible_rank_min: "", eligible_rank_max: "",
+  eligible_min_years_in_rank: "", eligible_personnel_type: "", quota_total: 0,
 }
 
 export default function PrepSchoolPage() {
@@ -68,7 +86,11 @@ export default function PrepSchoolPage() {
     setSaving(true)
     setFormError("")
     try {
-      await api.createCurriculum(form)
+      await api.createCurriculum({
+        ...form,
+        eligible_min_years_in_rank: form.eligible_min_years_in_rank
+          ? Number(form.eligible_min_years_in_rank) : null,
+      })
       setShowModal(false)
       load()
     } catch (err) {
@@ -136,7 +158,7 @@ export default function PrepSchoolPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
               <h3 className="font-bold text-[#2D0F42]">สร้างหลักสูตรใหม่</h3>
               <button onClick={() => setShowModal(false)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
@@ -165,11 +187,52 @@ export default function PrepSchoolPage() {
                     className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#4a4456] mb-1">ช่วงชั้นยศที่มีสิทธิ์ (ไม่บังคับ)</label>
-                <input type="text" placeholder="เช่น นายทหารประทวน" value={form.eligible_rank_class}
-                  onChange={e => setForm({ ...form, eligible_rank_class: e.target.value })}
-                  className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              <div className="border-t border-[#e6e1ee] pt-4">
+                <p className="text-sm font-semibold text-[#2D0F42] mb-1">คุณสมบัติผู้เข้าเรียน (ไม่บังคับ)</p>
+                <p className="text-xs text-[#9a92a8] mb-3">ใช้คำนวณจำนวนกำลังพลที่เข้าเกณฑ์ในรายงานความคับคั่งของแผนกเตรียมพล — เว้นว่างช่องไหน = ไม่จำกัดด้านนั้น</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ยศต่ำสุด</label>
+                    <select value={form.eligible_rank_min}
+                      onChange={e => setForm({ ...form, eligible_rank_min: e.target.value })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+                      <option value="">ไม่จำกัด</option>
+                      {RANK_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ยศสูงสุด</label>
+                    <select value={form.eligible_rank_max}
+                      onChange={e => setForm({ ...form, eligible_rank_max: e.target.value })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+                      <option value="">ไม่จำกัด</option>
+                      {RANK_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ระยะเวลาครองยศขั้นต่ำ (ปี)</label>
+                    <input type="number" min={0} placeholder="ไม่จำกัด" value={form.eligible_min_years_in_rank}
+                      onChange={e => setForm({ ...form, eligible_min_years_in_rank: e.target.value })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ประเภทบุคลากร</label>
+                    <select value={form.eligible_personnel_type}
+                      onChange={e => setForm({ ...form, eligible_personnel_type: e.target.value })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+                      <option value="">ทุกประเภท</option>
+                      {PERSONNEL_TYPE_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">คำอธิบายเพิ่มเติม (ไม่บังคับ)</label>
+                  <input type="text" placeholder="เช่น ต้องผ่านหลักสูตรพื้นฐานมาก่อน" value={form.eligible_rank_class}
+                    onChange={e => setForm({ ...form, eligible_rank_class: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#4a4456] mb-1">โควตารวม</label>

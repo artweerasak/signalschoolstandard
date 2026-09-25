@@ -140,9 +140,18 @@ export default function CurriculumDetailPage() {
           <p className="text-[#9a92a8] text-xs">โควตารวม</p>
           <p className="font-medium mt-0.5">{curriculum.quota_total}</p>
         </div>
-        <div>
-          <p className="text-[#9a92a8] text-xs">ช่วงชั้นยศที่มีสิทธิ์</p>
-          <p className="font-medium mt-0.5">{curriculum.eligible_rank_class || "ไม่ระบุ"}</p>
+        <div className="col-span-2 md:col-span-4">
+          <p className="text-[#9a92a8] text-xs">คุณสมบัติผู้เข้าเรียน</p>
+          <p className="font-medium mt-0.5">
+            {curriculum.eligible_rank_min_display || curriculum.eligible_rank_max_display
+              ? `ยศ ${curriculum.eligible_rank_min_display || "ไม่จำกัด"} – ${curriculum.eligible_rank_max_display || "ไม่จำกัด"}`
+              : "ไม่จำกัดช่วงยศ"}
+            {curriculum.eligible_min_years_in_rank ? ` · ครองยศมาแล้วอย่างน้อย ${curriculum.eligible_min_years_in_rank} ปี` : ""}
+            {curriculum.eligible_personnel_type_display ? ` · ${curriculum.eligible_personnel_type_display}` : ""}
+          </p>
+          {curriculum.eligible_rank_class && (
+            <p className="text-xs text-[#9a92a8] mt-1">หมายเหตุ: {curriculum.eligible_rank_class}</p>
+          )}
         </div>
       </div>
 
