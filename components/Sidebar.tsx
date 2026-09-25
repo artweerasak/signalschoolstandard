@@ -7,6 +7,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useState, useEffect } from "react"
 
 // ─── ประเภทเมนู ───────────────────────────────────────────
 type NavItem = { href: string; label: string; icon: string; badge?: boolean }
@@ -24,6 +25,7 @@ const adminNavGroups: NavGroup[] = [
     items: [
       { href: "/dashboard/users", label: "รายชื่อผู้ใช้", icon: "👥" },
       { href: "/dashboard/registrations", label: "อนุมัติสมัครสมาชิก", icon: "📋", badge: true },
+      { href: "/dashboard/whitelist", label: "รายชื่อผู้มีสิทธิ์สมัคร", icon: "🔐" },
       { href: "/dashboard/users/bulk-import", label: "นำเข้าผู้ใช้ (Excel)", icon: "📤" },
     ],
   },
@@ -44,6 +46,7 @@ const adminNavGroups: NavGroup[] = [
   {
     groupLabel: "รายงาน",
     items: [
+      { href: "/dashboard/reports/summary", label: "สรุปสถานะกำลังพล", icon: "📊" },
       { href: "/dashboard/reports", label: "รายงานมาตรฐาน", icon: "📈" },
     ],
   },
@@ -57,6 +60,7 @@ const adminNavGroups: NavGroup[] = [
     groupLabel: "ระบบ",
     items: [
       { href: "/dashboard/system-health", label: "สถานะระบบ", icon: "🖥️" },
+      { href: "/dashboard/locked-accounts", label: "บัญชีที่ถูกล็อก", icon: "🔓" },
       { href: "/dashboard/audit-log", label: "Audit Log", icon: "📋" },
     ],
   },
@@ -179,6 +183,9 @@ export default function Sidebar({
   pendingCount,
 }: SidebarProps) {
   const pathname = usePathname()
+  const [open, setOpen] = useState(false)
+  // ปิด drawer อัตโนมัติเมื่อเปลี่ยนหน้า (มือถือ)
+  useEffect(() => { setOpen(false) }, [pathname])
 
   const mainGroups =
     variant === "instructor"
@@ -195,7 +202,41 @@ export default function Sidebar({
       : null
 
   return (
-    <aside className="w-64 min-h-screen bg-[#2D0F42] flex flex-col">
+    <>
+      {/* ปุ่ม hamburger — เฉพาะมือถือ */}
+      <button
+        type="button"
+        aria-label="เปิดเมนู"
+        onClick={() => setOpen(true)}
+        className="md:hidden fixed top-2.5 left-3 z-30 bg-[#2D0F42] text-white rounded-lg px-2.5 py-2 shadow-lg border border-[#4A1A6B] text-lg leading-none"
+      >
+        ☰
+      </button>
+
+      {/* ฉากหลังทึบเมื่อเปิด drawer */}
+      {open && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`w-64 min-h-screen bg-[#2D0F42] flex flex-col transform transition-transform duration-200 ease-out
+          fixed inset-y-0 left-0 z-50 md:static md:z-auto md:translate-x-0
+          ${open ? "translate-x-0" : "-translate-x-full"}`}
+      >
+      {/* ปุ่มปิด — เฉพาะมือถือ */}
+      <button
+        type="button"
+        aria-label="ปิดเมนู"
+        onClick={() => setOpen(false)}
+        className="md:hidden absolute top-3 right-3 text-purple-300 hover:text-white text-xl leading-none z-10"
+      >
+        ✕
+      </button>
+
       {/* Logo */}
       <div className="flex flex-col items-center gap-3 px-6 py-7 border-b border-[#4A1A6B]">
         <Image
@@ -256,5 +297,6 @@ export default function Sidebar({
         </div>
       )}
     </aside>
+    </>
   )
 }

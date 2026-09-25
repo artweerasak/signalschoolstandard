@@ -23,3 +23,20 @@ body {
   color: var(--foreground);
   font-family: 'Sarabun', Arial, Helvetica, sans-serif;
 }
+
+/* ── Print: ซ่อน sidebar/header ของ dashboard layout ทุกหน้า และคลาย
+   overflow/height ที่ล็อกไว้สำหรับ scroll บนจอ ไม่งั้นพิมพ์ออกมาจะโดนตัด
+   เหลือแค่ส่วนที่มองเห็นบนจอตอนกดพิมพ์ ── */
+@media print {
+  aside, header {
+    display: none !important;
+  }
+  html, body, main, .flex-1, .overflow-hidden, .overflow-auto {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+}

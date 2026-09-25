@@ -118,6 +118,10 @@ export default function ReportsPage() {
             className="bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
             🖨️ ลงแล้วไม่ผ่าน (พิมพ์แยกหน่วย)
           </a>
+          <a href="/dashboard/reports/summary-by-unit"
+            className="bg-[#4A1A6B] hover:bg-[#3a1454] text-white text-sm font-medium px-4 py-2 rounded-lg">
+            📊 พิมพ์ภาพรวมแยกหน่วย
+          </a>
           <a href="/dashboard/reports/passed"
             className="bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-4 py-2 rounded-lg">
             🖨️ ผู้ผ่านมาตรฐาน (พิมพ์แยก/เฉพาะหน่วย)

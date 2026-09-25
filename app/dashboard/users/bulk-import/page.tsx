@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 const RANK_MAP: Record<string, string> = {
   PVT: "พลทหาร", CPL: "สิบตรี", SGT3: "สิบโท", SGT2: "สิบเอก",
-  SSGT: "จ่าสิบตรี", MSGT: "จ่าสิบโท", CSGT: "จ่าสิบเอก",
+  SSGT: "จ่าสิบตรี", MSGT: "จ่าสิบโท", CSGT: "จ่าสิบเอก", CSGT_S: "จ่าสิบเอกพิเศษ",
   WO1: "พันจ่าตรี", WO2: "พันจ่าโท", WO3: "พันจ่าเอก",
   "2LT": "ร้อยตรี", "1LT": "ร้อยโท", CPT: "ร้อยเอก",
-  MAJ: "พันตรี", LTCOL: "พันโท", COL: "พันเอก",
+  MAJ: "พันตรี", LTCOL: "พันโท", COL: "พันเอก", COL_S: "พันเอกพิเศษ",
   BGEN: "พลตรี", MGEN: "พลโท", GEN: "พลเอก",
 };
 
-type Step = "upload" | "preview" | "done";
+type Step = "upload" | "preview" | "importing" | "done";
 
 interface UserRow {
   username: string;
@@ -37,12 +37,14 @@ interface PreviewResult {
   parse_errors: string[];
 }
 
-interface ImportResult {
+interface TaskStatus {
+  status: "pending" | "running" | "done";
+  progress: number;
+  total: number;
   created: number;
   skipped: number;
   skipped_list: { username: string; reason: string }[];
   errors: string[];
-  total: number;
 }
 
 export default function BulkImportUsersPage() {
@@ -51,14 +53,41 @@ export default function BulkImportUsersPage() {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [result, setResult] = useState<ImportResult | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function getCookie(name: string) {
     const v = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
     return v ? v[2] : null;
   }
+
+  // Poll import status when importing
+  useEffect(() => {
+    if (step !== "importing" || !taskId) return;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/military/api/v1/admin/users/bulk-import/status/?task_id=${taskId}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) return;
+        const data: TaskStatus = await res.json();
+        setTaskStatus(data);
+        if (data.status === "done") {
+          clearInterval(pollRef.current!);
+          setStep("done");
+        }
+      } catch {
+        // ignore transient errors
+      }
+    }, 2000);
+
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [step, taskId]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -98,7 +127,7 @@ export default function BulkImportUsersPage() {
   }
 
   async function handleImport() {
-    if (!file) return;
+    if (!file || !preview) return;
     setLoading(true);
     setError("");
     try {
@@ -112,8 +141,19 @@ export default function BulkImportUsersPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "นำเข้าไม่สำเร็จ");
-      setResult(data);
-      setStep("done");
+
+      // Backend returns task_id for background processing
+      setTaskId(data.task_id);
+      setTaskStatus({
+        status: "pending",
+        progress: 0,
+        total: preview.total,
+        created: 0,
+        skipped: 0,
+        skipped_list: [],
+        errors: [],
+      });
+      setStep("importing");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -121,26 +161,30 @@ export default function BulkImportUsersPage() {
     }
   }
 
+  const progressPct = taskStatus
+    ? Math.round((taskStatus.progress / Math.max(taskStatus.total, 1)) * 100)
+    : 0;
+
   return (
     <div className="max-w-5xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-1">👥 นำเข้าผู้ใช้จาก Excel</h1>
       <p className="text-gray-500 text-sm mb-6">
-        อัปโหลดไฟล์ Excel เพื่อสร้างบัญชีผู้ใช้ทีละหลายคนพร้อมกัน รองรับสูงสุด 1,000 คนต่อไฟล์
+        อัปโหลดไฟล์ Excel เพื่อสร้างบัญชีผู้ใช้ทีละหลายคนพร้อมกัน รองรับไฟล์ขนาดไม่จำกัดจำนวน
       </p>
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-8 text-sm">
-        {(["upload", "preview", "done"] as Step[]).map((s, i) => (
+        {(["upload", "preview", "importing", "done"] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold
               ${step === s ? "bg-purple-700 text-white" :
-                (["upload","preview","done"].indexOf(step) > i ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500")}`}>
-              {["upload","preview","done"].indexOf(step) > i ? "✓" : i + 1}
+                (["upload","preview","importing","done"].indexOf(step) > i ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500")}`}>
+              {["upload","preview","importing","done"].indexOf(step) > i ? "✓" : i + 1}
             </div>
             <span className={step === s ? "font-semibold text-purple-700" : "text-gray-400"}>
-              {["อัปโหลด", "ตรวจสอบ", "เสร็จสิ้น"][i]}
+              {["อัปโหลด", "ตรวจสอบ", "กำลังนำเข้า", "เสร็จสิ้น"][i]}
             </span>
-            {i < 2 && <div className="w-8 h-px bg-gray-300" />}
+            {i < 3 && <div className="w-8 h-px bg-gray-300" />}
           </div>
         ))}
       </div>
@@ -232,12 +276,12 @@ export default function BulkImportUsersPage() {
           {/* Summary cards */}
           <div className="flex gap-3 flex-wrap">
             <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex-1 text-center">
-              <div className="text-2xl font-bold text-green-700">{preview.total}</div>
+              <div className="text-2xl font-bold text-green-700">{preview.total.toLocaleString()}</div>
               <div className="text-sm text-green-600">ผู้ใช้ที่พบในไฟล์</div>
             </div>
             <div className={`border rounded-lg px-4 py-3 flex-1 text-center ${preview.parse_errors.length > 0 ? "bg-yellow-50 border-yellow-200" : "bg-gray-50 border-gray-200"}`}>
               <div className={`text-2xl font-bold ${preview.parse_errors.length > 0 ? "text-yellow-700" : "text-gray-400"}`}>
-                {preview.parse_errors.length}
+                {preview.parse_errors.length.toLocaleString()}
               </div>
               <div className={`text-sm ${preview.parse_errors.length > 0 ? "text-yellow-600" : "text-gray-400"}`}>
                 แถวที่มีปัญหา
@@ -258,7 +302,7 @@ export default function BulkImportUsersPage() {
           {/* Preview table */}
           <div>
             <p className="text-sm font-medium text-gray-600 mb-2">
-              ตัวอย่าง {preview.preview.length} รายการแรก (จาก {preview.total} รายการ)
+              ตัวอย่าง {preview.preview.length} รายการแรก (จาก {preview.total.toLocaleString()} รายการ)
             </p>
             <div className="overflow-x-auto rounded-lg border">
               <table className="w-full text-xs">
@@ -316,7 +360,7 @@ export default function BulkImportUsersPage() {
             </div>
             {preview.total > 10 && (
               <p className="text-xs text-gray-400 mt-1 text-right">
-                + อีก {preview.total - 10} รายการที่จะนำเข้า
+                + อีก {(preview.total - 10).toLocaleString()} รายการที่จะนำเข้า
               </p>
             )}
           </div>
@@ -330,60 +374,104 @@ export default function BulkImportUsersPage() {
               disabled={loading || preview.total === 0}
               className="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50"
             >
-              {loading ? "กำลังนำเข้า..." : `✅ นำเข้า ${preview.total} บัญชีผู้ใช้`}
+              {loading ? "กำลังเริ่ม..." : `✅ นำเข้า ${preview.total.toLocaleString()} บัญชีผู้ใช้`}
             </button>
           </div>
         </div>
       )}
 
-      {/* ===== STEP 3: DONE ===== */}
-      {step === "done" && result && (
+      {/* ===== STEP 3: IMPORTING (Progress) ===== */}
+      {step === "importing" && taskStatus && (
+        <div className="space-y-6">
+          <div className="text-center py-4">
+            <div className="text-5xl mb-3 animate-pulse">⚙️</div>
+            <h2 className="text-xl font-bold text-purple-700">กำลังนำเข้าข้อมูล...</h2>
+            <p className="text-gray-500 text-sm mt-1">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้</p>
+          </div>
+
+          {/* Progress bar */}
+          <div className="bg-white border rounded-xl p-6 shadow-sm space-y-4">
+            <div className="flex justify-between text-sm font-medium">
+              <span className="text-gray-600">ความคืบหน้า</span>
+              <span className="text-purple-700">{taskStatus.progress.toLocaleString()} / {taskStatus.total.toLocaleString()} คน ({progressPct}%)</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+              <div
+                className="bg-purple-600 h-4 rounded-full transition-all duration-500"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 pt-2">
+              <div className="text-center">
+                <div className="text-xl font-bold text-green-600">{taskStatus.created.toLocaleString()}</div>
+                <div className="text-xs text-gray-400">สร้างแล้ว</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-yellow-600">{taskStatus.skipped.toLocaleString()}</div>
+                <div className="text-xs text-gray-400">ข้ามแล้ว (ซ้ำ)</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-red-600">{taskStatus.errors.length.toLocaleString()}</div>
+                <div className="text-xs text-gray-400">ข้อผิดพลาด</div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-center text-gray-400">
+            ระบบกำลังสร้างบัญชีในเบื้องหลัง อาจใช้เวลาสักครู่ขึ้นอยู่กับจำนวนผู้ใช้
+          </p>
+        </div>
+      )}
+
+      {/* ===== STEP 4: DONE ===== */}
+      {step === "done" && taskStatus && (
         <div className="space-y-4">
           <div className="text-center py-4">
-            <div className="text-6xl mb-3">{result.errors.length === 0 ? "🎉" : "⚠️"}</div>
+            <div className="text-6xl mb-3">{taskStatus.errors.length === 0 ? "🎉" : "⚠️"}</div>
             <h2 className="text-xl font-bold text-green-700">นำเข้าเสร็จสิ้น</h2>
           </div>
 
           <div className="flex gap-3 justify-center flex-wrap">
             <div className="bg-green-50 border border-green-200 rounded-lg px-6 py-4 text-center">
-              <div className="text-3xl font-bold text-green-700">{result.created}</div>
+              <div className="text-3xl font-bold text-green-700">{taskStatus.created.toLocaleString()}</div>
               <div className="text-sm text-green-600">สร้างสำเร็จ</div>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-6 py-4 text-center">
-              <div className="text-3xl font-bold text-yellow-700">{result.skipped}</div>
+              <div className="text-3xl font-bold text-yellow-700">{taskStatus.skipped.toLocaleString()}</div>
               <div className="text-sm text-yellow-600">ข้ามแล้ว (ซ้ำ)</div>
             </div>
-            {result.errors.length > 0 && (
+            {taskStatus.errors.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg px-6 py-4 text-center">
-                <div className="text-3xl font-bold text-red-700">{result.errors.length}</div>
+                <div className="text-3xl font-bold text-red-700">{taskStatus.errors.length.toLocaleString()}</div>
                 <div className="text-sm text-red-600">เกิดข้อผิดพลาด</div>
               </div>
             )}
           </div>
 
-          {result.skipped_list.length > 0 && (
+          {taskStatus.skipped_list.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
               <p className="font-semibold text-yellow-800 text-sm mb-1">⚠️ รายการที่ข้าม (มีอยู่แล้ว):</p>
               <ul className="text-sm text-yellow-700 space-y-0.5 max-h-32 overflow-y-auto">
-                {result.skipped_list.map((s, i) => (
+                {taskStatus.skipped_list.map((s, i) => (
                   <li key={i}>• {s.username} — {s.reason}</li>
                 ))}
               </ul>
             </div>
           )}
 
-          {result.errors.length > 0 && (
+          {taskStatus.errors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="font-semibold text-red-800 text-sm mb-1">❌ ข้อผิดพลาด:</p>
               <ul className="text-sm text-red-700 space-y-0.5 max-h-32 overflow-y-auto">
-                {result.errors.map((e, i) => <li key={i}>• {e}</li>)}
+                {taskStatus.errors.map((e, i) => <li key={i}>• {e}</li>)}
               </ul>
             </div>
           )}
 
           <div className="flex gap-3 justify-center pt-2">
             <button
-              onClick={() => { setStep("upload"); setFile(null); setPreview(null); setResult(null); setError(""); }}
+              onClick={() => { setStep("upload"); setFile(null); setPreview(null); setTaskId(null); setTaskStatus(null); setError(""); }}
               className="px-6 py-2 bg-purple-700 text-white rounded-lg hover:bg-purple-800"
             >
               นำเข้าไฟล์ใหม่

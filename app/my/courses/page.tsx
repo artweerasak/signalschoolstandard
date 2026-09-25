@@ -11,6 +11,11 @@ import { api, Course } from "@/lib/api"
 
 const LMS_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th"
 
+function getCookie(name: string) {
+  const v = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)")
+  return v ? v[2] : null
+}
+
 function buildCourseUrl(courseId: string): string | null {
   if (!courseId?.trim()) return null
   if (!courseId.match(/^(course-v1|block-v1):/i)) return null
@@ -175,7 +180,10 @@ export default function CoursesPage() {
       const res = await fetch(`/military/api/v1/enroll/`, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken") || "",
+        },
         body: JSON.stringify({ course_id: courseId }),
       })
       if (res.ok) {

@@ -52,10 +52,9 @@ export default function AdminCoursesPage() {
   // โหลด instructor users เมื่อเปิด assign modal
   useEffect(() => {
     if (!assignModal) return
-    api.adminUsers()
+    api.adminUsers({ role: "instructor", page_size: "200" })
       .then((r) => {
-        const instructors = r.results.filter((u: any) => u.role === "instructor" || u.role === "admin")
-        setInstructorUsers(instructors.map((u: any) => ({
+        setInstructorUsers(r.results.map((u: any) => ({
           id: u.id,
           username: u.username,
           full_name: u.full_name || u.username,

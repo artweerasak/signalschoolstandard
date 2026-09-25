@@ -10,10 +10,18 @@ const API_URL = typeof window !== "undefined"
   : (process.env.NEXT_PUBLIC_API_URL ?? "https://signalstandard.rta.mi.th")
 
 export const CAPACITY_EXCEEDED_EVENT = "military:capacity_exceeded"
+export const PROFILE_UPDATED_EVENT = "military:profile_updated"
 
 function dispatchCapacityExceeded(detail: { active: number; limit: number; message: string }) {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(CAPACITY_EXCEEDED_EVENT, { detail }))
+  }
+}
+
+/** เรียกหลังบันทึกโปรไฟล์สำเร็จ — แจ้งให้ layout รีเฟรช user (banner แจ้งเตือนวันเกิด/วันบรรจุ) */
+export function notifyProfileUpdated() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
   }
 }
 
@@ -94,6 +102,7 @@ export interface ExpiringSoonItem {
   user_id: number
   full_name: string
   rank: string
+  position: string
   unit: string
   course_id: string
   expiry_date: string
@@ -113,12 +122,16 @@ export interface MyProfile {
   full_name: string
   rank: string | null
   rank_display: string | null
+  gender: "M" | "F" | null
+  gender_display: string | null
+  position: string | null
   unit: string | null
   sub_unit: string | null
   service_start_date: string | null
   service_years: number | null
   birth_date: string | null
   age: number | null
+  profile_complete: boolean
 }
 
 export interface MyCertificate {
@@ -141,8 +154,11 @@ export interface CurrentUser {
   role: "admin" | "org_admin" | "instructor" | "student"
   full_name: string
   rank: string | null
+  position: string | null
   unit: string | null
   organization_id?: number | null
+  birth_date: string | null
+  service_start_date: string | null
 }
 
 // Open edX Course API — /api/courses/v1/courses/
@@ -180,6 +196,8 @@ export interface Organization {
   id: number
   code: string
   name: string
+  army_region: string
+  army_region_display: string
   is_active: boolean
   member_count?: number
 }
@@ -216,8 +234,11 @@ export interface AdminUser {
   full_name: string
   rank: string
   rank_display: string
+  position: string
   unit: string
   sub_unit: string
+  army_region: string
+  army_region_display: string
   service_start_date: string
   birth_date: string
   created_at: string
@@ -250,7 +271,29 @@ export interface PendingRegistration {
 export interface RegistrationListResponse {
   count: number
   page: number
+  page_size: number
   results: PendingRegistration[]
+}
+
+export interface WhitelistItem {
+  id: number
+  national_id_masked: string
+  label: string
+  note: string
+  is_active: boolean
+  used: boolean
+  used_at: string | null
+  created_at: string
+  added_by: string | null
+}
+
+export interface WhitelistListResponse {
+  enabled: boolean
+  count: number
+  active_count: number
+  page: number
+  page_size: number
+  results: WhitelistItem[]
 }
 
 // ── Instructor Types ───────────────────────────────────────────────────────
@@ -266,10 +309,27 @@ export interface InstructorStudent {
 
 export interface InstructorGrade {
   username: string
+  full_name: string
   email: string
   percent: number
-  letter_grade: string
+  letter_grade: string | null
   passed: boolean
+}
+
+export interface ExceededAttemptsResult {
+  username: string
+  full_name: string
+  stuck_problems: string[]
+  stuck_count: number
+  course_percent: number
+  passed: boolean
+}
+
+export interface GradesSummary {
+  total: number
+  passed: number
+  not_passed: number
+  average_percent: number
 }
 
 
@@ -289,6 +349,7 @@ export interface ComplianceByGroup {
   total: number
   passed: number
   not_passed: number
+  pending_approval?: number
   no_requirements: number
   percent_passed: number
 }
@@ -309,6 +370,24 @@ export interface NotPassedPersonnel {
   phone_number: string
   missing_courses: string[]
   expired_courses: string[]
+  passed_courses: string[]
+}
+
+export interface NotRegisteredPersonnel {
+  user_id: number
+  username: string
+  full_name: string
+  rank: string
+  rank_display: string
+  unit: string
+  sub_unit: string
+  army_region: string
+  army_region_display: string
+  rank_class: string
+  rank_class_display: string
+  contact_email: string
+  phone_number: string
+  not_registered_courses: string[]
 }
 
 
@@ -325,6 +404,8 @@ export interface CertificateDetail {
   full_name: string
   unit: string
   sub_unit: string
+  signatory_name: string
+  signatory_title: string
 }
 
 export interface CertificateAlert {
@@ -408,7 +489,14 @@ export const api = {
 
   adminHardDeleteUser: (id: number) => fetchAPIPost<{ success: boolean; message: string }>(`api/v1/admin/users/${id}/hard-delete/`, {}, "DELETE"),
 
-  adminRegistrations: (status = "pending") => fetchAPI<RegistrationListResponse>(`api/v1/admin/registrations/?status=${status}`),
+  adminRegistrations: (params: { status?: string; page?: number; page_size?: number; search?: string } = {}) => {
+    const qs = new URLSearchParams()
+    qs.set("status", params.status ?? "pending")
+    qs.set("page", String(params.page ?? 1))
+    qs.set("page_size", String(params.page_size ?? 20))
+    if (params.search) qs.set("search", params.search)
+    return fetchAPI<RegistrationListResponse>(`api/v1/admin/registrations/?${qs}`)
+  },
   adminCourses: () => fetchAPI<{ results: AdminCourse[]; count: number }>("api/v1/admin/courses/"),
   adminAssignInstructor: (courseId: string, userId: number, action: "add" | "remove") =>
     fetchAPIPost<{ success: boolean }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/assign-instructor/`, { user_id: userId, action }),
@@ -422,6 +510,22 @@ export const api = {
     fetchAPIPost<{ success: boolean; course_name: string }>(`api/v1/admin/courses/${encodeURIComponent(courseId)}/rename/`, { course_name: courseName }, "PATCH"),
 
   adminRegistrationAction: (id: number, body: unknown) => fetchAPIPost<{ success: boolean; status: string }>(`api/v1/admin/registrations/${id}/`, body, "PATCH"),
+
+  adminWhitelist: (params: { search?: string; page?: number; page_size?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.search) qs.set("search", params.search)
+    qs.set("page", String(params.page ?? 1))
+    qs.set("page_size", String(params.page_size ?? 50))
+    return fetchAPI<WhitelistListResponse>(`api/v1/admin/whitelist/?${qs}`)
+  },
+  adminWhitelistAdd: (national_ids: string, note: string) =>
+    fetchAPIPost<{ added: number; skipped: number; invalid: number; active_count: number }>("api/v1/admin/whitelist/", { national_ids, note }),
+  adminWhitelistToggle: (enabled: boolean) =>
+    fetchAPIPost<{ enabled: boolean }>("api/v1/admin/whitelist/", { enabled }, "PATCH"),
+  adminWhitelistDelete: (id: number) =>
+    fetchAPIPost<{ success: boolean }>(`api/v1/admin/whitelist/${id}/`, {}, "DELETE"),
+  adminWhitelistSetActive: (id: number, is_active: boolean) =>
+    fetchAPIPost<{ success: boolean; is_active: boolean }>(`api/v1/admin/whitelist/${id}/`, { is_active }, "PATCH"),
 
   // ── Public ───────────────────────────────────────────────────────────────
 
@@ -438,7 +542,25 @@ export const api = {
 
   instructorStudents: (courseId: string) => fetchAPI<{ results: InstructorStudent[]; count: number }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/students/`),
 
-  instructorGrades: (courseId: string) => fetchAPI<{ results: InstructorGrade[]; count: number }>(`api/v1/instructor/courses/${encodeURIComponent(courseId)}/grades/`),
+  instructorGrades: (courseId: string, params: { page?: number; page_size?: number; search?: string } = {}) => {
+    const qs = new URLSearchParams()
+    qs.set("page", String(params.page ?? 1))
+    qs.set("page_size", String(params.page_size ?? 20))
+    if (params.search) qs.set("search", params.search)
+    return fetchAPI<{ results: InstructorGrade[]; count: number; page: number; page_size: number; summary: GradesSummary }>(
+      `api/v1/instructor/courses/${encodeURIComponent(courseId)}/grades/?${qs}`
+    )
+  },
+
+  instructorExceededAttempts: (courseId: string, params: { page?: number; page_size?: number; search?: string } = {}) => {
+    const qs = new URLSearchParams()
+    qs.set("page", String(params.page ?? 1))
+    qs.set("page_size", String(params.page_size ?? 20))
+    if (params.search) qs.set("search", params.search)
+    return fetchAPI<{ results: ExceededAttemptsResult[]; count: number; page: number; page_size: number; not_passed_count: number; has_attempt_limits: boolean }>(
+      `api/v1/instructor/courses/${encodeURIComponent(courseId)}/exceeded-attempts/?${qs}`
+    )
+  },
 
   // ── Password ─────────────────────────────────────────────────────────────
 
@@ -467,7 +589,12 @@ export const api = {
 
   complianceNotPassed: (params?: Record<string, string>) => {
     const qs = new URLSearchParams(params ?? {})
-    return fetchAPI<{ results: NotPassedPersonnel[]; count: number }>(`api/v1/reports/compliance/not-passed/?${qs}`)
+    return fetchAPI<{ results: NotPassedPersonnel[]; count: number; total_pages: number }>(`api/v1/reports/compliance/not-passed/?${qs}`)
+  },
+
+  complianceNotRegistered: (params?: Record<string, string>) => {
+    const qs = new URLSearchParams(params ?? {})
+    return fetchAPI<{ results: NotRegisteredPersonnel[]; count: number; total_pages: number }>(`api/v1/reports/compliance/not-registered/?${qs}`)
   },
 
   certificatesExpiring: (days = 30) =>
@@ -500,7 +627,7 @@ export const api = {
     if (params?.active_only) qs.set("active_only", "1")
     return fetchAPI<{ count: number; results: Organization[] }>(`api/v1/admin/organizations/?${qs}`)
   },
-  adminCreateOrganization: (body: { name: string; code: string }) =>
+  adminCreateOrganization: (body: { name: string; code: string; army_region?: string }) =>
     fetchAPIPost<Organization>("api/v1/admin/organizations/", body),
 
   adminUpdateOrganization: (id: number, body: Partial<Organization>) =>

@@ -2,9 +2,12 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { api, InstructorStudent, InstructorGrade } from "@/lib/api"
+import { api, InstructorStudent, InstructorGrade, ExceededAttemptsResult, GradesSummary } from "@/lib/api"
 
-type Tab = "students" | "grades" | "prereq"
+type Tab = "students" | "grades" | "exceeded" | "prereq"
+
+const GRADES_PAGE_SIZE = 20
+const EXCEEDED_PAGE_SIZE = 20
 
 // ระดับบุคลากร (rank_class) สำหรับกำหนดการมองเห็นหลักสูตรตามเงื่อนไข
 const RANK_CLASS_OPTIONS = [
@@ -22,9 +25,21 @@ export default function CourseDetailPage() {
   const [tab, setTab] = useState<Tab>("students")
   const [students, setStudents] = useState<InstructorStudent[]>([])
   const [grades, setGrades] = useState<InstructorGrade[]>([])
+  const [gradesTotal, setGradesTotal] = useState(0)
+  const [gradesPage, setGradesPage] = useState(1)
+  const [gradesSearch, setGradesSearch] = useState("")
+  const [gradesSummary, setGradesSummary] = useState<GradesSummary | null>(null)
   const [loadingStudents, setLoadingStudents] = useState(true)
   const [loadingGrades, setLoadingGrades] = useState(false)
   const [gradesLoaded, setGradesLoaded] = useState(false)
+  const [exceeded, setExceeded] = useState<ExceededAttemptsResult[]>([])
+  const [exceededTotal, setExceededTotal] = useState(0)
+  const [exceededPage, setExceededPage] = useState(1)
+  const [exceededSearch, setExceededSearch] = useState("")
+  const [exceededNotPassedCount, setExceededNotPassedCount] = useState(0)
+  const [hasAttemptLimits, setHasAttemptLimits] = useState(true)
+  const [loadingExceeded, setLoadingExceeded] = useState(false)
+  const [exceededLoaded, setExceededLoaded] = useState(false)
   // ── เงื่อนไขหลักสูตร (ประเภท + ระดับที่มองเห็น + วิชาบังคับก่อน) ──
   const [policyType, setPolicyType] = useState<"general" | "conditional">("general")
   const [policyRanks, setPolicyRanks] = useState<string[]>([])
@@ -48,18 +63,51 @@ export default function CourseDetailPage() {
   // เปิดแท็บตาม query string เช่น ?tab=prereq (มาจากปุ่ม "เงื่อนไข" ในหน้ารายการ)
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab")
-    if (t === "grades" || t === "prereq") handleTabChange(t as Tab)
+    if (t === "grades" || t === "exceeded" || t === "prereq") handleTabChange(t as Tab)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function loadGrades() {
-    if (gradesLoaded) return
     setLoadingGrades(true)
-    api.instructorGrades(courseId)
-      .then((r) => { setGrades(r.results); setGradesLoaded(true) })
+    api.instructorGrades(courseId, { page: gradesPage, page_size: GRADES_PAGE_SIZE, search: gradesSearch })
+      .then((r) => {
+        setGrades(r.results)
+        setGradesTotal(r.count)
+        setGradesSummary(r.summary)
+        setGradesLoaded(true)
+      })
       .catch(() => {})
       .finally(() => setLoadingGrades(false))
   }
+
+  function loadExceeded() {
+    setLoadingExceeded(true)
+    api.instructorExceededAttempts(courseId, { page: exceededPage, page_size: EXCEEDED_PAGE_SIZE, search: exceededSearch })
+      .then((r) => {
+        setExceeded(r.results)
+        setExceededTotal(r.count)
+        setExceededNotPassedCount(r.not_passed_count ?? 0)
+        setHasAttemptLimits(r.has_attempt_limits)
+        setExceededLoaded(true)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingExceeded(false))
+  }
+
+  // ค้นหาเปลี่ยน → กลับไปหน้า 1
+  useEffect(() => { setGradesPage(1) }, [gradesSearch])
+  useEffect(() => { setExceededPage(1) }, [exceededSearch])
+
+  // เปลี่ยนหน้า/ค้นหา ของแท็บที่เปิดอยู่ → โหลดใหม่ (หลังจากเข้าแท็บครั้งแรกแล้ว)
+  useEffect(() => {
+    if (tab === "grades" && gradesLoaded) loadGrades()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradesPage, gradesSearch])
+
+  useEffect(() => {
+    if (tab === "exceeded" && exceededLoaded) loadExceeded()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exceededPage, exceededSearch])
 
   function loadPrereq() {
     if (prereqLoaded) return
@@ -101,12 +149,15 @@ export default function CourseDetailPage() {
 
   function handleTabChange(t: Tab) {
     setTab(t)
-    if (t === "grades") loadGrades()
+    if (t === "grades" && !gradesLoaded) loadGrades()
+    if (t === "exceeded" && !exceededLoaded) loadExceeded()
     if (t === "prereq") loadPrereq()
   }
 
-  const passCount = grades.filter(g => g.passed).length
-  const failCount = grades.filter(g => !g.passed).length
+  const passCount = gradesSummary?.passed ?? 0
+  const failCount = gradesSummary?.not_passed ?? 0
+  const gradesTotalPages = Math.max(1, Math.ceil(gradesTotal / GRADES_PAGE_SIZE))
+  const exceededTotalPages = Math.max(1, Math.ceil(exceededTotal / EXCEEDED_PAGE_SIZE))
 
   return (
     <div>
@@ -146,6 +197,7 @@ export default function CourseDetailPage() {
         {[
           { key: "students" as Tab, label: "👥 รายชื่อนักเรียน" },
           { key: "grades"   as Tab, label: "📊 คะแนน" },
+          { key: "exceeded" as Tab, label: "⚠️ สอบเกินจำนวนครั้ง" },
           { key: "prereq"   as Tab, label: "🔒 เงื่อนไขหลักสูตร" },
         ].map((t) => (
           <button
@@ -207,11 +259,23 @@ export default function CourseDetailPage() {
 
       {/* Grades Tab */}
       {tab === "grades" && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div>
+          <div className="mb-3">
+            <input
+              type="text"
+              placeholder="ค้นหาชื่อ หรือ Username..."
+              value={gradesSearch}
+              onChange={e => setGradesSearch(e.target.value)}
+              className="w-full max-w-sm border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+            />
+          </div>
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loadingGrades ? (
             <div className="p-12 text-center text-gray-400">กำลังโหลดคะแนน...</div>
           ) : grades.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">ยังไม่มีข้อมูลคะแนน</div>
+            <div className="p-12 text-center text-gray-400">
+              {gradesSearch ? "ไม่พบนักเรียนที่ค้นหา" : "ยังไม่มีข้อมูลคะแนน"}
+            </div>
           ) : (
             <>
               {/* Summary bar */}
@@ -219,17 +283,15 @@ export default function CourseDetailPage() {
                 <span className="text-green-700 font-semibold">✅ ผ่าน: {passCount} คน</span>
                 <span className="text-red-600 font-semibold">❌ ไม่ผ่าน: {failCount} คน</span>
                 <span className="text-gray-600">คะแนนเฉลี่ย: {
-                  grades.length > 0
-                    ? Math.round(grades.reduce((sum, g) => sum + g.percent * 100, 0) / grades.length)
-                    : 0
+                  gradesSummary ? Math.round(gradesSummary.average_percent * 100) : 0
                 }%</span>
               </div>
               <table className="w-full text-sm">
                 <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">#</th>
+                    <th className="px-4 py-3 text-left font-semibold">ชื่อ-สกุล</th>
                     <th className="px-4 py-3 text-left font-semibold">Username</th>
-                    <th className="px-4 py-3 text-left font-semibold">อีเมล</th>
                     <th className="px-4 py-3 text-left font-semibold">คะแนน (%)</th>
                     <th className="px-4 py-3 text-left font-semibold">เกรด</th>
                     <th className="px-4 py-3 text-left font-semibold">ผล</th>
@@ -239,8 +301,8 @@ export default function CourseDetailPage() {
                   {grades.map((g, i) => (
                     <tr key={g.username} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">{g.full_name}</td>
                       <td className="px-4 py-3 font-mono text-gray-700">{g.username}</td>
-                      <td className="px-4 py-3 text-gray-500">{g.email}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="flex-1 bg-gray-200 rounded-full h-2">
@@ -268,6 +330,115 @@ export default function CourseDetailPage() {
                 </tbody>
               </table>
             </>
+          )}
+          </div>
+
+          {/* Pagination */}
+          {gradesTotalPages > 1 && (
+            <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
+              <span className="text-xs text-gray-500">
+                แสดง {(gradesPage-1)*GRADES_PAGE_SIZE+1}–{Math.min(gradesPage*GRADES_PAGE_SIZE, gradesTotal)} จาก {gradesTotal.toLocaleString()} รายการ
+              </span>
+              <div className="flex gap-1 items-center">
+                <button onClick={() => setGradesPage(1)} disabled={gradesPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
+                <button onClick={() => setGradesPage(p=>Math.max(1,p-1))} disabled={gradesPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+                <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{gradesPage}</span>
+                <span className="text-xs text-gray-400">/ {gradesTotalPages}</span>
+                <button onClick={() => setGradesPage(p=>Math.min(gradesTotalPages,p+1))} disabled={gradesPage===gradesTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
+                <button onClick={() => setGradesPage(gradesTotalPages)} disabled={gradesPage===gradesTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Exceeded Attempts Tab */}
+      {tab === "exceeded" && (
+        <div>
+          {hasAttemptLimits && (
+            <div className="mb-3">
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อ หรือ Username..."
+                value={exceededSearch}
+                onChange={e => setExceededSearch(e.target.value)}
+                className="w-full max-w-sm border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+              />
+            </div>
+          )}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          {loadingExceeded ? (
+            <div className="p-12 text-center text-gray-400">กำลังตรวจสอบ...</div>
+          ) : !hasAttemptLimits ? (
+            <div className="p-12 text-center text-gray-400">
+              วิชานี้ยังไม่ได้ตั้งค่า &quot;Maximum Attempts&quot; ในข้อสอบข้อใดเลย — รายงานนี้ใช้ได้เฉพาะข้อสอบที่จำกัดจำนวนครั้งไว้ใน Studio เท่านั้น
+            </div>
+          ) : exceeded.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">
+              {exceededSearch ? "ไม่พบนักเรียนที่ค้นหา" : "✅ ไม่มีนักเรียนที่สอบครบจำนวนครั้งแล้วยังไม่ผ่าน"}
+            </div>
+          ) : (
+            <>
+              <div className="px-6 py-4 bg-amber-50 border-b border-amber-200 flex gap-6 text-sm">
+                <span className="text-amber-700 font-semibold">
+                  ⚠️ สอบเกินจำนวนครั้งที่กำหนดแล้วแต่ยังไม่ผ่านวิชา: {exceededNotPassedCount} คน
+                </span>
+                <span className="text-gray-500">
+                  (ติดข้อสอบอย่างน้อย 1 ข้อที่ทำครบจำนวนครั้งแล้ว: {exceededTotal} คน)
+                </span>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">#</th>
+                    <th className="px-4 py-3 text-left font-semibold">ชื่อ-สกุล</th>
+                    <th className="px-4 py-3 text-left font-semibold">Username</th>
+                    <th className="px-4 py-3 text-left font-semibold">ข้อที่ติด (ครบจำนวนครั้งแล้ว)</th>
+                    <th className="px-4 py-3 text-left font-semibold">คะแนนรวมวิชา</th>
+                    <th className="px-4 py-3 text-left font-semibold">ผลรวมวิชา</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {exceeded.map((e, i) => (
+                    <tr key={e.username} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">{e.full_name}</td>
+                      <td className="px-4 py-3 font-mono text-gray-700">{e.username}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium mr-1">
+                          {e.stuck_count} ข้อ
+                        </span>
+                        <span className="text-xs text-gray-400">{e.stuck_problems.join(", ")}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 font-medium">{Math.round(e.course_percent * 100)}%</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${e.passed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                          {e.passed ? "ผ่าน" : "ไม่ผ่าน"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          </div>
+
+          {/* Pagination */}
+          {exceededTotalPages > 1 && (
+            <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
+              <span className="text-xs text-gray-500">
+                แสดง {(exceededPage-1)*EXCEEDED_PAGE_SIZE+1}–{Math.min(exceededPage*EXCEEDED_PAGE_SIZE, exceededTotal)} จาก {exceededTotal.toLocaleString()} รายการ
+              </span>
+              <div className="flex gap-1 items-center">
+                <button onClick={() => setExceededPage(1)} disabled={exceededPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
+                <button onClick={() => setExceededPage(p=>Math.max(1,p-1))} disabled={exceededPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+                <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{exceededPage}</span>
+                <span className="text-xs text-gray-400">/ {exceededTotalPages}</span>
+                <button onClick={() => setExceededPage(p=>Math.min(exceededTotalPages,p+1))} disabled={exceededPage===exceededTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
+                <button onClick={() => setExceededPage(exceededTotalPages)} disabled={exceededPage===exceededTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+              </div>
+            </div>
           )}
         </div>
       )}

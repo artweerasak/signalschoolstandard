@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { api, CurrentUser } from "@/lib/api"
+import { api, CurrentUser, PROFILE_UPDATED_EVENT } from "@/lib/api"
 import NotificationBell from "@/components/NotificationBell"
 
 const studentNavItems = [
@@ -98,22 +98,60 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
   )
 }
 
+function MissingDatesBanner({ user }: { user: CurrentUser }) {
+  const [dismissed, setDismissed] = useState(false)
+  const missingBirth = !user.birth_date
+  const missingSSD   = !user.service_start_date
+  if (dismissed || (!missingBirth && !missingSSD)) return null
+
+  const missing = [
+    missingBirth && "วันเกิด",
+    missingSSD   && "วันบรรจุ",
+  ].filter(Boolean).join(" และ ")
+
+  return (
+    <div className="bg-red-600 text-white px-4 py-3 flex items-center justify-between gap-4 shadow-md">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="text-xl shrink-0">📢</span>
+        <p className="text-sm font-medium leading-snug">
+          <span className="font-bold">ประชาสัมพันธ์:</span>{" "}
+          ท่านยังไม่ได้กรอก <span className="underline font-bold">{missing}</span>{" "}
+          กรุณาไปที่{" "}
+          <Link href="/my/profile" className="underline font-bold hover:text-red-200 transition-colors">
+            ข้อมูลส่วนตัว
+          </Link>{" "}
+          เพื่อเพิ่มข้อมูล — ระบบต้องการข้อมูลนี้เพื่อคำนวณอายุและอายุราชการ
+        </p>
+      </div>
+      <button onClick={() => setDismissed(true)}
+        className="shrink-0 text-white/70 hover:text-white text-lg leading-none transition-colors"
+        aria-label="ปิด">✕</button>
+    </div>
+  )
+}
+
 export default function MyLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.me()
-      .then((u) => {
-        // admin และ instructor เป็นกำลังพลที่ต้องเรียนและมีใบประกาศเช่นเดียวกับ student
-        // จึงอนุญาตให้เข้าถึงทุกหน้าใน /my/ ได้ครบเหมือน student
-        setUser(u)
-      })
-      .catch((err) => {
-        if (err.message === "UNAUTHORIZED") router.replace("/login")
-      })
-      .finally(() => setLoading(false))
+    function loadUser() {
+      api.me()
+        .then((u) => {
+          // admin และ instructor เป็นกำลังพลที่ต้องเรียนและมีใบประกาศเช่นเดียวกับ student
+          // จึงอนุญาตให้เข้าถึงทุกหน้าใน /my/ ได้ครบเหมือน student
+          setUser(u)
+        })
+        .catch((err) => {
+          if (err.message === "UNAUTHORIZED") router.replace("/login")
+        })
+        .finally(() => setLoading(false))
+    }
+    loadUser()
+    // รีเฟรช user ทันทีหลังบันทึกวันเกิด/วันบรรจุใน /my/profile — ไม่งั้น banner แจ้งเตือนจะค้างแสดงข้อมูลเก่า
+    window.addEventListener(PROFILE_UPDATED_EVENT, loadUser)
+    return () => window.removeEventListener(PROFILE_UPDATED_EVENT, loadUser)
   }, [router])
 
   if (loading) {
@@ -144,6 +182,7 @@ export default function MyLayout({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </header>
+        {user && <MissingDatesBanner user={user} />}
         <main className="flex-1 p-4 md:p-6 overflow-auto pb-20 md:pb-6">{children}</main>
         {/* Mobile bottom navigation */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#2D0F42] border-t border-[#4A1A6B] flex z-40">

@@ -5,7 +5,7 @@
  * สีหลัก: ม่วงเม็ดมะปราง (#4A1A6B) สีประจำเหล่าทหารสื่อสาร
  */
 
-import { useState, Suspense } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -28,6 +28,21 @@ function LoginPageInner() {
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({})
   const [apiError, setApiError] = useState("")
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const err = searchParams.get("error")
+    if (!err) return
+    const MAP: Record<string, string> = {
+      not_authorized: "เลขบัตรประชาชนนี้ยังไม่อยู่ในรายชื่อที่ได้รับอนุญาตให้สมัคร กรุณาติดต่อหน่วยต้นสังกัด",
+      thaid_invalid: "การยืนยันตัวตนผ่าน ThaID ไม่ถูกต้องหรือหมดอายุ กรุณาลองใหม่",
+      thaid_replay: "ลิงก์ยืนยันตัวตนถูกใช้ไปแล้ว กรุณาเริ่มใหม่",
+      thaid_no_pid: "ไม่พบเลขบัตรประชาชนจากการยืนยัน ThaID",
+      thaid_unconfigured: "ระบบ ThaID ยังไม่พร้อมใช้งาน",
+      thaid_denied: "การยืนยันตัวตนถูกยกเลิก",
+      account_inactive: "บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ",
+    }
+    setApiError(MAP[err] ?? "เกิดข้อผิดพลาด กรุณาลองใหม่")
+  }, [searchParams])
 
   function handleUsernameChange(value: string) {
     setUsername(value)
@@ -182,6 +197,21 @@ function LoginPageInner() {
             )}
           </button>
         </form>
+
+        {process.env.NEXT_PUBLIC_THAID_ENABLED === "1" && (
+          <div className="px-8 pb-2">
+            <div className="flex items-center gap-3 my-2 text-gray-400 text-xs">
+              <span className="h-px bg-gray-200 flex-1" />หรือ<span className="h-px bg-gray-200 flex-1" />
+            </div>
+            <a
+              href="/thaid/login"
+              className="flex items-center justify-center gap-2 w-full border border-[#4A1A6B] text-[#4A1A6B] rounded-lg py-2.5 font-medium hover:bg-[#4A1A6B] hover:text-white transition"
+            >
+              <span aria-hidden>🪪</span> เข้าสู่ระบบด้วย ThaID
+            </a>
+            <p className="text-xs text-gray-400 text-center mt-1">ยืนยันตัวตนผ่านแอป ThaID บนมือถือ</p>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="border-t border-gray-100 px-8 py-4 text-center space-y-2">

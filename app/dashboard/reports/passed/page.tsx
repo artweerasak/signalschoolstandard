@@ -1,7 +1,6 @@
 /**
- * app/dashboard/reports/not-passed/page.tsx
- * รายชื่อกำลังพลที่ "ลงทะเบียนแล้วแต่ยังไม่ผ่าน/หมดอายุ" (enrolled_only)
- * แยกจากกลุ่ม "ยังไม่ลงทะเบียน" (ดูหน้า not-registered) — พิมพ์แยกตามหน่วย
+ * app/dashboard/reports/passed/page.tsx
+ * รายชื่อกำลังพลที่ "ผ่านมาตรฐาน" (มีใบประกาศครบตามที่กำหนด) — พิมพ์แยกตามหน่วย / เฉพาะหน่วย
  */
 "use client"
 
@@ -28,7 +27,7 @@ const RANK_CLASS_OPTIONS = [
 
 const cell: React.CSSProperties = { border: "1px solid #333", padding: "3px 6px", textAlign: "left", verticalAlign: "top" }
 
-export default function NotPassedPage() {
+export default function PassedPage() {
   const [data, setData] = useState<NotPassedPersonnel[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -36,11 +35,12 @@ export default function NotPassedPage() {
   const [rankClassFilter, setRankClassFilter] = useState("")
   const [unitFilter, setUnitFilter] = useState("")
   const [searchText, setSearchText] = useState("")
-  const [printUnit, setPrintUnit] = useState("")   // "" = พิมพ์ทุกหน่วย, ไม่ว่าง = พิมพ์เฉพาะหน่วยนั้น
+  const [printUnit, setPrintUnit] = useState("")   // "" = พิมพ์ทุกหน่วย, ไม่ว่าง = เฉพาะหน่วยนั้น
   const [printReady, setPrintReady] = useState(false)  // สร้าง DOM พิมพ์เฉพาะตอนกดพิมพ์ (กันจอค้างจากหลายพันแถว)
   const [page, setPage] = useState(1)
   const PER_PAGE = 100
 
+  // พร้อมพิมพ์ → รอ render print-area เสร็จ แล้วค่อยเรียก window.print()
   useEffect(() => {
     if (!printReady) return
     const t = setTimeout(() => { window.print(); setPrintReady(false) }, 200)
@@ -50,8 +50,8 @@ export default function NotPassedPage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true); setError(""); setPage(1)
-    // enrolled_only=true → เฉพาะคนที่ลงทะเบียนแล้วแต่ยังไม่ผ่าน (ตัดคนยังไม่ลงทะเบียนออก)
-    const params: Record<string, string> = { per_page: "10000", enrolled_only: "true" }
+    // passed=true → รายชื่อผู้ผ่านมาตรฐาน (endpoint เดียวกับ not-passed)
+    const params: Record<string, string> = { per_page: "10000", passed: "true" }
     if (regionFilter) params.army_region = regionFilter
     if (rankClassFilter) params.rank_class = rankClassFilter
     if (unitFilter) params.unit = unitFilter
@@ -93,8 +93,8 @@ export default function NotPassedPage() {
       <div className="space-y-6 print:hidden">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-[#2D0F42]">กำลังพลที่ลงทะเบียนแล้วแต่ยังไม่ผ่าน</h2>
-            <p className="text-sm text-gray-500 mt-1">ลงทะเบียนเรียนแล้วแต่ยังไม่มีใบประกาศ หรือใบประกาศหมดอายุ — สำหรับจัดทำหนังสือติดตาม</p>
+            <h2 className="text-2xl font-bold text-[#2D0F42]">กำลังพลที่ผ่านมาตรฐาน</h2>
+            <p className="text-sm text-gray-500 mt-1">ผ่านมาตรฐานหลักสูตรที่กำหนดครบแล้ว (มีใบประกาศ) — สำหรับจัดทำบัญชีรายชื่อ</p>
           </div>
           <div className="flex gap-3 items-center">
             <select value={printUnit} onChange={(e) => setPrintUnit(e.target.value)}
@@ -147,8 +147,7 @@ export default function NotPassedPage() {
                     <th className="px-4 py-3">ระดับชั้น</th>
                     <th className="px-4 py-3">หน่วย</th>
                     <th className="px-4 py-3">ทัพภาค</th>
-                    <th className="px-4 py-3">หลักสูตรที่ยังไม่ผ่าน</th>
-                    <th className="px-4 py-3">หมดอายุ</th>
+                    <th className="px-4 py-3">หลักสูตรที่ผ่าน</th>
                     <th className="px-4 py-3">ติดต่อ</th>
                   </tr>
                 </thead>
@@ -161,19 +160,10 @@ export default function NotPassedPage() {
                       <td className="px-4 py-3 text-gray-600">{p.unit}{p.sub_unit ? ` / ${p.sub_unit}` : ""}</td>
                       <td className="px-4 py-3 text-gray-600">{p.army_region_display || "-"}</td>
                       <td className="px-4 py-3">
-                        {p.missing_courses.length > 0 ? (
+                        {p.passed_courses.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {p.missing_courses.map((c) => (
-                              <span key={c} className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
-                            ))}
-                          </div>
-                        ) : <span className="text-gray-400 text-xs">-</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {p.expired_courses.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {p.expired_courses.map((c) => (
-                              <span key={c} className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
+                            {p.passed_courses.map((c) => (
+                              <span key={c} className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full">{c}</span>
                             ))}
                           </div>
                         ) : <span className="text-gray-400 text-xs">-</span>}
@@ -205,7 +195,7 @@ export default function NotPassedPage() {
       <div className="print-area hidden print:block">
         {(printUnit && byUnit[printUnit] ? [printUnit] : units).map((u) => (
           <div key={u} className="unit-page" style={{ padding: "12px 20px" }}>
-            <h3 style={{ fontWeight: "bold", fontSize: "15px", marginBottom: "2px" }}>บัญชีรายชื่อกำลังพลที่ลงทะเบียนแล้วแต่ยังไม่ผ่านมาตรฐาน</h3>
+            <h3 style={{ fontWeight: "bold", fontSize: "15px", marginBottom: "2px" }}>บัญชีรายชื่อกำลังพลที่ผ่านมาตรฐาน</h3>
             <p style={{ fontSize: "13px", margin: "0 0 8px" }}>หน่วย: {u} &nbsp;·&nbsp; จำนวน {byUnit[u].length} นาย</p>
             <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse" }}>
               <thead>
@@ -213,7 +203,7 @@ export default function NotPassedPage() {
                   <th style={{ ...cell, width: "40px" }}>ลำดับ</th>
                   <th style={cell}>ยศ ชื่อ-สกุล</th>
                   <th style={{ ...cell, width: "120px" }}>ระดับชั้น</th>
-                  <th style={cell}>หลักสูตรที่ยังไม่ผ่าน / หมดอายุ</th>
+                  <th style={cell}>หลักสูตรที่ผ่าน</th>
                   <th style={{ ...cell, width: "120px" }}>ติดต่อ</th>
                 </tr>
               </thead>
@@ -223,7 +213,7 @@ export default function NotPassedPage() {
                     <td style={{ ...cell, textAlign: "center" }}>{i + 1}</td>
                     <td style={cell}>{p.full_name}</td>
                     <td style={cell}>{p.rank_class_display}</td>
-                    <td style={cell}>{[...p.missing_courses, ...p.expired_courses.map((c) => `${c} (หมดอายุ)`)].join(", ")}</td>
+                    <td style={cell}>{p.passed_courses.join(", ")}</td>
                     <td style={cell}>{p.phone_number || p.contact_email || ""}</td>
                   </tr>
                 ))}

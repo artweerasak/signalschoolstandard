@@ -84,7 +84,7 @@ export default function CertificatePage() {
         >ส</div>
 
         {/* เนื้อหา */}
-        <div className="relative z-10 flex flex-col items-center px-16 py-10 gap-6">
+        <div className="relative z-10 flex flex-col items-center px-5 sm:px-16 py-8 sm:py-10 gap-5 sm:gap-6">
 
           {/* หัว */}
           <div className="flex flex-col items-center gap-2 text-center">
@@ -154,8 +154,8 @@ export default function CertificatePage() {
             </div>
             <div className="text-center">
               <div className="w-44 border-b border-gray-400 mb-1 mx-auto" />
-              <p className="font-semibold text-[#15376D] text-sm">พลตรี วิชัย มั่นคง</p>
-              <p className="text-gray-500 text-xs">ผู้บัญชาการโรงเรียนทหารสื่อสาร</p>
+              <p className="font-semibold text-[#15376D] text-sm">{cert.signatory_name}</p>
+              <p className="text-gray-500 text-xs">{cert.signatory_title}</p>
             </div>
           </div>
 

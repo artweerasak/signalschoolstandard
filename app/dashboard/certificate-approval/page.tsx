@@ -13,9 +13,9 @@ interface Batch {
   approve_date: string
   status: string
   note: string
-  pending_count: number
-  approved_count: number
-  created_at: string
+  pending_count?: number
+  approved_count?: number
+  created_at?: string
 }
 
 interface PendingUser {
@@ -30,20 +30,37 @@ interface PendingUser {
   cert_uuid: string
 }
 
+const PENDING_PAGE_SIZE = 20
+
 export default function CertificateApprovalPage() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([])
+  const [pendingTotal, setPendingTotal] = useState(0)
+  const [pendingPage, setPendingPage] = useState(1)
+  const [pendingSearch, setPendingSearch] = useState("")
   const [batchCounts, setBatchCounts] = useState({ pending: 0, approved: 0, total: 0 })
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [showEditForm, setShowEditForm] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [removingId, setRemovingId] = useState<number | null>(null)
   const [msg, setMsg] = useState("")
   const [courses, setCourses] = useState<any[]>([])
+
+  const pendingTotalPages = Math.max(1, Math.ceil(pendingTotal / PENDING_PAGE_SIZE))
 
   const [form, setForm] = useState({
     name: "",
     course_id: "",
+    enrollment_start: "",
+    enrollment_end: "",
+    approve_date: "",
+    note: "",
+  })
+
+  const [editForm, setEditForm] = useState({
+    name: "",
     enrollment_start: "",
     enrollment_end: "",
     approve_date: "",
@@ -58,16 +75,36 @@ export default function CertificateApprovalPage() {
     }
   }, [])
 
-  const fetchBatchDetail = useCallback(async (batch: Batch) => {
-    setSelectedBatch(batch)
-    const r = await fetch(`${API}/cert/batches/${batch.id}/`, { credentials: "include" })
+  const loadPendingList = useCallback(async (batchId: number, page: number, search: string) => {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(PENDING_PAGE_SIZE) })
+    if (search) qs.set("search", search)
+    const r = await fetch(`${API}/cert/batches/${batchId}/?${qs}`, { credentials: "include" })
     if (r.ok) {
       const d = await r.json()
       setPendingUsers(d.pending || [])
+      setPendingTotal(d.pending_count ?? (d.pending || []).length)
       setBatchCounts(d.counts || { pending: 0, approved: 0, total: 0 })
       setSelectedBatch(d.batch)
     }
   }, [])
+
+  const fetchBatchDetail = useCallback(async (batch: Batch) => {
+    setSelectedBatch(batch)
+    setShowEditForm(false)
+    setPendingSearch("")
+    setPendingPage(1)
+    await loadPendingList(batch.id, 1, "")
+  }, [loadPendingList])
+
+  // ค้นหาเปลี่ยน → กลับไปหน้า 1
+  useEffect(() => { setPendingPage(1) }, [pendingSearch])
+
+  // เปลี่ยนหน้า/ค้นหา ของรอบที่เลือกอยู่ → โหลดใหม่ (ไม่รีเซ็ต batch ที่เลือก)
+  useEffect(() => {
+    if (!selectedBatch) return
+    loadPendingList(selectedBatch.id, pendingPage, pendingSearch)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPage, pendingSearch])
 
   useEffect(() => {
     fetchBatches()
@@ -111,6 +148,73 @@ export default function CertificateApprovalPage() {
     setScanning(false)
     setMsg(r.ok ? `✅ ${d.message}` : "❌ " + (d.error || "เกิดข้อผิดพลาด"))
     if (r.ok) fetchBatchDetail(selectedBatch)
+  }
+
+  const handleEditOpen = () => {
+    if (!selectedBatch) return
+    setEditForm({
+      name: selectedBatch.name,
+      enrollment_start: selectedBatch.enrollment_start,
+      enrollment_end: selectedBatch.enrollment_end,
+      approve_date: selectedBatch.approve_date,
+      note: selectedBatch.note || "",
+    })
+    setShowEditForm(true)
+  }
+
+  const handleEditSave = async () => {
+    if (!selectedBatch) return
+    const r = await fetch(`${API}/cert/batches/${selectedBatch.id}/`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrf() },
+      body: JSON.stringify(editForm),
+    })
+    const d = await r.json()
+    if (r.ok) {
+      const syncNote = d.synced_certificates ? ` (ปรับวันหมดอายุใบประกาศ ${d.synced_certificates} คนตามรอบใหม่)` : ""
+      setMsg(`✅ ${d.message}${syncNote}`)
+      setShowEditForm(false)
+      fetchBatches()
+      fetchBatchDetail(selectedBatch)
+    } else {
+      setMsg("❌ " + (d.error || "เกิดข้อผิดพลาด"))
+    }
+  }
+
+  const handleDeleteBatch = async () => {
+    if (!selectedBatch) return
+    if (!confirm(`ยืนยันลบรอบ "${selectedBatch.name}" ทั้งรอบ?\n(ไม่กระทบใบประกาศที่อนุมัติไปแล้ว)`)) return
+    const r = await fetch(`${API}/cert/batches/${selectedBatch.id}/`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "X-CSRFToken": getCsrf() },
+    })
+    const d = await r.json()
+    setMsg(r.ok ? `✅ ${d.message}` : "❌ " + (d.error || "เกิดข้อผิดพลาด"))
+    if (r.ok) {
+      setSelectedBatch(null)
+      setPendingUsers([])
+      fetchBatches()
+    }
+  }
+
+  const handleRemovePending = async (p: PendingUser) => {
+    if (!selectedBatch) return
+    const warnApproved = p.status === "approved"
+      ? "\n\n⚠️ คนนี้อนุมัติใบประกาศไปแล้ว การลบจะ \"ยกเลิกใบประกาศ\" ของเขาด้วย"
+      : ""
+    if (!confirm(`ลบ "${p.full_name}" ออกจากรอบนี้?${warnApproved}`)) return
+    setRemovingId(p.id)
+    const r = await fetch(`${API}/cert/batches/${selectedBatch.id}/pending/${p.id}/`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "X-CSRFToken": getCsrf() },
+    })
+    const d = await r.json()
+    setRemovingId(null)
+    setMsg(r.ok ? `✅ ${d.message}` : "❌ " + (d.error || "เกิดข้อผิดพลาด"))
+    if (r.ok) { fetchBatches(); fetchBatchDetail(selectedBatch) }
   }
 
   const handleApprove = async () => {
@@ -215,6 +319,51 @@ export default function CertificateApprovalPage() {
             </div>
           )}
 
+          {/* Edit Form */}
+          {showEditForm && selectedBatch && (
+            <div className="bg-white rounded-xl border border-purple-200 p-6 mb-6 shadow-sm">
+              <h2 className="font-semibold text-gray-700 mb-4">แก้ไขรอบ: {selectedBatch.name}</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อรอบ *</label>
+                  <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">วันเปิดรับเรียน *</label>
+                  <input type="date" value={editForm.enrollment_start} onChange={e => setEditForm({ ...editForm, enrollment_start: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">วันปิดรับ / สอบ *</label>
+                  <input type="date" value={editForm.enrollment_end} onChange={e => setEditForm({ ...editForm, enrollment_end: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">วันที่อนุมัติใบประกาศ *</label>
+                  <input type="date" value={editForm.approve_date} onChange={e => setEditForm({ ...editForm, approve_date: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                  {selectedBatch.status === "approved" && (
+                    <p className="text-xs text-amber-600 mt-1">⚠️ รอบนี้อนุมัติแล้ว — ถ้าเปลี่ยนวันที่นี้ วันหมดอายุใบประกาศของทุกคนที่อนุมัติแล้วจะถูกปรับตามวันที่ใหม่ทันที</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">หมายเหตุ</label>
+                  <input value={editForm.note} onChange={e => setEditForm({ ...editForm, note: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-4">
+                <button onClick={handleEditSave} className="bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-purple-800">
+                  บันทึกการแก้ไข
+                </button>
+                <button onClick={() => setShowEditForm(false)} className="border border-gray-300 text-gray-600 px-5 py-2 rounded-lg text-sm hover:bg-gray-50">
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-6">
             {/* Batch List */}
             <div className="col-span-1 space-y-3">
@@ -268,6 +417,20 @@ export default function CertificateApprovalPage() {
                         </div>
                       </div>
                       <div className="flex flex-col gap-2 items-end">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleEditOpen}
+                            className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50"
+                          >
+                            ✏️ แก้ไขรอบ
+                          </button>
+                          <button
+                            onClick={handleDeleteBatch}
+                            className="border border-red-300 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-50"
+                          >
+                            🗑️ ลบรอบ
+                          </button>
+                        </div>
                         <div className="flex gap-4 text-center">
                           <div className="bg-yellow-50 px-3 py-2 rounded-lg">
                             <p className="text-xl font-bold text-yellow-600">{batchCounts.pending}</p>
@@ -304,6 +467,17 @@ export default function CertificateApprovalPage() {
                     )}
                   </div>
 
+                  {/* Search */}
+                  <div className="mb-3">
+                    <input
+                      type="text"
+                      placeholder="ค้นหาชื่อ..."
+                      value={pendingSearch}
+                      onChange={e => setPendingSearch(e.target.value)}
+                      className="w-full max-w-sm border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+                    />
+                  </div>
+
                   {/* User Table */}
                   <div className="overflow-x-auto">
                     {pendingUsers.length === 0 ? (
@@ -317,6 +491,7 @@ export default function CertificateApprovalPage() {
                             <th className="px-4 py-3 text-right">คะแนน</th>
                             <th className="px-4 py-3 text-left">วันที่ผ่าน</th>
                             <th className="px-4 py-3 text-center">สถานะ</th>
+                            <th className="px-4 py-3 text-center">จัดการ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -336,6 +511,16 @@ export default function CertificateApprovalPage() {
                                 <td className="px-4 py-3 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
                                 </td>
+                                <td className="px-4 py-3 text-center">
+                                  <button
+                                    onClick={() => handleRemovePending(u)}
+                                    disabled={removingId === u.id}
+                                    className="text-red-500 hover:text-red-700 text-xs font-medium disabled:opacity-50"
+                                    title={u.status === "approved" ? "ลบ = ยกเลิกใบประกาศด้วย" : "ลบออกจากรอบ"}
+                                  >
+                                    {removingId === u.id ? "⏳" : "🗑️ ลบ"}
+                                  </button>
+                                </td>
                               </tr>
                             )
                           })}
@@ -343,6 +528,23 @@ export default function CertificateApprovalPage() {
                       </table>
                     )}
                   </div>
+
+                  {/* Pagination */}
+                  {pendingTotalPages > 1 && (
+                    <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
+                      <span className="text-xs text-gray-500">
+                        แสดง {(pendingPage-1)*PENDING_PAGE_SIZE+1}–{Math.min(pendingPage*PENDING_PAGE_SIZE, pendingTotal)} จาก {pendingTotal.toLocaleString()} รายการ
+                      </span>
+                      <div className="flex gap-1 items-center">
+                        <button onClick={() => setPendingPage(1)} disabled={pendingPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
+                        <button onClick={() => setPendingPage(p=>Math.max(1,p-1))} disabled={pendingPage===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+                        <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{pendingPage}</span>
+                        <span className="text-xs text-gray-400">/ {pendingTotalPages}</span>
+                        <button onClick={() => setPendingPage(p=>Math.min(pendingTotalPages,p+1))} disabled={pendingPage===pendingTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
+                        <button onClick={() => setPendingPage(pendingTotalPages)} disabled={pendingPage===pendingTotalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

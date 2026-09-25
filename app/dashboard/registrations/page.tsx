@@ -8,10 +8,14 @@ const STATUS_BADGE: Record<string, string> = {
   rejected: "bg-red-100 text-red-700",
 }
 
+const PAGE_SIZE = 20
+
 export default function RegistrationsPage() {
   const [items, setItems] = useState<PendingRegistration[]>([])
   const [total, setTotal] = useState(0)
   const [statusFilter, setStatusFilter] = useState("pending")
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<PendingRegistration | null>(null)
   const [action, setAction] = useState<"approve" | "reject" | null>(null)
@@ -21,15 +25,19 @@ export default function RegistrationsPage() {
   const [error, setError] = useState("")
   const [successMsg, setSuccessMsg] = useState("")
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
   function load() {
     setLoading(true)
-    api.adminRegistrations(statusFilter)
+    api.adminRegistrations({ status: statusFilter, page, page_size: PAGE_SIZE, search })
       .then((r) => { setItems(r.results); setTotal(r.count) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [statusFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  // เปลี่ยนสถานะ/ค้นหา → กลับไปหน้า 1 เสมอ
+  useEffect(() => { setPage(1) }, [statusFilter, search])
+  useEffect(() => { load() }, [statusFilter, search, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openAction(item: PendingRegistration, act: "approve" | "reject") {
     setSelected(item)
@@ -89,6 +97,16 @@ export default function RegistrationsPage() {
         </div>
       </div>
 
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="ค้นหาชื่อ, หน่วย หรืออีเมล..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full max-w-sm border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+        />
+      </div>
+
       {successMsg && (
         <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm mb-4 flex items-center justify-between">
           <span>✅ {successMsg}</span>
@@ -120,6 +138,9 @@ export default function RegistrationsPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{item.full_name_th}</p>
                     {item.email && <p className="text-gray-500 text-xs">{item.email}</p>}
+                    {(item as any).thaid_verified && (
+                      <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-medium">🪪 ThaID ยืนยันแล้ว</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-gray-700">{item.rank_display}</p>
@@ -170,6 +191,23 @@ export default function RegistrationsPage() {
         )}
       </div>
 
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-2 py-3 flex-wrap gap-2">
+          <span className="text-xs text-gray-500">
+            แสดง {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} รายการ
+          </span>
+          <div className="flex gap-1 items-center">
+            <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">«</button>
+            <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">‹</button>
+            <span className="px-3 py-1 text-xs bg-[#4A1A6B] text-white rounded">{page}</span>
+            <span className="text-xs text-gray-400">/ {totalPages}</span>
+            <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">›</button>
+            <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">»</button>
+          </div>
+        </div>
+      )}
+
       {/* Action Modal */}
       {selected && action && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
@@ -192,6 +230,9 @@ export default function RegistrationsPage() {
                   <p><span className="text-gray-500">เบอร์โทร:</span> {(selected as any).phone_number}</p>
                 )}
                 {selected.email && <p><span className="text-gray-500">อีเมล:</span> {selected.email}</p>}
+                {(selected as any).thaid_verified && (
+                  <p className="text-green-700 font-medium">🪪 ยืนยันตัวตนผ่าน ThaID แล้ว</p>
+                )}
               </div>
 
               {error && (

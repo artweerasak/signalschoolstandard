@@ -1,73 +1,179 @@
 import Link from "next/link"
 
+export const metadata = {
+  title: "ประกาศความเป็นส่วนตัว | ระบบมาตรฐานความรู้ เหล่าทหารสื่อสาร",
+  description:
+    "ประกาศเกี่ยวกับการคุ้มครองข้อมูลส่วนบุคคล ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)",
+}
+
+/*
+  หมายเหตุสำหรับผู้ดูแลระบบ:
+  โปรดตรวจสอบ/แก้ไขข้อมูลติดต่อที่ทำเครื่องหมาย [ ... ] ให้ตรงกับหน่วยจริง
+  ก่อนเผยแพร่ ได้แก่ ที่อยู่หน่วย อีเมล และหมายเลขโทรศัพท์ของเจ้าหน้าที่ DPO
+*/
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <section className="space-y-2">{children}</section>
+}
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow p-8 space-y-6">
-        <div className="flex items-center gap-3 border-b border-gray-100 pb-6">
-          <div className="w-10 h-10 rounded-full bg-[#4A1A6B] flex items-center justify-center text-white text-lg">⚖️</div>
-          <div>
-            <h1 className="text-xl font-bold text-[#4A1A6B]">นโยบายความเป็นส่วนตัว</h1>
-            <p className="text-sm text-gray-400">ระบบการเรียนการสอนออนไลน์ · กรมการทหารสื่อสาร</p>
+        {/* หัวเรื่อง */}
+        <div className="flex items-start gap-3 border-b border-gray-100 pb-6">
+          <div className="w-11 h-11 rounded-full bg-[#4A1A6B] flex items-center justify-center text-white text-lg shrink-0">
+            ⚖️
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-xl font-bold text-[#4A1A6B]">
+              ประกาศความเป็นส่วนตัว (Privacy Notice)
+            </h1>
+            <p className="text-sm text-gray-500">
+              ระบบมาตรฐานความรู้ เหล่าทหารสื่อสาร · กรมการทหารสื่อสาร กองทัพบก
+            </p>
+            <p className="text-xs text-gray-400">
+              ฉบับที่ 2 · มีผลบังคับใช้ 17 สิงหาคม 2569 · ปรับปรุงล่าสุด 17 สิงหาคม 2569
+            </p>
           </div>
         </div>
 
-        <section className="space-y-2">
-          <h2 className="font-semibold text-gray-800">1. ข้อมูลที่เก็บรวบรวม</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            ระบบเก็บรวบรวมข้อมูลส่วนบุคคล ได้แก่ เลขประจำตัวประชาชน เลขประจำตัวทหาร ชื่อ-นามสกุล
-            ยศ หน่วยต้นสังกัด วันเดือนปีเกิด และข้อมูลผลการเรียน เพื่อใช้ในการจัดการศึกษาและออกใบประกาศนียบัตรภายในองค์กร
-          </p>
-        </section>
+        {/* คำนำ */}
+        <p className="text-sm text-gray-600 leading-relaxed">
+          กรมการทหารสื่อสาร กองทัพบก (&ldquo;หน่วยงาน&rdquo;) ในฐานะ
+          <strong> ผู้ควบคุมข้อมูลส่วนบุคคล </strong>
+          จัดทำประกาศฉบับนี้เพื่อชี้แจงการเก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคลของกำลังพล
+          ผู้เข้าใช้งานระบบ ให้เป็นไปตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA)
+          และระเบียบของทางราชการที่เกี่ยวข้อง
+        </p>
 
-        <section className="space-y-2">
-          <h2 className="font-semibold text-gray-800">2. วัตถุประสงค์การใช้ข้อมูล</h2>
+        <Card>
+          <h2 className="font-semibold text-gray-800">1. ผู้ควบคุมข้อมูลส่วนบุคคล</h2>
+          <div className="text-sm text-gray-600 leading-relaxed">
+            <p>กรมการทหารสื่อสาร กองทัพบก</p>
+            <p>ที่อยู่: [โปรดระบุที่อยู่หน่วยให้ครบถ้วน]</p>
+            <p>ระบบงาน: signalstandard.rta.mi.th</p>
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold text-gray-800">2. ข้อมูลส่วนบุคคลที่เก็บรวบรวม</h2>
           <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-            <li>การยืนยันตัวตนและเข้าสู่ระบบ</li>
-            <li>การจัดการหลักสูตรและผลการเรียน</li>
-            <li>การออกและติดตามใบประกาศนียบัตร</li>
-            <li>การรายงานสถิติกำลังพลตามมาตรฐานที่กำหนด</li>
+            <li>ข้อมูลระบุตัวตน: เลขประจำตัวประชาชน เลขประจำตัวกำลังพล (ทหาร)</li>
+            <li>ข้อมูลส่วนตัว: ชื่อ-นามสกุล ยศ เหล่า/สังกัด หน่วยต้นสังกัด วันเดือนปีเกิด</li>
+            <li>ข้อมูลการศึกษา: หลักสูตรที่ลงทะเบียน ผลการเรียน ผลการสอบ และใบประกาศนียบัตร</li>
+            <li>
+              ข้อมูลการใช้งานระบบ: บัญชีผู้ใช้ ประวัติการเข้าสู่ระบบ หมายเลข IP และบันทึกการใช้งาน
+              (Log) เพื่อความมั่นคงปลอดภัย
+            </li>
           </ul>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="font-semibold text-gray-800">3. ฐานทางกฎหมาย</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            การประมวลผลข้อมูลอาศัยฐาน <strong>ภารกิจสาธารณะ</strong> และ <strong>สัญญาการปฏิบัติราชการ</strong>
-            ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562 (PDPA) มาตรา 24 (4) และ (5)
+          <p className="text-xs text-gray-500">
+            เลขประจำตัวประชาชนและเลขประจำตัวกำลังพลถือเป็นข้อมูลที่ต้องได้รับการคุ้มครองเป็นพิเศษ
+            และถูกจัดเก็บด้วยมาตรการเข้ารหัสตามข้อ 6
           </p>
-        </section>
+        </Card>
 
-        <section className="space-y-2">
-          <h2 className="font-semibold text-gray-800">4. ความปลอดภัยของข้อมูล</h2>
+        <Card>
+          <h2 className="font-semibold text-gray-800">3. วัตถุประสงค์และฐานทางกฎหมาย</h2>
           <p className="text-sm text-gray-600 leading-relaxed">
-            ข้อมูลระบุตัวตนทุกรายการถูกเข้ารหัสด้วย AES-256-GCM ก่อนบันทึกลงฐานข้อมูล
-            การเข้าถึงข้อมูลจำกัดเฉพาะผู้ที่ได้รับอนุญาต และมีการบันทึก Audit Log ทุกการกระทำ
+            หน่วยงานประมวลผลข้อมูลส่วนบุคคลเพื่อวัตถุประสงค์ต่อไปนี้ โดยอาศัยฐานทางกฎหมายตาม PDPA
+            มาตรา 24
           </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="font-semibold text-gray-800">5. สิทธิ์ของเจ้าของข้อมูล</h2>
           <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-            <li>สิทธิ์ขอเข้าถึงข้อมูลของตนเอง</li>
-            <li>สิทธิ์ขอแก้ไขข้อมูลที่ไม่ถูกต้อง</li>
-            <li>สิทธิ์ขอลบข้อมูลเมื่อพ้นสภาพราชการ</li>
+            <li>การยืนยันตัวตนและการเข้าใช้งานระบบอย่างปลอดภัย</li>
+            <li>การจัดการหลักสูตร การเรียน การสอบ และการประเมินผล</li>
+            <li>การออก ตรวจสอบ และติดตามอายุใบประกาศนียบัตร</li>
+            <li>การจัดทำรายงานและสถิติกำลังพลตามมาตรฐานที่ทางราชการกำหนด</li>
+            <li>การรักษาความมั่นคงปลอดภัยของระบบและการตรวจสอบภายใน</li>
           </ul>
-          <p className="text-sm text-gray-600">
-            ติดต่อใช้สิทธิ์ได้ที่ผู้ดูแลระบบ หรือฝ่ายบุคคลของหน่วย
+          <p className="text-sm text-gray-600 leading-relaxed">
+            ฐานทางกฎหมายที่ใช้ ได้แก่ <strong>ภารกิจสาธารณะ/การใช้อำนาจรัฐ</strong> (มาตรา 24(4)),
+            <strong> ประโยชน์โดยชอบด้วยกฎหมาย</strong> (มาตรา 24(5)) และ
+            <strong> การปฏิบัติหน้าที่ตามกฎหมาย</strong> ของหน่วยงานราชการ
           </p>
-        </section>
+        </Card>
 
-        <section className="space-y-2">
-          <h2 className="font-semibold text-gray-800">6. การเก็บรักษาข้อมูล</h2>
-          <p className="text-sm text-gray-600">
-            ข้อมูลจะถูกเก็บรักษาตลอดระยะเวลาปฏิบัติราชการ และลบออกภายใน 5 ปีหลังพ้นสภาพ เว้นแต่มีกฎหมายกำหนดเป็นอย่างอื่น
+        <Card>
+          <h2 className="font-semibold text-gray-800">4. การเปิดเผยและการส่งต่อข้อมูล</h2>
+          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+            <li>เปิดเผยเฉพาะภายในหน่วยงานและส่วนราชการที่เกี่ยวข้องตามภารกิจเท่านั้น</li>
+            <li>ไม่มีการจำหน่าย แลกเปลี่ยน หรือเปิดเผยข้อมูลเพื่อการตลาดแก่บุคคลภายนอก</li>
+            <li>
+              ข้อมูลจัดเก็บและประมวลผลบนโครงสร้างพื้นฐานของหน่วยงานภายในประเทศ
+              <strong> ไม่มีการส่งหรือโอนข้อมูลไปยังต่างประเทศ</strong>
+            </li>
+            <li>
+              อาจเปิดเผยเมื่อมีกฎหมายกำหนด หรือตามคำสั่งของผู้บังคับบัญชา/หน่วยงานที่มีอำนาจตามกฎหมาย
+            </li>
+          </ul>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold text-gray-800">5. ระยะเวลาการเก็บรักษาข้อมูล</h2>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            หน่วยงานเก็บรักษาข้อมูลตลอดระยะเวลาที่เจ้าของข้อมูลปฏิบัติราชการและใช้งานระบบ
+            และจะลบหรือทำให้ไม่สามารถระบุตัวบุคคลได้ภายใน 5 ปีหลังพ้นสภาพ
+            เว้นแต่มีกฎหมายหรือระเบียบราชการกำหนดให้เก็บรักษานานกว่านั้น
+            (เช่น หลักฐานผลการศึกษาและใบประกาศนียบัตร)
           </p>
-        </section>
+        </Card>
 
-        <div className="border-t border-gray-100 pt-4 text-center">
-          <Link href="/login" className="text-sm text-[#4A1A6B] hover:underline">
+        <Card>
+          <h2 className="font-semibold text-gray-800">6. มาตรการรักษาความมั่นคงปลอดภัย</h2>
+          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+            <li>เข้ารหัสข้อมูลระบุตัวตนด้วย AES-256-GCM ก่อนบันทึกลงฐานข้อมูล</li>
+            <li>เข้ารหัสการรับส่งข้อมูลผ่านช่องทาง HTTPS/TLS ทั้งระบบ</li>
+            <li>จำกัดสิทธิ์การเข้าถึงเฉพาะผู้ที่ได้รับอนุญาต (Least Privilege)</li>
+            <li>บันทึกร่องรอยการเข้าถึงและการแก้ไขข้อมูล (Audit Log) ทุกรายการ</li>
+            <li>สำรองข้อมูลและควบคุมการเข้าถึงระบบผ่านเครือข่ายที่ได้รับอนุญาต</li>
+          </ul>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold text-gray-800">7. สิทธิของเจ้าของข้อมูลส่วนบุคคล</h2>
+          <p className="text-sm text-gray-600">
+            เจ้าของข้อมูลมีสิทธิตาม PDPA ดังนี้
+          </p>
+          <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+            <li>สิทธิขอเข้าถึงและขอรับสำเนาข้อมูลของตน</li>
+            <li>สิทธิขอแก้ไขข้อมูลให้ถูกต้องเป็นปัจจุบัน</li>
+            <li>สิทธิขอลบหรือทำลายข้อมูลเมื่อพ้นสภาพราชการหรือหมดความจำเป็น</li>
+            <li>สิทธิขอระงับการใช้ข้อมูล และสิทธิคัดค้านการประมวลผล</li>
+            <li>สิทธิขอให้โอนย้ายข้อมูล และสิทธิร้องเรียน</li>
+          </ul>
+          <p className="text-xs text-gray-500 leading-relaxed">
+            การใช้สิทธิบางประการอาจถูกจำกัดตามที่กฎหมายกำหนด หรือเมื่อขัดต่อภารกิจด้านความมั่นคงและ
+            ระเบียบของทางราชการ
+          </p>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold text-gray-800">8. ช่องทางติดต่อและการร้องเรียน</h2>
+          <div className="text-sm text-gray-600 leading-relaxed">
+            <p>เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (DPO) กรมการทหารสื่อสาร</p>
+            <p>อีเมล: [dpo@โดเมนของหน่วย]</p>
+            <p>โทรศัพท์: [หมายเลขติดต่อหน่วย]</p>
+            <p className="text-xs text-gray-500 mt-1">
+              หากเห็นว่าการประมวลผลข้อมูลไม่ชอบด้วยกฎหมาย เจ้าของข้อมูลมีสิทธิร้องเรียนต่อ
+              สำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล (สคส.)
+            </p>
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold text-gray-800">9. การทบทวนและปรับปรุงประกาศ</h2>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            หน่วยงานอาจทบทวนและปรับปรุงประกาศฉบับนี้เป็นครั้งคราวให้สอดคล้องกับกฎหมายและแนวปฏิบัติ
+            โดยจะเผยแพร่ฉบับปรับปรุงบนระบบ และให้ถือวันที่มีผลบังคับใช้ตามที่ระบุไว้ด้านบน
+          </p>
+        </Card>
+
+        <div className="border-t border-gray-100 pt-4 flex items-center justify-between text-sm">
+          <Link href="/login" className="text-[#4A1A6B] hover:underline">
             ← กลับหน้าเข้าสู่ระบบ
+          </Link>
+          <Link href="/terms" className="text-[#4A1A6B] hover:underline">
+            ข้อกำหนดการใช้งาน →
           </Link>
         </div>
       </div>

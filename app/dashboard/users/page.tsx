@@ -4,10 +4,10 @@ import { api, AdminUser, Organization } from "@/lib/api"
 
 const RANK_CHOICES = [
   ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
-  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],
+  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],["CSGT_S","จ่าสิบเอกพิเศษ"],
   ["WO1","พันจ่าตรี"],["WO2","พันจ่าโท"],["WO3","พันจ่าเอก"],
   ["2LT","ร้อยตรี"],["1LT","ร้อยโท"],["CPT","ร้อยเอก"],
-  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],
+  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],["COL_S","พันเอกพิเศษ"],
   ["BGEN","พลตรี"],["MGEN","พลโท"],["GEN","พลเอก"],
 ]
 
@@ -23,17 +23,9 @@ const ROLE_COLORS: Record<string, string> = {
   student: "bg-green-100 text-green-700",
 }
 
-const ARMY_REGION_CHOICES = [
-  ["", "ไม่ระบุ / ส่วนกลาง"],
-  ["1", "ทัพภาคที่ 1"],
-  ["2", "ทัพภาคที่ 2"],
-  ["3", "ทัพภาคที่ 3"],
-  ["4", "ทัพภาคที่ 4"],
-]
-
 type FormData = {
-  full_name_th: string; rank: string; unit: string; sub_unit: string;
-  army_region: string; phone_number: string; contact_email: string;
+  full_name_th: string; rank: string; position: string; unit: string; sub_unit: string;
+  phone_number: string; contact_email: string;
   birth_date: string; service_start_date: string;
   username: string; password: string; role: string;
   national_id: string; military_id: string;
@@ -42,8 +34,8 @@ type FormData = {
 }
 
 const emptyForm: FormData = {
-  full_name_th: "", rank: "", unit: "", sub_unit: "",
-  army_region: "", phone_number: "", contact_email: "",
+  full_name_th: "", rank: "", position: "", unit: "", sub_unit: "",
+  phone_number: "", contact_email: "",
   birth_date: "", service_start_date: "",
   username: "", password: "", role: "student",
   national_id: "", military_id: "",
@@ -180,10 +172,23 @@ function UnitDropdown({ value, orgId, onSelect }: {
               className={`px-3 py-2.5 cursor-pointer hover:bg-purple-50 ${i === focused ? "bg-purple-100" : ""}`}>
               <span className="font-medium">{o.name}</span>
               <span className="text-xs text-gray-400 ml-2">[{o.code}]</span>
+              {o.army_region_display && o.army_region_display !== "ไม่ระบุ" && (
+                <span className="text-xs text-[#4A1A6B] ml-2">· {o.army_region_display}</span>
+              )}
             </li>
           ))}
         </ul>
       )}
+      {orgId && (() => {
+        const matched = orgs.find(o => o.id === orgId)
+        return matched ? (
+          <p className="text-xs text-gray-400 mt-1">
+            ทัพภาค: {matched.army_region_display && matched.army_region_display !== "ไม่ระบุ"
+              ? <span className="text-[#4A1A6B] font-medium">{matched.army_region_display}</span>
+              : "ยังไม่ได้ตั้งค่าที่หน่วยนี้ — แก้ที่หน้า จัดการหน่วยงาน"}
+          </p>
+        ) : null
+      })()}
     </div>
   )
 }
@@ -195,6 +200,7 @@ export default function UsersPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState("")
+  const [regionFilter, setRegionFilter] = useState("")
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -216,6 +222,7 @@ export default function UsersPage() {
     const params: Record<string, string> = { page: String(p), page_size: String(PAGE_SIZE) }
     if (search) params.search = search
     if (roleFilter) params.role = roleFilter
+    if (regionFilter) params.army_region = regionFilter
     api.adminUsers(params)
       .then((r) => {
         setUsers(r.results)
@@ -226,7 +233,7 @@ export default function UsersPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { setPage(1); loadUsers(1) }, [search, roleFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); loadUsers(1) }, [search, roleFilter, regionFilter]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadUsers() }, [page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openCreate() {
@@ -236,11 +243,11 @@ export default function UsersPage() {
     setShowModal(true)
   }
 
-  function openEdit(u: AdminUser) {
+  async function openEdit(u: AdminUser) {
     setEditUser(u)
     setForm({
-      full_name_th: u.full_name, rank: u.rank, unit: u.unit, sub_unit: u.sub_unit,
-      army_region: (u as any).army_region ?? "", phone_number: (u as any).phone_number ?? "", contact_email: (u as any).contact_email ?? "",
+      full_name_th: u.full_name, rank: u.rank, position: u.position ?? "", unit: u.unit, sub_unit: u.sub_unit,
+      phone_number: (u as any).phone_number ?? "", contact_email: (u as any).contact_email ?? "",
       birth_date: u.birth_date, service_start_date: u.service_start_date,
       username: u.username, password: "", role: u.role,
       national_id: "", military_id: "",
@@ -251,6 +258,16 @@ export default function UsersPage() {
     })
     setError("")
     setShowModal(true)
+
+    // ดึงเลขบัตรประชาชน/เลขประจำตัวทหาร (ถอดรหัสแล้ว) มาเติมในฟอร์ม — แยก fetch
+    // ต่างหากเพราะเป็นข้อมูลอ่อนไหว ไม่รวมอยู่ในรายการผู้ใช้ปกติ
+    try {
+      const res = await fetch(`/military/api/v1/admin/users/${u.id}/sensitive/`, { credentials: "include" })
+      if (res.ok) {
+        const d = await res.json()
+        setForm(f => ({ ...f, national_id: d.national_id ?? "", military_id: d.military_id ?? "" }))
+      }
+    } catch { /* ไม่ต้อง block การแก้ไขฟิลด์อื่นถ้าดึงไม่ได้ */ }
   }
 
   async function handleSave() {
@@ -262,7 +279,13 @@ export default function UsersPage() {
     setError("")
     try {
       if (editUser) {
-        await api.adminUpdateUser(editUser.id, form)
+        // แก้ไข: ส่ง national_id/military_id ไปก็ต่อเมื่อแอดมินพิมพ์ค่าใหม่จริงๆ
+        // เท่านั้น — เว้นว่างไว้ = ไม่แก้ (ไม่งั้นจะโดน validate เป็นค่าว่างทุกครั้ง)
+        const { national_id, military_id, ...rest } = form
+        const payload: Record<string, unknown> = { ...rest }
+        if (national_id.trim()) payload.national_id = national_id.trim()
+        if (military_id.trim()) payload.military_id = military_id.trim()
+        await api.adminUpdateUser(editUser.id, payload)
         setSuccessMsg("แก้ไขข้อมูลเรียบร้อยแล้ว")
       } else {
         await api.adminCreateUser(form)
@@ -351,6 +374,19 @@ export default function UsersPage() {
           <option value="instructor">ครูอาจารย์</option>
           <option value="student">กำลังพล</option>
         </select>
+        <select
+          value={regionFilter}
+          onChange={e => setRegionFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+        >
+          <option value="">ทุกทัพภาค</option>
+          <option value="1">กองทัพภาคที่ 1</option>
+          <option value="2">กองทัพภาคที่ 2</option>
+          <option value="3">กองทัพภาคที่ 3</option>
+          <option value="4">กองทัพภาคที่ 4</option>
+          <option value="central">ส่วนกลาง</option>
+          <option value="none">ไม่ระบุทัพภาค</option>
+        </select>
       </div>
 
       {/* Table */}
@@ -364,8 +400,9 @@ export default function UsersPage() {
             <thead className="bg-[#f5f3f7] text-[#4A1A6B]">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold">ชื่อ-นามสกุล</th>
-                <th className="px-4 py-3 text-left font-semibold">ชั้นยศ</th>
+                <th className="px-4 py-3 text-left font-semibold">ชั้นยศ / ตำแหน่ง</th>
                 <th className="px-4 py-3 text-left font-semibold">หน่วย</th>
+                <th className="px-4 py-3 text-left font-semibold">ทัพภาค</th>
                 <th className="px-4 py-3 text-left font-semibold">บทบาท</th>
                 <th className="px-4 py-3 text-left font-semibold">สถานะ</th>
                 <th className="px-4 py-3 text-left font-semibold">การดำเนินการ</th>
@@ -378,8 +415,16 @@ export default function UsersPage() {
                     <p className="font-medium text-gray-900">{u.full_name}</p>
                     <p className="text-gray-500 text-xs">{u.email}</p>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{u.rank_display}</td>
+                  <td className="px-4 py-3 text-gray-700">
+                    <p>{u.rank_display}</p>
+                    {u.position && <p className="text-xs text-gray-400">{u.position}</p>}
+                  </td>
                   <td className="px-4 py-3 text-gray-700">{u.unit}</td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {u.army_region_display === "ไม่ระบุ"
+                      ? <span className="text-amber-600 text-xs font-medium">ไม่ระบุ</span>
+                      : <span className="text-xs">{u.army_region_display}</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[u.role] ?? "bg-gray-100 text-gray-600"}`}>
                       {ROLE_LABELS[u.role] ?? u.role}
@@ -534,6 +579,12 @@ export default function UsersPage() {
                 </Field>
               )}
 
+              <Field label="ตำแหน่ง">
+                <input type="text" value={form.position} onChange={e => setForm(f => ({...f, position: e.target.value}))}
+                  placeholder="เช่น ผบ.ร้อย, ฝอ.1, นายทหารสื่อสาร"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              </Field>
+
               <Field label="บทบาท">
                 <select value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
@@ -551,19 +602,11 @@ export default function UsersPage() {
                 />
               </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="หน่วยรอง">
-                  <input type="text" value={form.sub_unit} onChange={e => setForm(f => ({...f, sub_unit: e.target.value}))}
-                    placeholder="หน่วยย่อย (ถ้ามี)"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                </Field>
-                <Field label="ทัพภาค">
-                  <select value={form.army_region} onChange={e => setForm(f => ({...f, army_region: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
-                    {ARMY_REGION_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-                  </select>
-                </Field>
-              </div>
+              <Field label="หน่วยรอง">
+                <input type="text" value={form.sub_unit} onChange={e => setForm(f => ({...f, sub_unit: e.target.value}))}
+                  placeholder="หน่วยย่อย (ถ้ามี)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              </Field>
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="เบอร์โทรศัพท์">
@@ -588,52 +631,55 @@ export default function UsersPage() {
               </div>
 
               {!editUser && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Username" required>
-                      <input type="text" value={form.username} onChange={e => setForm(f => ({...f, username: e.target.value}))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                    </Field>
-                    <Field label="Password">
-                      <div className="relative">
-                        <input type={showPassword ? "text" : "password"} value={form.password}
-                          onChange={e => setForm(f => ({...f, password: e.target.value}))}
-                          placeholder="(สุ่มอัตโนมัติ)"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                        <button type="button" onClick={() => setShowPassword(p => !p)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                          <EyeIcon open={showPassword} />
-                        </button>
-                      </div>
-                    </Field>
-                    <Field label="ยืนยัน Password">
-                      <div className="relative">
-                        <input type={showPassword ? "text" : "password"} value={passwordConfirm}
-                          onChange={e => { setPasswordConfirm(e.target.value); setPasswordConfirmErr("") }}
-                          placeholder="พิมพ์ password อีกครั้ง"
-                          className={("w-full border rounded-lg px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] ") + (passwordConfirmErr ? "border-red-400" : "border-gray-300")} />
-                        <button type="button" onClick={() => setShowPassword(p => !p)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                          <EyeIcon open={showPassword} />
-                        </button>
-                      </div>
-                      {passwordConfirmErr && <p className="text-red-500 text-xs mt-1">{passwordConfirmErr}</p>}
-                    </Field>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="เลขบัตรประชาชน" required>
-                      <input type="text" value={form.national_id} onChange={e => setForm(f => ({...f, national_id: e.target.value.replace(/\D/g,"").slice(0,13)}))}
-                        maxLength={13} placeholder="13 หลัก"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                    </Field>
-                    <Field label={form.personnel_type === "military" ? "เลขทหาร" : "เลขประจำตัว (ถ้ามี)"}>
-                      <input type="text" value={form.military_id} onChange={e => setForm(f => ({...f, military_id: e.target.value.replace(/\D/g,"").slice(0,10)}))}
-                        maxLength={10} placeholder={form.personnel_type === "military" ? "10 หลัก" : "ไม่บังคับ"}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                    </Field>
-                  </div>
-                </>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Username" required>
+                    <input type="text" value={form.username} onChange={e => setForm(f => ({...f, username: e.target.value}))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  </Field>
+                  <Field label="Password">
+                    <div className="relative">
+                      <input type={showPassword ? "text" : "password"} value={form.password}
+                        onChange={e => setForm(f => ({...f, password: e.target.value}))}
+                        placeholder="(สุ่มอัตโนมัติ)"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                      <button type="button" onClick={() => setShowPassword(p => !p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <EyeIcon open={showPassword} />
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label="ยืนยัน Password">
+                    <div className="relative">
+                      <input type={showPassword ? "text" : "password"} value={passwordConfirm}
+                        onChange={e => { setPasswordConfirm(e.target.value); setPasswordConfirmErr("") }}
+                        placeholder="พิมพ์ password อีกครั้ง"
+                        className={("w-full border rounded-lg px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] ") + (passwordConfirmErr ? "border-red-400" : "border-gray-300")} />
+                      <button type="button" onClick={() => setShowPassword(p => !p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <EyeIcon open={showPassword} />
+                      </button>
+                    </div>
+                    {passwordConfirmErr && <p className="text-red-500 text-xs mt-1">{passwordConfirmErr}</p>}
+                  </Field>
+                </div>
               )}
+
+              {/* เลขบัตรประชาชน/เลขทหาร แก้ไขได้ทั้งตอนสร้างและแก้ไขผู้ใช้ —
+                  เผื่อเจ้าหน้าที่กรอกผิดตอนสมัครแล้วต้องแก้ทีหลัง */}
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="เลขบัตรประชาชน" required={!editUser}>
+                  <input type="text" value={form.national_id} onChange={e => setForm(f => ({...f, national_id: e.target.value.replace(/\D/g,"").slice(0,13)}))}
+                    maxLength={13} placeholder="13 หลัก"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  {editUser && <p className="text-xs text-gray-400 mt-1">แก้เลขนี้จะเปลี่ยน username สำหรับ login ด้วย (ถ้า username ใหม่ยังไม่มีคนใช้)</p>}
+                </Field>
+                <Field label={form.personnel_type === "military" ? "เลขทหาร" : "เลขประจำตัว (ถ้ามี)"}>
+                  <input type="text" value={form.military_id} onChange={e => setForm(f => ({...f, military_id: e.target.value.replace(/\D/g,"").slice(0,10)}))}
+                    maxLength={10} placeholder={form.personnel_type === "military" ? "10 หลัก" : "ไม่บังคับ"}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  {editUser && <p className="text-xs text-gray-400 mt-1">เลขนี้คือรหัสผ่าน login เริ่มต้น (ถ้ายังไม่เคยเปลี่ยนรหัสผ่านเอง)</p>}
+                </Field>
+              </div>
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
               <button onClick={() => setShowModal(false)}

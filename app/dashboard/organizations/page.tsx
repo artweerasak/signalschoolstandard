@@ -2,11 +2,21 @@
 import { useEffect, useState, useCallback } from "react"
 import { api, Organization } from "@/lib/api"
 
+const ARMY_REGION_OPTIONS = [
+  { value: "",        label: "ไม่ระบุ" },
+  { value: "1",       label: "กองทัพภาคที่ 1" },
+  { value: "2",       label: "กองทัพภาคที่ 2" },
+  { value: "3",       label: "กองทัพภาคที่ 3" },
+  { value: "4",       label: "กองทัพภาคที่ 4" },
+  { value: "central", label: "ส่วนกลาง" },
+]
+
 export default function OrganizationsPage() {
   const [orgs, setOrgs]         = useState<Organization[]>([])
   const [loading, setLoading]   = useState(true)
   const [q, setQ]               = useState("")
-  const [form, setForm]         = useState({ name: "", code: "" })
+  const [regionFilter, setRegionFilter] = useState("")
+  const [form, setForm]         = useState({ name: "", code: "", army_region: "" })
   const [editOrg, setEditOrg]   = useState<Organization | null>(null)
   const [transferFrom, setTransferFrom] = useState<Organization | null>(null)
   const [targetOrgId, setTargetOrgId]   = useState<number | "">("")
@@ -31,7 +41,7 @@ export default function OrganizationsPage() {
     e.preventDefault()
     try {
       await api.adminCreateOrganization(form)
-      setForm({ name: "", code: "" })
+      setForm({ name: "", code: "", army_region: "" })
       flash("ok", "เพิ่มหน่วยงานสำเร็จ")
       load()
     } catch (err: unknown) { flash("err", (err as Error).message) }
@@ -41,9 +51,12 @@ export default function OrganizationsPage() {
     e.preventDefault()
     if (!editOrg) return
     try {
-      await api.adminUpdateOrganization(editOrg.id, { name: editOrg.name, code: editOrg.code, is_active: editOrg.is_active })
+      await api.adminUpdateOrganization(editOrg.id, {
+        name: editOrg.name, code: editOrg.code,
+        army_region: editOrg.army_region, is_active: editOrg.is_active,
+      })
       setEditOrg(null)
-      flash("ok", "บันทึกสำเร็จ")
+      flash("ok", "บันทึกสำเร็จ — กำลังพลทุกคนในหน่วยนี้จะได้ทัพภาคใหม่ทันที")
       load()
     } catch (err: unknown) { flash("err", (err as Error).message) }
   }
@@ -72,6 +85,7 @@ export default function OrganizationsPage() {
 
   const inputCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] w-full"
   const btnPrimary = "bg-[#4A1A6B] text-white text-sm px-4 py-2 rounded-lg hover:bg-[#3a1255] disabled:opacity-50"
+  const filteredOrgs = regionFilter ? orgs.filter(o => o.army_region === regionFilter) : orgs
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -97,6 +111,13 @@ export default function OrganizationsPage() {
             <input value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))}
               placeholder="ชื่อเต็มของหน่วยงาน" className={inputCls} required />
           </div>
+          <div className="flex-1">
+            <label className="text-xs text-gray-500 mb-1 block">ทัพภาค</label>
+            <select value={form.army_region} onChange={e => setForm(p => ({...p, army_region: e.target.value}))}
+              className={inputCls}>
+              {ARMY_REGION_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
           <button type="submit" className={btnPrimary}>+ เพิ่ม</button>
         </form>
       </div>
@@ -106,7 +127,12 @@ export default function OrganizationsPage() {
         <div className="p-4 border-b flex gap-3 items-center">
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อหรือรหัสหน่วย..."
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-          <span className="text-sm text-gray-500">{orgs.length} หน่วย</span>
+          <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+            <option value="">ทุกทัพภาค</option>
+            {ARMY_REGION_OPTIONS.filter(r => r.value).map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          <span className="text-sm text-gray-500 whitespace-nowrap">{filteredOrgs.length} หน่วย</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -115,6 +141,7 @@ export default function OrganizationsPage() {
               <tr>
                 <th className="px-4 py-3 text-left">รหัส</th>
                 <th className="px-4 py-3 text-left">ชื่อหน่วยงาน</th>
+                <th className="px-4 py-3 text-left">ทัพภาค</th>
                 <th className="px-4 py-3 text-center">กำลังพล</th>
                 <th className="px-4 py-3 text-center">สถานะ</th>
                 <th className="px-4 py-3 text-center">จัดการ</th>
@@ -122,11 +149,18 @@ export default function OrganizationsPage() {
             </thead>
             <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={5} className="py-8 text-center text-gray-400">กำลังโหลด...</td></tr>
-              ) : orgs.map(org => (
+                <tr><td colSpan={6} className="py-8 text-center text-gray-400">กำลังโหลด...</td></tr>
+              ) : filteredOrgs.map(org => (
                 <tr key={org.id} className={`hover:bg-gray-50 ${!org.is_active ? "opacity-50" : ""}`}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-600">{org.code}</td>
                   <td className="px-4 py-3 font-medium">{org.name}</td>
+                  <td className="px-4 py-3">
+                    {org.army_region ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-[#4A1A6B]">{org.army_region_display}</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">ไม่ระบุ</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">{org.member_count ?? 0}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-0.5 rounded-full text-xs ${org.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
@@ -171,6 +205,14 @@ export default function OrganizationsPage() {
                 <label className="text-xs text-gray-500">ชื่อหน่วยงาน</label>
                 <input value={editOrg.name} onChange={e => setEditOrg(p => p && ({...p, name: e.target.value}))}
                   className={inputCls} required />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">ทัพภาค</label>
+                <select value={editOrg.army_region} onChange={e => setEditOrg(p => p && ({...p, army_region: e.target.value}))}
+                  className={inputCls}>
+                  {ARMY_REGION_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">กำลังพลทุกคนที่สังกัดหน่วยนี้จะได้ทัพภาคนี้โดยอัตโนมัติ</p>
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="is_active" checked={editOrg.is_active}

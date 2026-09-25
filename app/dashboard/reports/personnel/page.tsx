@@ -14,6 +14,7 @@ const ARMY_REGION_OPTIONS = [
   { value: "2", label: "ทัพภาคที่ 2" },
   { value: "3", label: "ทัพภาคที่ 3" },
   { value: "4", label: "ทัพภาคที่ 4" },
+  { value: "central", label: "ส่วนกลาง" },
 ]
 
 const RANK_CLASS_OPTIONS = [

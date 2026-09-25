@@ -11,19 +11,11 @@ import { api, Organization } from "@/lib/api"
 
 const RANK_CHOICES = [
   ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
-  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],
+  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],["CSGT_S","จ่าสิบเอกพิเศษ"],
   ["WO1","พันจ่าตรี"],["WO2","พันจ่าโท"],["WO3","พันจ่าเอก"],
   ["2LT","ร้อยตรี"],["1LT","ร้อยโท"],["CPT","ร้อยเอก"],
-  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],
+  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],["COL_S","พันเอกพิเศษ"],
   ["BGEN","พลตรี"],["MGEN","พลโท"],["GEN","พลเอก"],
-]
-
-const ARMY_REGION_CHOICES = [
-  ["", "ไม่ระบุ / ส่วนกลาง"],
-  ["1", "ทัพภาคที่ 1"],
-  ["2", "ทัพภาคที่ 2"],
-  ["3", "ทัพภาคที่ 3"],
-  ["4", "ทัพภาคที่ 4"],
 ]
 
 const MONTHS_TH = [
@@ -161,10 +153,19 @@ function UnitDropdown({ value, orgId, onSelect, hasError }: {
               className={`px-4 py-2.5 cursor-pointer hover:bg-purple-50 ${i === focused ? "bg-purple-100" : ""}`}>
               <span className="font-medium">{o.name}</span>
               <span className="text-xs text-gray-400 ml-2">[{o.code}]</span>
+              {o.army_region_display && o.army_region_display !== "ไม่ระบุ" && (
+                <span className="text-xs text-[#4A1A6B] ml-2">· {o.army_region_display}</span>
+              )}
             </li>
           ))}
         </ul>
       )}
+      {orgId && (() => {
+        const matched = orgs.find(o => o.id === orgId)
+        return matched && matched.army_region_display && matched.army_region_display !== "ไม่ระบุ" ? (
+          <p className="text-xs text-gray-400 mt-1">ทัพภาค: <span className="text-[#4A1A6B] font-medium">{matched.army_region_display}</span></p>
+        ) : null
+      })()}
     </div>
   )
 }
@@ -175,9 +176,9 @@ export default function RegisterPage() {
     personnel_type: "military",   // military | civilian | government
     gender: "M",                  // M | F
     civilian_prefix: "",          // นาย | นาง | นางสาว
-    rank: "",
-    unit: "", sub_unit: "", army_region: "",
-    national_id: "", military_id: "", birth_date: "",
+    rank: "", position: "",
+    unit: "", sub_unit: "",
+    national_id: "", military_id: "", birth_date: "", address: "",
     phone_number: "", email: "",
   })
   const [organizationId, setOrganizationId] = useState<number | null>(null)
@@ -185,6 +186,40 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [apiError, setApiError] = useState("")
+  const [thaidLocked, setThaidLocked] = useState(false)
+  const [thaidAssertion, setThaidAssertion] = useState("")
+
+  // ThaID: ถ้ามากับ ?thaid=<assertion> → ดึงข้อมูลที่ยืนยันแล้วมาเติม และล็อกเลขบัตร
+  useEffect(() => {
+    const a = new URLSearchParams(window.location.search).get("thaid")
+    if (!a) return
+    ;(async () => {
+      try {
+        const r = await fetch("/military/api/v1/auth/thaid-prefill/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ assertion: a }),
+        })
+        if (!r.ok) return
+        const d = await r.json()
+        setThaidLocked(true)
+        setThaidAssertion(a)
+        setForm(f => ({
+          ...f,
+          national_id: d.pid || f.national_id,
+          full_name_th: d.name || f.full_name_th,
+          birth_date: d.birthdate || f.birth_date,
+          address: d.address || f.address,
+          gender: d.gender
+            ? (String(d.gender).toLowerCase().startsWith("f") || String(d.gender).includes("ห") || String(d.gender) === "2" ? "F" : "M")
+            : f.gender,
+        }))
+      } catch {
+        /* prefill ไม่ได้ก็ให้กรอกเองตามปกติ */
+      }
+    })()
+  }, [])
 
   const isMilitary = form.personnel_type === "military"
 
@@ -210,7 +245,7 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      await api.register({ ...form, organization_id: organizationId })
+      await api.register({ ...form, organization_id: organizationId, thaid_assertion: thaidAssertion })
       setSuccess(true)
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง")
@@ -255,6 +290,12 @@ export default function RegisterPage() {
             <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{apiError}</div>
           )}
 
+          {thaidLocked && (
+            <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm flex items-center gap-2">
+              <span aria-hidden>✅</span> ยืนยันตัวตนด้วย ThaID แล้ว — เลขบัตรประชาชนถูกกรอกและล็อกให้อัตโนมัติ กรุณากรอกข้อมูลที่เหลือให้ครบ
+            </div>
+          )}
+
           {/* ประเภทบุคลากร */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">ประเภทบุคลากร <span className="text-red-500">*</span></label>
@@ -294,7 +335,7 @@ export default function RegisterPage() {
 
           {/* ทหาร: ยศ + เพศ */}
           {isMilitary && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ชั้นยศ <span className="text-red-500">*</span></label>
                 <select value={form.rank} onChange={e => update("rank", e.target.value)}
@@ -305,6 +346,12 @@ export default function RegisterPage() {
                   ))}
                 </select>
                 {errors.rank && <p className="text-red-500 text-xs mt-1">{errors.rank}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ตำแหน่ง</label>
+                <input type="text" value={form.position} onChange={e => update("position", e.target.value)}
+                  placeholder="เช่น ผบ.ร้อย, ฝอ.1, นายทหารสื่อสาร"
+                  className={inputCls("position")} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">เพศ <span className="text-red-500">*</span></label>
@@ -355,16 +402,6 @@ export default function RegisterPage() {
           </div>
 
           {/* ทัพภาค */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">ทัพภาค</label>
-            <select value={form.army_region} onChange={e => update("army_region", e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
-              {ARMY_REGION_CHOICES.map(([code, label]) => (
-                <option key={code} value={code}>{label}</option>
-              ))}
-            </select>
-          </div>
-
           {/* หน่วยต้นสังกัด */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">หน่วยต้นสังกัด <span className="text-red-500">*</span></label>
@@ -389,10 +426,19 @@ export default function RegisterPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
             <input type="text" value={form.national_id}
-              onChange={e => update("national_id", e.target.value.replace(/\D/g, "").slice(0, 13))}
-              placeholder="13 หลัก" maxLength={13}
-              className={`${inputCls("national_id")} font-mono`} />
+              onChange={e => { if (!thaidLocked) update("national_id", e.target.value.replace(/\D/g, "").slice(0, 13)) }}
+              placeholder="13 หลัก" maxLength={13} readOnly={thaidLocked}
+              className={`${inputCls("national_id")} font-mono ${thaidLocked ? "bg-gray-100 cursor-not-allowed" : ""}`} />
             {errors.national_id && <p className="text-red-500 text-xs mt-1">{errors.national_id}</p>}
+          </div>
+
+          {/* ที่อยู่ตามบัตรประชาชน */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ที่อยู่ตามบัตรประชาชน</label>
+            <input type="text" value={form.address}
+              onChange={e => { if (!thaidLocked) update("address", e.target.value) }}
+              placeholder="บ้านเลขที่ / หมู่ / ตำบล / อำเภอ / จังหวัด" readOnly={thaidLocked}
+              className={`${inputCls("address")} ${thaidLocked ? "bg-gray-100 cursor-not-allowed" : ""}`} />
           </div>
 
           {/* เลขทหาร (เฉพาะทหาร) */}
@@ -408,7 +454,7 @@ export default function RegisterPage() {
           )}
 
           {/* เบอร์โทร + อีเมล */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">เบอร์โทรศัพท์ <span className="text-gray-400 font-normal">(ถ้ามี)</span></label>
               <input type="tel" value={form.phone_number} onChange={e => update("phone_number", e.target.value)}
