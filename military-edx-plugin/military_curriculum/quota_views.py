@@ -12,6 +12,7 @@ curriculum_views.py ที่ prep_school เห็นเฉพาะหน่�
 ตามคำแนะนำ risk mitigation ในแผน
 """
 import json
+from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.views.decorators.csrf import csrf_exempt
@@ -19,7 +20,7 @@ from django.http import JsonResponse
 
 from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL
 
-from .models import Curriculum, CurriculumEnrollmentRequest
+from .models import Curriculum, CurriculumEnrollmentRequest, ranks_in_range
 from .services.enrollment_service import (
     cascade_enroll_student,
     preview_cascade_enroll,
@@ -139,6 +140,91 @@ def api_quota_demand_report(request):
         "national_requested": national_requested,
         "national_filled": national_filled,
         "region_quotas": region_rows,
+    })
+
+
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_eligible_density_report(request):
+    """
+    GET /military/api/v1/curriculum/reports/eligible-density/?curriculum_id=
+
+    ความคับคั่งของผู้ "มีสิทธิ์" เข้าเรียนหลักสูตรนี้ แยกตามหน่วย — ใช้
+    ประกอบการตัดสินใจ*ก่อน*แบ่งโควตาให้แต่ละหน่วย (คนละรายงานกับ
+    api_quota_demand_report ซึ่งดูยอดขอ/บรรจุ*หลังจาก*ตัดสินใจแบ่งโควตาไปแล้ว)
+
+    นับกำลังพลที่ยศอยู่ในช่วง eligible_rank_min–eligible_rank_max และ
+    personnel_type ตรงกับ eligible_personnel_type ของหลักสูตร (ว่าง =
+    ไม่จำกัดด้านนั้น) ถ้าหลักสูตรกำหนด eligible_min_years_in_rank ด้วย จะ
+    เทียบกับ rank_effective_date ของแต่ละคน — คนที่ยศ/ประเภทตรงเกณฑ์แต่ไม่มี
+    rank_effective_date ให้ตรวจสอบระยะเวลาครองยศไม่ได้ จะถูกนับแยกเป็น
+    needs_verification_count (ไม่นับเป็นทั้งเข้าเกณฑ์และไม่เข้าเกณฑ์) เพื่อให้
+    หน่วยตามไปเก็บข้อมูลกำลังพลของตัวเองให้ครบ (ดู EditRankSection ที่กำลังพล
+    กรอกเองได้ใน /my/profile)
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    curriculum_id = request.GET.get("curriculum_id")
+    if not curriculum_id:
+        return JsonResponse({"error": "curriculum_id required"}, status=400)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    from military_profile.models import MilitaryUserProfile
+
+    qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin")).select_related("organization")
+
+    if c.eligible_personnel_type:
+        qs = qs.filter(personnel_type=c.eligible_personnel_type)
+
+    if c.eligible_rank_min or c.eligible_rank_max:
+        qs = qs.filter(rank__in=ranks_in_range(c.eligible_rank_min, c.eligible_rank_max))
+
+    today = date.today()
+    min_years = c.eligible_min_years_in_rank
+
+    per_org: dict = {}
+    for p in qs:
+        bucket = per_org.setdefault(p.organization_id, {
+            "organization_id": p.organization_id,
+            "organization_name": p.organization.name if p.organization_id else "ไม่ระบุหน่วย",
+            "eligible_count": 0,
+            "needs_verification_count": 0,
+            "total_in_scope": 0,
+        })
+        bucket["total_in_scope"] += 1
+
+        if min_years is not None:
+            if not p.rank_effective_date:
+                bucket["needs_verification_count"] += 1
+                continue
+            years_in_rank = (today - p.rank_effective_date).days / 365.25
+            if years_in_rank < min_years:
+                continue
+
+        bucket["eligible_count"] += 1
+
+    rows = sorted(per_org.values(), key=lambda r: -r["eligible_count"])
+
+    return JsonResponse({
+        "curriculum_id": c.id,
+        "curriculum_name": c.name,
+        "eligible_rank_min": c.eligible_rank_min,
+        "eligible_rank_min_display": c.get_eligible_rank_min_display() if c.eligible_rank_min else None,
+        "eligible_rank_max": c.eligible_rank_max,
+        "eligible_rank_max_display": c.get_eligible_rank_max_display() if c.eligible_rank_max else None,
+        "eligible_min_years_in_rank": c.eligible_min_years_in_rank,
+        "eligible_personnel_type": c.eligible_personnel_type,
+        "eligible_personnel_type_display": c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None,
+        "national": {
+            "eligible_count": sum(r["eligible_count"] for r in rows),
+            "needs_verification_count": sum(r["needs_verification_count"] for r in rows),
+            "total_in_scope": sum(r["total_in_scope"] for r in rows),
+        },
+        "results": rows,
     })
 
 
