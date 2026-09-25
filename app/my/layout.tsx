@@ -22,15 +22,10 @@ const studentNavItems = [
   { href: "/my/profile",      label: "ข้อมูลส่วนตัว",   icon: "👤" },
 ]
 
+// ใช้ร่วมกันสำหรับทุก role ที่มี "portal" ของตัวเองนอกเหนือจาก /my (admin,
+// instructor, org_admin, evaluator, prep_school, prep_personnel) — ต่างจาก
+// student ตรงที่ไม่มีการ์ด "หน้าหลัก" /my แยก (มี backLink กลับ portal แทน)
 const adminNavItems = [
-  { href: "/my/courses",      label: "สมัครเรียนหลักสูตร", icon: "📚" },
-  { href: "/my/transcript",   label: "ระเบียนประวัติ",     icon: "🎓" },
-  { href: "/my/evaluations",  label: "แบบประเมิน",         icon: "📝" },
-  { href: "/my/certificates", label: "ใบประกาศของฉัน",    icon: "📜" },
-  { href: "/my/profile",      label: "ข้อมูลส่วนตัว",     icon: "👤" },
-]
-
-const instructorNavItems = [
   { href: "/my/courses",      label: "สมัครเรียนหลักสูตร", icon: "📚" },
   { href: "/my/transcript",   label: "ระเบียนประวัติ",     icon: "🎓" },
   { href: "/my/evaluations",  label: "แบบประเมิน",         icon: "📝" },
@@ -43,20 +38,41 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
 
   const isAdmin = user?.is_staff || user?.role === "admin"
   const isInstructor = user?.role === "instructor"
+  const isOrgAdmin = user?.role === "org_admin"
+  const isEvaluator = user?.role === "evaluator"
+  const isPrepSchool = user?.role === "prep_school"
+  const isPrepPersonnel = user?.role === "prep_personnel"
+  const isPortalStaff = isAdmin || isInstructor || isOrgAdmin || isEvaluator || isPrepSchool || isPrepPersonnel
 
-  const navItems = isAdmin
-    ? adminNavItems
-    : isInstructor
-    ? instructorNavItems
-    : studentNavItems
+  const navItems = isPortalStaff ? adminNavItems : studentNavItems
 
   const backLink = isAdmin
     ? { href: "/dashboard", label: "← กลับหน้า Admin" }
     : isInstructor
     ? { href: "/instructor", label: "← กลับหน้าครูอาจารย์" }
+    : isOrgAdmin
+    ? { href: "/org-admin", label: "← กลับหน้าผู้ดูแลหน่วย" }
+    : isEvaluator
+    ? { href: "/evaluator", label: "← กลับหน้าแผนกประเมินผล" }
+    : isPrepSchool
+    ? { href: "/prep-school", label: "← กลับหน้าแผนกเตรียมการ" }
+    : isPrepPersonnel
+    ? { href: "/prep-personnel", label: "← กลับหน้าแผนกเตรียมพล" }
     : null
 
-  const roleLabel = isAdmin ? "ผู้ดูแลระบบ" : isInstructor ? "ครูอาจารย์" : "กรมทหารสื่อสาร"
+  const roleLabel = isAdmin
+    ? "ผู้ดูแลระบบ"
+    : isInstructor
+    ? "ครูอาจารย์"
+    : isOrgAdmin
+    ? "ผู้ดูแลหน่วย"
+    : isEvaluator
+    ? "แผนกประเมินผล"
+    : isPrepSchool
+    ? "แผนกเตรียมการ"
+    : isPrepPersonnel
+    ? "แผนกเตรียมพล"
+    : "กรมทหารสื่อสาร"
 
   return (
     <aside className="w-60 min-h-screen bg-gradient-to-b from-[#2D0F42] to-[#230a35] flex flex-col">
@@ -98,9 +114,12 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
           <p className="text-white text-sm font-medium truncate">{user.full_name}</p>
           {user.rank && <p className="text-purple-300 text-xs">{user.rank}</p>}
           {user.unit && <p className="text-purple-400 text-xs truncate">{user.unit}</p>}
-          <Link href="/login" className="mt-3 block text-xs text-purple-400 hover:text-white transition-colors">
+          <button
+            onClick={() => { fetch("/logout", { method: "GET", credentials: "include" }).finally(() => { window.location.href = "/login" }) }}
+            className="mt-3 block text-xs text-purple-400 hover:text-white transition-colors text-left"
+          >
             ออกจากระบบ →
-          </Link>
+          </button>
         </div>
       )}
     </aside>

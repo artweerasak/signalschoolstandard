@@ -79,6 +79,12 @@ export default function OrgAdminLayout({ children }: { children: React.ReactNode
         </nav>
         <div className="p-4 border-t border-white/10">
           <p className="text-xs text-purple-300 truncate">{user?.full_name || user?.username}</p>
+          <button
+            onClick={() => { fetch("/logout", { method: "GET", credentials: "include" }).finally(() => { window.location.href = "/login" }) }}
+            className="block mt-2 text-purple-400 hover:text-white text-xs transition-colors text-left"
+          >
+            ออกจากระบบ →
+          </button>
         </div>
       </aside>
 
