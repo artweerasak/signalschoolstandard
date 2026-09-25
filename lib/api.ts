@@ -296,6 +296,8 @@ export interface QuotaDemandReport {
 export interface EligibleDensityRow {
   organization_id: number | null
   organization_name: string
+  army_region: string
+  army_region_display: string
   eligible_count: number
   needs_verification_count: number
   total_in_scope: number
@@ -317,6 +319,39 @@ export interface EligibleDensityReport {
     total_in_scope: number
   }
   results: EligibleDensityRow[]
+}
+
+export interface OrgQuotaRow {
+  organization_id: number
+  organization_name: string
+  quota: number
+  requested: number
+  filled: number
+}
+
+export interface OrgQuotaReport {
+  curriculum_id: number
+  curriculum_name: string
+  national_quota: number
+  national_requested: number
+  national_filled: number
+  org_quotas: OrgQuotaRow[]
+}
+
+export interface PersonnelSearchRow {
+  id: number
+  full_name: string
+  rank_display: string
+  unit: string
+  organization_id: number | null
+  organization_name: string | null
+}
+
+export interface PersonnelSearchResponse {
+  count: number
+  page: number
+  page_size: number
+  results: PersonnelSearchRow[]
 }
 
 export interface EnrollCoursePreview {
@@ -955,8 +990,25 @@ export const api = {
     fetchAPIPost<{ id: number; status: string }>(`api/v1/curriculum/curricula/${id}/activate/`, {}),
   getQuotaDemandReport: (curriculumId: number) =>
     fetchAPI<QuotaDemandReport>(`api/v1/curriculum/reports/quota-demand/?curriculum_id=${curriculumId}`),
-  getEligibleDensityReport: (curriculumId: number) =>
-    fetchAPI<EligibleDensityReport>(`api/v1/curriculum/reports/eligible-density/?curriculum_id=${curriculumId}`),
+  getEligibleDensityReport: (curriculumId: number, armyRegion?: string) => {
+    const qs = new URLSearchParams({ curriculum_id: String(curriculumId) })
+    if (armyRegion) qs.set("army_region", armyRegion)
+    return fetchAPI<EligibleDensityReport>(`api/v1/curriculum/reports/eligible-density/?${qs}`)
+  },
+  getOrgQuotas: (curriculumId: number) =>
+    fetchAPI<OrgQuotaReport>(`api/v1/curriculum/curricula/${curriculumId}/org-quotas/`),
+  setOrgQuota: (curriculumId: number, organizationId: number, quota: number) =>
+    fetchAPIPost<{ organization_id: number; organization_name: string; quota: number }>(
+      `api/v1/curriculum/curricula/${curriculumId}/org-quotas/`, { organization_id: organizationId, quota }
+    ),
+  searchPersonnel: (params: { q?: string; army_region?: string; page?: number; page_size?: number }) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set("q", params.q)
+    if (params.army_region) qs.set("army_region", params.army_region)
+    if (params.page) qs.set("page", String(params.page))
+    if (params.page_size) qs.set("page_size", String(params.page_size))
+    return fetchAPI<PersonnelSearchResponse>(`api/v1/curriculum/personnel-search/?${qs}`)
+  },
   previewEnrollStudents: (curriculumId: number, studentIds: number[]) =>
     fetchAPIPost<EnrollDryRunResult>(`api/v1/curriculum/curricula/${curriculumId}/enroll/`, {
       student_ids: studentIds, dry_run: true,

@@ -1,28 +1,29 @@
 /**
  * app/prep-personnel/enroll/[curriculumId]/page.tsx
- * บรรจุกำลังพลเข้าหลักสูตร (cascade enrollment) — บังคับ preview (dry-run)
- * ก่อนกดยืนยันจริงเสมอ เพราะ execute จริงเขียนเข้า enrollment จริงของ edX
+ * บรรจุกำลังพลเข้าหลักสูตร (cascade enrollment) — ค้นหากำลังพลจากชื่อ/หน่วย
+ * แล้วเลือกได้หลายคน แทนการพิมพ์ user_id เอง บังคับ preview (dry-run) ก่อน
+ * กดยืนยันจริงเสมอ เพราะ execute จริงเขียนเข้า enrollment จริงของ edX
  */
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { api, EnrollDryRunResult, EnrollExecuteResult } from "@/lib/api"
+import { api, EnrollDryRunResult, EnrollExecuteResult, PersonnelSearchRow } from "@/lib/api"
 
 interface CatchUpResult { mode: "sync" | "async"; affected_count: number }
-
-function parseStudentIds(text: string): number[] {
-  return Array.from(new Set(
-    text.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).map(Number).filter(n => !Number.isNaN(n) && n > 0)
-  ))
-}
 
 export default function EnrollPage() {
   const params = useParams()
   const curriculumId = Number(params.curriculumId)
 
-  const [idsText, setIdsText] = useState("")
+  const [nationalQuota, setNationalQuota] = useState<number | null>(null)
+
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<PersonnelSearchRow[]>([])
+  const [searching, setSearching] = useState(false)
+  const [selected, setSelected] = useState<Map<number, PersonnelSearchRow>>(new Map())
+
   const [preview, setPreview] = useState<EnrollDryRunResult | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [executing, setExecuting] = useState(false)
@@ -32,7 +33,45 @@ export default function EnrollPage() {
   const [catchUpResult, setCatchUpResult] = useState<CatchUpResult | null>(null)
   const [catchUpError, setCatchUpError] = useState("")
 
-  const studentIds = parseStudentIds(idsText)
+  useEffect(() => {
+    if (!curriculumId) return
+    api.getOrgQuotas(curriculumId).then(r => setNationalQuota(r.national_quota)).catch(() => {})
+  }, [curriculumId])
+
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return }
+    const t = setTimeout(() => {
+      setSearching(true)
+      api.searchPersonnel({ q: searchQuery, page_size: 20 })
+        .then(r => setSearchResults(r.results))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
+  const toggleSelect = (person: PersonnelSearchRow) => {
+    setSelected(prev => {
+      const next = new Map(prev)
+      if (next.has(person.id)) next.delete(person.id)
+      else next.set(person.id, person)
+      return next
+    })
+    setPreview(null)
+    setResult(null)
+  }
+
+  const removeSelected = (id: number) => {
+    setSelected(prev => {
+      const next = new Map(prev)
+      next.delete(id)
+      return next
+    })
+    setPreview(null)
+    setResult(null)
+  }
+
+  const studentIds = Array.from(selected.keys())
 
   const handleCatchUp = async () => {
     if (!confirm("ยืนยัน \"ตามให้ครบ\"? ระบบจะลงทะเบียนกำลังพลที่บรรจุไปแล้วเข้าวิชาที่เพิ่งเพิ่มใหม่ (วิชาเดิมจะไม่ถูกแตะต้องซ้ำ)")) return
@@ -50,7 +89,7 @@ export default function EnrollPage() {
   }
 
   const handlePreview = async () => {
-    if (studentIds.length === 0) { setError("กรุณากรอกรหัสผู้ใช้ (user_id) อย่างน้อย 1 คน"); return }
+    if (studentIds.length === 0) { setError("กรุณาค้นหาและเลือกกำลังพลอย่างน้อย 1 คน"); return }
     setError("")
     setResult(null)
     setPreviewing(true)
@@ -73,6 +112,7 @@ export default function EnrollPage() {
       const r = await api.enrollStudents(curriculumId, studentIds)
       setResult(r)
       setPreview(null)
+      setSelected(new Map())
     } catch (err) {
       setError(err instanceof Error ? err.message : "บรรจุไม่สำเร็จ")
     } finally {
@@ -112,11 +152,52 @@ export default function EnrollPage() {
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
-        <label className="block text-sm font-medium text-[#4a4456]">รหัสผู้ใช้ (user_id) — คั่นด้วยจุลภาคหรือขึ้นบรรทัดใหม่</label>
-        <textarea value={idsText} onChange={e => { setIdsText(e.target.value); setPreview(null); setResult(null) }}
-          rows={4} placeholder="เช่น 101, 102, 103"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-        {studentIds.length > 0 && <p className="text-xs text-[#6b6478]">พบ {studentIds.length} รหัสผู้ใช้</p>}
+        <div className="flex items-center justify-between">
+          <label className="block text-sm font-medium text-[#4a4456]">ค้นหากำลังพล (ชื่อหรือหน่วย)</label>
+          {nationalQuota !== null && nationalQuota > 0 && (
+            <p className="text-sm text-[#6b6478]">เลือกแล้ว <span className="font-semibold text-[#4A1A6B]">{studentIds.length}</span> / {nationalQuota} คน</p>
+          )}
+        </div>
+        <div className="relative">
+          <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            placeholder="พิมพ์ชื่อ หรือ หน่วยต้นสังกัด..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+          {searchQuery.trim() && (
+            <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+              {searching ? (
+                <p className="px-3 py-2 text-sm text-[#9a92a8]">กำลังค้นหา...</p>
+              ) : searchResults.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-[#9a92a8]">ไม่พบกำลังพลที่ตรงกับคำค้นหา</p>
+              ) : (
+                searchResults.map(p => (
+                  <button type="button" key={p.id} onClick={() => toggleSelect(p)}
+                    className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 flex items-center justify-between gap-2
+                      ${selected.has(p.id) ? "bg-purple-50" : "hover:bg-[#f7f5fa]"}`}>
+                    <div className="min-w-0">
+                      <p className="font-medium text-[#2D0F42] truncate">{p.rank_display} {p.full_name}</p>
+                      <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
+                    </div>
+                    {selected.has(p.id) && <span className="text-[#4A1A6B] shrink-0">✓ เลือกแล้ว</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {selected.size > 0 && (
+          <div className="border border-gray-200 rounded-lg divide-y max-h-64 overflow-y-auto">
+            {Array.from(selected.values()).map(p => (
+              <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#2D0F42] truncate">{p.rank_display} {p.full_name}</p>
+                  <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
+                </div>
+                <button onClick={() => removeSelected(p.id)} className="text-xs text-red-500 hover:underline shrink-0">ลบ</button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>
@@ -145,7 +226,7 @@ export default function EnrollPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
-                <th className="px-4 py-3">User ID</th>
+                <th className="px-4 py-3">กำลังพล</th>
                 <th className="px-4 py-3">ผลรวม</th>
                 <th className="px-4 py-3">รายละเอียดต่อวิชา</th>
               </tr>
@@ -153,7 +234,11 @@ export default function EnrollPage() {
             <tbody>
               {preview.preview.map(p => (
                 <tr key={p.student_id} className="border-b border-[#f0ecf6]">
-                  <td className="px-4 py-3 font-mono">{p.student_id}</td>
+                  <td className="px-4 py-3">
+                    {selected.get(p.student_id)
+                      ? <>{selected.get(p.student_id)!.rank_display} {selected.get(p.student_id)!.full_name}</>
+                      : <span className="font-mono text-xs text-[#9a92a8]">{p.student_id}</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                       p.would_succeed ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
