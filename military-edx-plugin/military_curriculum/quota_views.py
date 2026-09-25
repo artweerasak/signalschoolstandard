@@ -307,6 +307,52 @@ def api_curriculum_enroll(request, curriculum_id: int):
     }, status=201)
 
 
+@csrf_exempt
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_catch_up_enrollment(request, curriculum_id: int):
+    """POST /military/api/v1/curriculum/curricula/{id}/catch-up-enrollment/
+
+    "ตามให้ครบ" — เมื่อ prep_school เพิ่มวิชาใหม่เข้าหลักสูตรที่บรรจุคนไป
+    บางส่วนแล้ว (submitted/active) คนที่บรรจุไปก่อนหน้านี้จะไม่ถูก enroll
+    วิชาใหม่อัตโนมัติ (cascade_enroll_student รันแค่ตอนบรรจุครั้งแรกต่อคน)
+    endpoint นี้ re-run cascade_enroll_student ให้ทุก CurriculumEnrollmentRequest
+    ที่เคยบรรจุไปแล้ว (completed/partial_failed) ของหลักสูตรนี้อีกครั้ง —
+    ปลอดภัยเพราะ _enroll_single_course idempotent ต่อวิชาที่ enroll อยู่แล้ว
+    (แค่ยืนยันซ้ำ ไม่ enroll ซ้ำ) จะ enroll จริงเฉพาะวิชาที่เพิ่งเพิ่มเท่านั้น
+
+    เป็น action ที่ต้องกดเอง (ไม่ auto-trigger ตอนเพิ่มวิชา) ตามหลัก risk
+    mitigation เดียวกับ api_curriculum_enroll — เขียนเข้า production
+    enrollment จริง ไม่ควรมี side effect แบบเงียบๆ
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    requests_to_process = list(
+        CurriculumEnrollmentRequest.objects.filter(
+            curriculum=c, status__in=["completed", "partial_failed"],
+        )
+    )
+    if not requests_to_process:
+        return JsonResponse({"mode": "sync", "affected_count": 0})
+
+    if len(requests_to_process) <= SYNC_ENROLL_THRESHOLD:
+        for req in requests_to_process:
+            cascade_enroll_student(req)
+        mode = "sync"
+    else:
+        from .tasks import cascade_enroll_student_task
+        for req in requests_to_process:
+            cascade_enroll_student_task.delay(req.id)
+        mode = "async"
+
+    return JsonResponse({"mode": mode, "affected_count": len(requests_to_process)})
+
+
 @require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
 def api_enrollment_request_detail(request, request_id: int):
     """GET /military/api/v1/curriculum/enrollment-requests/{id}/"""

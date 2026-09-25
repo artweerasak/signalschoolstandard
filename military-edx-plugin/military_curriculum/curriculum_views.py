@@ -269,15 +269,24 @@ def api_curriculum_detail(request, curriculum_id: int):
 @csrf_exempt
 @require_role([ROLE_PREP_SCHOOL, ROLE_ADMIN])
 def api_curriculum_courses(request, curriculum_id: int):
-    """POST /military/api/v1/curriculum/curricula/{id}/courses/  → เพิ่มวิชา (เฉพาะ status=draft)"""
+    """POST /military/api/v1/curriculum/curricula/{id}/courses/  → เพิ่มวิชา
+
+    เพิ่มได้ตราบใดที่หลักสูตรยังไม่ปิดรุ่น (draft/submitted/active) — ต่างจาก
+    การลบวิชา (api_curriculum_course_detail) ที่ยังล็อกเฉพาะ draft เท่านั้น
+    เพราะลบวิชาที่มีคนบรรจุ/enroll ไปแล้วเสี่ยงข้อมูลเสียหายมากกว่าเพิ่ม
+
+    ⚠️ ถ้าเพิ่มวิชาหลังจากมีคนบรรจุ (submitted/active) ไปแล้ว คนที่บรรจุไป
+    ก่อนหน้านี้จะ**ไม่ถูก enroll วิชาใหม่อัตโนมัติ** — ต้องให้ prep_personnel
+    กดปุ่ม "ตามให้ครบ" (api_catch_up_enrollment ใน quota_views.py) เพื่อ
+    enroll คนที่บรรจุไปแล้วเข้าวิชาใหม่นี้ด้วย"""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
     c, err = _get_curriculum_scoped(request, curriculum_id)
     if err:
         return err
-    if c.status != "draft":
-        return JsonResponse({"error": "แก้ไขวิชาได้เฉพาะหลักสูตรสถานะร่างเท่านั้น"}, status=409)
+    if c.status == "closed":
+        return JsonResponse({"error": "เพิ่มวิชาไม่ได้ เพราะหลักสูตรนี้ปิดรุ่นแล้ว"}, status=409)
 
     try:
         data = json.loads(request.body)

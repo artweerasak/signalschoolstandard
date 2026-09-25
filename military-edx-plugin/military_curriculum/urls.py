@@ -21,6 +21,7 @@ from .quota_views import (
     api_quota_demand_report,
     api_eligible_density_report,
     api_curriculum_enroll,
+    api_catch_up_enrollment,
     api_enrollment_request_detail,
     api_enrollment_request_retry,
 )
@@ -68,6 +69,7 @@ urlpatterns = [
     # Quota/Demand Report + Cascade Enrollment (prep_personnel) — Sprint 2
     path("api/v1/curriculum/curricula/<int:curriculum_id>/activate/", api_curriculum_activate, name="api_curriculum_activate"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/enroll/", api_curriculum_enroll, name="api_curriculum_enroll"),
+    path("api/v1/curriculum/curricula/<int:curriculum_id>/catch-up-enrollment/", api_catch_up_enrollment, name="api_catch_up_enrollment"),
     path("api/v1/curriculum/reports/quota-demand/", api_quota_demand_report, name="api_quota_demand_report"),
     path("api/v1/curriculum/reports/eligible-density/", api_eligible_density_report, name="api_eligible_density_report"),
     path("api/v1/curriculum/enrollment-requests/<int:request_id>/", api_enrollment_request_detail, name="api_enrollment_request_detail"),
