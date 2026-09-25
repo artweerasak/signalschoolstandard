@@ -16,6 +16,7 @@ import NotificationBell from "@/components/NotificationBell"
 const studentNavItems = [
   { href: "/my",              label: "หน้าหลัก",         icon: "🏠" },
   { href: "/my/courses",      label: "หลักสูตรทั้งหมด",  icon: "📚" },
+  { href: "/my/transcript",   label: "ระเบียนประวัติ",   icon: "🎓" },
   { href: "/my/evaluations",  label: "แบบประเมิน",       icon: "📝" },
   { href: "/my/certificates", label: "ใบประกาศของฉัน",  icon: "📜" },
   { href: "/my/profile",      label: "ข้อมูลส่วนตัว",   icon: "👤" },
@@ -23,6 +24,7 @@ const studentNavItems = [
 
 const adminNavItems = [
   { href: "/my/courses",      label: "สมัครเรียนหลักสูตร", icon: "📚" },
+  { href: "/my/transcript",   label: "ระเบียนประวัติ",     icon: "🎓" },
   { href: "/my/evaluations",  label: "แบบประเมิน",         icon: "📝" },
   { href: "/my/certificates", label: "ใบประกาศของฉัน",    icon: "📜" },
   { href: "/my/profile",      label: "ข้อมูลส่วนตัว",     icon: "👤" },
@@ -30,6 +32,7 @@ const adminNavItems = [
 
 const instructorNavItems = [
   { href: "/my/courses",      label: "สมัครเรียนหลักสูตร", icon: "📚" },
+  { href: "/my/transcript",   label: "ระเบียนประวัติ",     icon: "🎓" },
   { href: "/my/evaluations",  label: "แบบประเมิน",         icon: "📝" },
   { href: "/my/certificates", label: "ใบประกาศของฉัน",    icon: "📜" },
   { href: "/my/profile",      label: "ข้อมูลส่วนตัว",     icon: "👤" },

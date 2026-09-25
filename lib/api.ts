@@ -384,6 +384,33 @@ export interface PendingEvaluationItem {
   schema: { questions?: { key: string; label: string; type?: string }[] }
 }
 
+// ── Learner Transcript (student) ────────────────────────────────────────────
+
+export interface TranscriptCourseEntry {
+  course_id: string
+  display_name: string
+  credits: string
+  grade_visible: boolean
+  final_score: string | null
+  passed: boolean | null
+  gate_reason: string | null
+}
+
+export interface TranscriptCurriculumEntry {
+  curriculum_id: number
+  curriculum_name: string
+  batch_code: string
+  academic_year: number
+  courses: TranscriptCourseEntry[]
+  certificate_available: boolean
+  gate_reason: string | null
+}
+
+export interface MyTranscript {
+  curricula: TranscriptCurriculumEntry[]
+  total_credits_earned: number
+}
+
 export interface OrgMemberRow {
   user_id: number
   full_name: string
@@ -919,6 +946,12 @@ export const api = {
     fetchAPI<{ count: number; results: PendingEvaluationItem[] }>("api/v1/curriculum/my/evaluations/pending/"),
   submitEvaluation: (formId: number, answers: Record<string, unknown>) =>
     fetchAPIPost<{ id: number; submitted_at: string }>(`api/v1/curriculum/my/evaluations/${formId}/submit/`, { answers }),
+  getMyTranscript: () =>
+    fetchAPI<MyTranscript>("api/v1/curriculum/my/transcript/"),
+  checkCertificateAvailable: (curriculumId: number) =>
+    fetchAPI<{ available: boolean; reason?: string; curriculum_name?: string }>(
+      `api/v1/curriculum/my/transcript/${curriculumId}/certificate/`
+    ),
 
   // ── Video Folder Sharing ─────────────────────────────────────────────────
   getVideoShare: (courseSlug: string) =>
