@@ -289,3 +289,69 @@ class TestEligibilityCriteria:
         )
         assert resp.status_code == 200
         assert resp.json()["eligible_min_years_in_rank"] == 2
+
+
+class TestCurriculumCourseEditability:
+    """เพิ่มวิชาได้แม้หลักสูตร submitted/active ไปแล้ว (ไม่ล็อกแค่ draft
+    เหมือนเดิม) แต่ลบวิชายังล็อกเฉพาะ draft เหมือนเดิม — ดู
+    military_curriculum/curriculum_views.py:api_curriculum_courses"""
+
+    def _add_course_payload(self, suffix="1"):
+        return {
+            "course_id": f"course-v1:Signal+ADD{suffix}+2570", "display_name": f"วิชาเพิ่มทีหลัง {suffix}",
+            "credit_hours": 10, "credits": 1,
+        }
+
+    def test_add_course_allowed_when_submitted(self, db, prep_school_user, organization):
+        c = Curriculum.objects.create(
+            name="หลักสูตรส่งแล้ว", batch_code="1", academic_year=2570,
+            organization=organization, created_by=prep_school_user, status="submitted",
+        )
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            f"/military/api/v1/curriculum/curricula/{c.id}/courses/",
+            data=json.dumps(self._add_course_payload()), content_type="application/json",
+        )
+        assert resp.status_code == 201, resp.content
+
+    def test_add_course_allowed_when_active(self, db, prep_school_user, organization):
+        c = Curriculum.objects.create(
+            name="หลักสูตรใช้งาน", batch_code="1", academic_year=2570,
+            organization=organization, created_by=prep_school_user, status="active",
+        )
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            f"/military/api/v1/curriculum/curricula/{c.id}/courses/",
+            data=json.dumps(self._add_course_payload()), content_type="application/json",
+        )
+        assert resp.status_code == 201, resp.content
+
+    def test_add_course_blocked_when_closed(self, db, prep_school_user, organization):
+        c = Curriculum.objects.create(
+            name="หลักสูตรปิดรุ่น", batch_code="1", academic_year=2570,
+            organization=organization, created_by=prep_school_user, status="closed",
+        )
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.post(
+            f"/military/api/v1/curriculum/curricula/{c.id}/courses/",
+            data=json.dumps(self._add_course_payload()), content_type="application/json",
+        )
+        assert resp.status_code == 409
+
+    def test_remove_course_still_blocked_when_not_draft(self, db, prep_school_user, organization):
+        c = Curriculum.objects.create(
+            name="หลักสูตรใช้งาน 2", batch_code="1", academic_year=2570,
+            organization=organization, created_by=prep_school_user, status="active",
+        )
+        cc = CurriculumCourse.objects.create(
+            curriculum=c, course_id="course-v1:Signal+X+2570", display_name="วิชา X",
+            credit_hours=10, credits=1,
+        )
+        client = Client()
+        client.force_login(prep_school_user)
+        resp = client.delete(f"/military/api/v1/curriculum/curricula/{c.id}/courses/{cc.id}/")
+        assert resp.status_code == 409
+        assert c.courses.filter(pk=cc.id).exists()

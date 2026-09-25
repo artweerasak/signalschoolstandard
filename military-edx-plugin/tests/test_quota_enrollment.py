@@ -271,3 +271,81 @@ class TestCascadeEnrollment:
         client.force_login(prep_personnel_user)
         resp = client.post(f"/military/api/v1/curriculum/enrollment-requests/{req.id}/retry/")
         assert resp.status_code == 409
+
+
+class TestCatchUpEnrollment:
+    """"ตามให้ครบ" — เพิ่มวิชาใหม่หลังบรรจุคนไปแล้วบางส่วน ต้อง enroll
+    คนที่บรรจุไปแล้วเข้าวิชาใหม่ได้เมื่อกด endpoint นี้ (ดู
+    military_curriculum/quota_views.py:api_catch_up_enrollment)"""
+
+    def test_catch_up_enrolls_already_provisioned_students_into_new_course(
+        self, db, prep_personnel_user, active_curriculum, organization,
+    ):
+        student = _make_user("catchup_student", "student", organization)
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=student, requested_by=prep_personnel_user,
+            status="completed",
+            result_detail={
+                "course-v1:Signal+101+2570": "enrolled",
+                "course-v1:Signal+102+2570": "enrolled",
+            },
+        )
+        # จำลอง prep_school เพิ่มวิชาใหม่เข้าหลักสูตรที่ active ไปแล้ว
+        CurriculumCourse.objects.create(
+            curriculum=active_curriculum, course_id="course-v1:Signal+103+2570", display_name="วิชาใหม่",
+            sequence_order=3, credit_hours=10, credits=1,
+        )
+
+        called_courses = []
+
+        def side_effect(student_arg, course_id_str, dry_run=False):
+            called_courses.append(course_id_str)
+            return EnrollmentResult(course_id_str, True, None)
+
+        with patch(
+            "military_curriculum.services.enrollment_service._enroll_single_course",
+            side_effect=side_effect,
+        ):
+            client = Client()
+            client.force_login(prep_personnel_user)
+            resp = client.post(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/catch-up-enrollment/")
+
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["mode"] == "sync"
+        assert resp.json()["affected_count"] == 1
+        # ต้องพยายาม enroll ครบทุกวิชารวมวิชาใหม่ (idempotent สำหรับวิชาเดิม)
+        assert "course-v1:Signal+103+2570" in called_courses
+
+    def test_catch_up_no_prior_enrollments(self, db, prep_personnel_user, active_curriculum):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.post(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/catch-up-enrollment/")
+        assert resp.status_code == 200
+        assert resp.json()["affected_count"] == 0
+
+    def test_catch_up_student_forbidden(self, db, active_curriculum, organization):
+        student = _make_user("catchup_forbidden_student", "student", organization)
+        client = Client()
+        client.force_login(student)
+        resp = client.post(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/catch-up-enrollment/")
+        assert resp.status_code == 403
+
+    def test_catch_up_dispatches_async_over_threshold(
+        self, db, prep_personnel_user, active_curriculum, organization,
+    ):
+        for i in range(31):
+            student = _make_user(f"catchup_bulk_{i}", "student", organization)
+            CurriculumEnrollmentRequest.objects.create(
+                curriculum=active_curriculum, student=student, requested_by=prep_personnel_user,
+                status="completed", result_detail={"course-v1:Signal+101+2570": "enrolled"},
+            )
+
+        with patch("military_curriculum.tasks.cascade_enroll_student_task.delay") as mock_delay:
+            client = Client()
+            client.force_login(prep_personnel_user)
+            resp = client.post(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/catch-up-enrollment/")
+
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "async"
+        assert resp.json()["affected_count"] == 31
+        assert mock_delay.call_count == 31
