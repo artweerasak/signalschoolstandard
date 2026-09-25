@@ -21,7 +21,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 from .models import MilitaryUserProfile, Organization, RANK_CHOICES, ARMY_REGION_CHOICES, encrypt_field, decrypt_field, hmac_field
 from .permissions import (
     _apply_private_no_cache, _require_login, _require_admin,
-    _require_org_admin, _require_instructor,
+    _require_org_admin, _require_instructor, get_org_scope,
 )
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 from military_auth.models import PendingRegistration, RegistrationWhitelist, RegistrationConfig
@@ -394,15 +394,22 @@ def api_my_certificates(request):
 # ============================================================================
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_admin_users(request):
     """
     GET /military/api/v1/admin/users/
-    รายการ user ทั้งหมด (paginated, search)
+    รายการ user ทั้งหมด (paginated, search) — admin เห็นทุกหน่วย,
+    org_admin ถูกบังคับเห็นแค่หน่วยตัวเอง (ดู get_org_scope)
     Query params: ?search=&unit=&role=&army_region=&page=1&page_size=20
       army_region = 1|2|3|4|central  หรือ  none (= ไม่ระบุทัพภาค)
     """
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+
     qs = MilitaryUserProfile.objects.select_related("user", "organization").order_by("-created_at")
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     # ค่าเริ่มต้น: ยกเว้น org_admin system accounts — แสดงได้ด้วย ?role=org_admin
     if not request.GET.get("role"):
         qs = qs.exclude(role__in=("admin", "org_admin"))
@@ -451,16 +458,21 @@ def api_admin_users(request):
 
 
 @require_http_methods(["POST"])
-@_require_admin
+@_require_org_admin
 def api_admin_create_user(request):
     """
     POST /military/api/v1/admin/users/create/
-    Admin สร้าง user ใหม่โดยตรง
+    Admin สร้าง user ใหม่โดยตรง — org_admin สร้างได้เฉพาะในหน่วยตัวเอง
+    (organization ถูกบังคับเป็นหน่วยตัวเองเสมอ, role จำกัดแค่ student/instructor)
     """
     try:
         body = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    is_unscoped, caller_org_id = get_org_scope(request)
+    if not is_unscoped and caller_org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
 
     personnel_type = body.get("personnel_type", "military")
     required_fields = ["national_id", "full_name_th", "unit", "username"]
@@ -484,6 +496,9 @@ def api_admin_create_user(request):
         return JsonResponse({"error": f"role ไม่ถูกต้อง ต้องเป็นหนึ่งใน: {', '.join(sorted(_valid_roles))}"}, status=400)
     if _req_role == "admin" and not request.user.is_superuser:
         return JsonResponse({"error": "ต้องการสิทธิ์ superuser ในการสร้าง admin"}, status=403)
+    # org_admin สร้างได้แค่ student/instructor — ห้ามตั้ง role ระดับหน่วยงาน/ระบบให้ใคร
+    if not is_unscoped and _req_role not in ("student", "instructor"):
+        return JsonResponse({"error": "org_admin สร้างผู้ใช้ได้เฉพาะบทบาท กำลังพล/ครูอาจารย์"}, status=403)
 
     try:
         user = User.objects.create_user(
@@ -522,6 +537,16 @@ def api_admin_create_user(request):
             civilian_prefix=body.get("civilian_prefix", ""),
         )
 
+        # ผูก organization FK: org_admin บังคับเป็นหน่วยตัวเองเสมอ (ห้ามสร้างข้ามหน่วย)
+        # admin เต็ม: derive จาก unit text ตาม pattern เดียวกับ api_admin_update_user
+        if not is_unscoped:
+            profile.organization_id = caller_org_id
+        else:
+            org = (Organization.objects.filter(name=profile.unit).first()
+                   or Organization.objects.filter(code=profile.unit).first())
+            profile.organization = org
+        profile.save(update_fields=["organization"])
+
         _ensure_edx_user_profile(user, body["full_name_th"])
 
         if profile.role == "instructor":
@@ -532,20 +557,45 @@ def api_admin_create_user(request):
         return JsonResponse({"error": str(exc)}, status=400)
 
 
+def _org_admin_target_check(request, target_profile):
+    """org_admin แตะได้แค่ user กำลังพล/ครูอาจารย์ (student/instructor) ในหน่วย
+    ตัวเองเท่านั้น — คืน JsonResponse 400/403 ถ้าไม่ผ่าน หรือ None ถ้าผ่าน
+    (admin เต็มผ่านเสมอ). ใช้ร่วมกันใน endpoint ที่แก้/ดูข้อมูลรายคน
+    (sensitive/update/deactivate/reset-password/unlock)
+
+    บล็อก target ที่มี role ระดับหน่วยงาน/ระบบ (admin/org_admin/prep_school/
+    prep_personnel/evaluator) แม้จะอยู่หน่วยเดียวกัน — กัน org_admin ดู/แก้/
+    ลดตำแหน่ง account ระดับสูงกว่าตัวเอง"""
+    is_unscoped, caller_org_id = get_org_scope(request)
+    if is_unscoped:
+        return None
+    if caller_org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+    if target_profile.organization_id != caller_org_id:
+        return JsonResponse({"error": "Forbidden — ผู้ใช้นี้ไม่อยู่ในหน่วยของคุณ"}, status=403)
+    if target_profile.role not in ("student", "instructor"):
+        return JsonResponse({"error": "Forbidden — org_admin จัดการได้เฉพาะกำลังพล/ครูอาจารย์"}, status=403)
+    return None
+
+
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_admin_user_sensitive(request, user_id: int):
     """
     GET /military/api/v1/admin/users/<user_id>/sensitive/
     คืนเลขบัตรประชาชน + เลขประจำตัวทหาร (ถอดรหัสแล้ว) ของ user คนเดียว —
     แยกออกจาก _profile_to_dict()/รายการผู้ใช้ตั้งใจ เพื่อไม่ให้ข้อมูลอ่อนไหว
     หลุดไปกับ response ของหน้ารายชื่อ (bulk list) ดึงเฉพาะตอนแอดมินเปิดแก้ไข
-    รายคนจริงๆ เท่านั้น
+    รายคนจริงๆ เท่านั้น — org_admin ดูได้แค่คนในหน่วยตัวเอง
     """
     try:
         profile = MilitaryUserProfile.objects.get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
+
+    err = _org_admin_target_check(request, profile)
+    if err:
+        return err
 
     return JsonResponse({
         "national_id": profile.national_id,
@@ -554,16 +604,22 @@ def api_admin_user_sensitive(request, user_id: int):
 
 
 @require_http_methods(["PATCH", "PUT"])
-@_require_admin
+@_require_org_admin
 def api_admin_update_user(request, user_id: int):
     """
     PATCH /military/api/v1/admin/users/<user_id>/
-    แก้ไขข้อมูล user
+    แก้ไขข้อมูล user — org_admin แก้ได้แค่คนในหน่วยตัวเอง, ห้ามย้ายคนข้ามหน่วย,
+    ห้ามเลื่อน role เป็นระดับหน่วยงาน/ระบบ
     """
     try:
         profile = MilitaryUserProfile.objects.select_related("user", "organization").get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
+
+    is_unscoped, caller_org_id = get_org_scope(request)
+    err = _org_admin_target_check(request, profile)
+    if err:
+        return err
 
     try:
         body = json.loads(request.body)
@@ -611,6 +667,11 @@ def api_admin_update_user(request, user_id: int):
         org = (Organization.objects.filter(name=unit_val).first()
                or Organization.objects.filter(code=unit_val).first())
         profile.organization = org
+    # org_admin ห้ามย้ายคนออกจากหน่วยตัวเอง — ไม่ว่า unit text ที่ส่งมาจะ derive
+    # เป็น org ไหนก็ตาม บังคับกลับเป็นหน่วยตัวเองเสมอ (กัน privilege escalation
+    # ผ่านการพิมพ์ unit ของหน่วยอื่นให้ organization FK เปลี่ยนตาม)
+    if not is_unscoped:
+        profile.organization_id = caller_org_id
     # Auto-derive gender from civilian_prefix for non-military
     new_personnel_type = body.get("personnel_type", profile.personnel_type)
     if new_personnel_type != "military" and "civilian_prefix" in body:
@@ -627,6 +688,10 @@ def api_admin_update_user(request, user_id: int):
             return JsonResponse({"error": f"role ไม่ถูกต้อง"}, status=400)
         if new_role == "admin" and not request.user.is_superuser:
             return JsonResponse({"error": "ต้องการสิทธิ์ superuser ในการเลื่อนเป็น admin"}, status=403)
+        # org_admin เลื่อน/ลดตำแหน่งได้แค่ student/instructor — ห้ามแตะ role
+        # ระดับหน่วยงาน/ระบบ (admin/org_admin/prep_school/prep_personnel/evaluator)
+        if not is_unscoped and new_role not in ("student", "instructor"):
+            return JsonResponse({"error": "org_admin ตั้งบทบาทได้เฉพาะ กำลังพล/ครูอาจารย์"}, status=403)
         profile.role = new_role
         profile.user.is_staff = new_role == "admin"
         profile.user.save()
@@ -646,16 +711,20 @@ def api_admin_update_user(request, user_id: int):
 
 
 @require_http_methods(["DELETE"])
-@_require_admin
+@_require_org_admin
 def api_admin_deactivate_user(request, user_id: int):
     """
     DELETE /military/api/v1/admin/users/<user_id>/
-    ปิดใช้งาน user (ไม่ลบจริง)
+    ปิดใช้งาน user (ไม่ลบจริง) — org_admin ทำได้แค่คนในหน่วยตัวเอง
     """
     try:
         profile = MilitaryUserProfile.objects.select_related("user", "organization").get(user_id=user_id)
     except MilitaryUserProfile.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
+
+    err = _org_admin_target_check(request, profile)
+    if err:
+        return err
 
     if profile.user_id == request.user.id:
         return JsonResponse({"error": "Cannot deactivate yourself"}, status=400)
@@ -1398,19 +1467,25 @@ def api_change_password(request):
     return JsonResponse({"success": True, "message": "เปลี่ยนรหัสผ่านสำเร็จ"})
 
 
-@_require_admin
+@_require_org_admin
 @require_POST
 def api_admin_reset_password(request, user_id: int):
     """
     POST /military/api/v1/admin/users/<user_id>/reset-password/
     Admin รีเซ็ตรหัสผ่านผู้ใช้กลับเป็น default (เลขทหาร = military_id)
     ป้องกัน: admin ไม่สามารถรีเซ็ตรหัสผ่านของ admin/superuser คนอื่นได้
+    org_admin ทำได้แค่คนในหน่วยตัวเอง (และเป็น student/instructor เท่านั้น
+    อยู่แล้วจากเงื่อนไข is_staff/role==admin ด้านล่าง)
     """
     try:
         target_user = User.objects.get(pk=user_id)
         profile = target_user.military_profile
     except (User.DoesNotExist, MilitaryUserProfile.DoesNotExist):
         return JsonResponse({"error": "ไม่พบผู้ใช้"}, status=404)
+
+    err = _org_admin_target_check(request, profile)
+    if err:
+        return err
 
     # ป้องกัน privilege escalation — admin ทั่วไปรีเซ็ตรหัส admin/superuser คนอื่นไม่ได้
     if target_user.is_superuser:
@@ -2131,16 +2206,20 @@ def api_my_certificate_download(request, cert_id):
 
 
 @require_GET
-@_require_admin
+@_require_org_admin
 def api_locked_accounts(request):
     """
     GET /military/api/v1/admin/locked-accounts/
     รายชื่อบัญชีที่ถูกล็อกชั่วคราวอยู่ตอนนี้ (กรอกรหัสผ่านผิดเกินจำนวนครั้งที่
     Open edX กำหนด) — ให้แอดมินดูได้ว่าเป็นใคร แล้วเลือกปลดล็อกเองได้ทันที
-    ไม่ต้องรอครบเวลาล็อกอัตโนมัติ (ปกติ 30 นาที)
+    ไม่ต้องรอครบเวลาล็อกอัตโนมัติ (ปกติ 30 นาที) — org_admin เห็นแค่หน่วยตัวเอง
     """
     from django.utils import timezone
     from common.djangoapps.student.models import LoginFailures
+
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
 
     now = timezone.now()
     rows = (
@@ -2149,6 +2228,8 @@ def api_locked_accounts(request):
         .select_related("user", "user__military_profile")
         .order_by("-lockout_until")
     )
+    if org_id is not None:
+        rows = rows.filter(user__military_profile__organization_id=org_id)
 
     results = []
     for row in rows:
@@ -2169,15 +2250,29 @@ def api_locked_accounts(request):
 
 
 @require_POST
-@_require_admin
+@_require_org_admin
 def api_unlock_account(request, user_id: int):
     """
     POST /military/api/v1/admin/locked-accounts/<user_id>/unlock/
     ปลดล็อกบัญชีที่ถูกจำกัดจากการกรอกรหัสผิดเกินจำนวนครั้ง — ลบตัวนับ/เวลาล็อก
     ทิ้ง ผู้ใช้ล็อกอินได้ทันทีในครั้งถัดไปถ้ากรอกถูก (ไม่ได้ปลดล็อกแบบเปิดให้
     กรอกผิดได้ไม่จำกัดอีกต่อไป — ตัวนับใหม่จะเริ่มนับใหม่ตามปกติ)
+    org_admin ปลดล็อกได้แค่คนในหน่วยตัวเอง
     """
     from common.djangoapps.student.models import LoginFailures
+
+    try:
+        target_profile = MilitaryUserProfile.objects.get(user_id=user_id)
+    except MilitaryUserProfile.DoesNotExist:
+        target_profile = None
+    if target_profile is not None:
+        err = _org_admin_target_check(request, target_profile)
+        if err:
+            return err
+    else:
+        is_unscoped, _org_id = get_org_scope(request)
+        if not is_unscoped:
+            return JsonResponse({"error": "Forbidden"}, status=403)
 
     deleted, _ = LoginFailures.objects.filter(user_id=user_id).delete()
     if not deleted:
@@ -3304,7 +3399,7 @@ def _parse_excel_users(file_bytes):
 
 
 @require_http_methods(["GET"])
-@_require_admin
+@_require_org_admin
 def api_admin_bulk_import_template(request):
     """GET /military/api/v1/admin/users/bulk-import/template/ — download Excel template"""
     import io
@@ -3393,8 +3488,18 @@ def _resolve_org(unit_val: str):
             or Organization.objects.filter(code=unit_val).first())
 
 
-def _run_import_task(task_id: str, users: list, parse_errors: list) -> None:
-    """Run bulk user import in a background thread."""
+def _run_import_task(
+    task_id: str, users: list, parse_errors: list,
+    forced_organization_id: int | None = None, org_admin_caller: bool = False,
+) -> None:
+    """Run bulk user import in a background thread.
+
+    org_admin_caller=True (org_admin นำเข้าเอง ไม่ใช่ admin เต็ม):
+    - บังคับ organization = forced_organization_id ทุกแถว (เพิกเฉย unit ในไฟล์
+      ที่ resolve ไปหน่วยอื่น) กัน org_admin นำเข้าคนเข้าหน่วยอื่น
+    - role ที่ไม่ใช่ student/instructor ในไฟล์ถูก skip ไม่สร้าง (กันสร้าง
+      org_admin/role ระดับหน่วยงานให้คนอื่นผ่านไฟล์ import)
+    """
     import django.db
     from django.contrib.auth.hashers import PBKDF2PasswordHasher
 
@@ -3444,6 +3549,12 @@ def _run_import_task(task_id: str, users: list, parse_errors: list) -> None:
                 _import_role = u.get("role", "student")
                 if _import_role not in _allowed_import_roles:
                     _import_role = "student"
+                if org_admin_caller and _import_role not in ("student", "instructor"):
+                    user_obj.delete()
+                    skipped.append({"username": username, "reason": f"role '{_import_role}' ต้องใช้สิทธิ์ admin เต็ม (org_admin นำเข้าได้แค่ student/instructor)"})
+                    continue
+
+                _row_org = Organization.objects.filter(pk=forced_organization_id).first() if org_admin_caller else _resolve_org(u["unit"])
 
                 profile = MilitaryUserProfile.objects.create(
                     user=user_obj,
@@ -3453,7 +3564,7 @@ def _run_import_task(task_id: str, users: list, parse_errors: list) -> None:
                     rank=u["rank"],
                     position=u.get("position", ""),
                     unit=u["unit"],
-                    organization=_resolve_org(u["unit"]),
+                    organization=_row_org,
                     sub_unit=u.get("sub_unit", ""),
                     service_start_date=_parse_date(u["service_start_date"]) if u.get("service_start_date") else None,
                     birth_date=_parse_date(u["birth_date"]) if u.get("birth_date") else None,
@@ -3488,9 +3599,15 @@ def _run_import_task(task_id: str, users: list, parse_errors: list) -> None:
 
 
 @require_http_methods(["POST"])
-@_require_admin
+@_require_org_admin
 def api_admin_bulk_import_users(request):
-    """POST /military/api/v1/admin/users/bulk-import/ — import users from Excel"""
+    """POST /military/api/v1/admin/users/bulk-import/ — import users from Excel
+    org_admin นำเข้าได้เฉพาะเข้าหน่วยตัวเอง role student/instructor เท่านั้น
+    (บังคับ/กรองใน _run_import_task)"""
+    is_unscoped, caller_org_id = get_org_scope(request)
+    if not is_unscoped and caller_org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+
     if "file" not in request.FILES:
         return JsonResponse({"error": "ไม่พบไฟล์"}, status=400)
 
@@ -3530,6 +3647,7 @@ def api_admin_bulk_import_users(request):
     t = threading.Thread(
         target=_run_import_task,
         args=(task_id, users, parse_errors),
+        kwargs={"forced_organization_id": caller_org_id, "org_admin_caller": not is_unscoped},
         daemon=True,
     )
     t.start()
@@ -3542,7 +3660,7 @@ def api_admin_bulk_import_users(request):
 
 
 @require_http_methods(["GET"])
-@_require_admin
+@_require_org_admin
 def api_admin_bulk_import_status(request):
     """GET /military/api/v1/admin/users/bulk-import/status/?task_id=... — poll import progress"""
     task_id = request.GET.get("task_id", "")
@@ -5082,11 +5200,11 @@ def api_admin_course_requirement_detail(request, req_id: int):
 # ─────────────────────────────────────────────────────────────────────
 
 @require_http_methods(["GET"])
-@_require_admin
+@_require_org_admin
 def api_reports_summary(request):
     """
     GET /military/api/v1/reports/summary/?period=daily|weekly|monthly
-    สรุปสถานะกำลังพลในระบบ สำหรับรายงาน ทบ.
+    สรุปสถานะกำลังพลในระบบ สำหรับรายงาน ทบ. — org_admin เห็นแค่หน่วยตัวเอง
     """
     import datetime
     from django.db.models import Count
@@ -5096,25 +5214,30 @@ def api_reports_summary(request):
     from .compliance import bulk_get_compliance_statuses
     from .models import MilitaryUserProfile, CourseRequirement, RANK_CLASS_CHOICES, CertificatePendingApproval
 
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
+
     period = request.GET.get("period", "daily")  # daily | weekly | monthly
     today  = datetime.date.today()
 
     rank_class_labels = dict(RANK_CLASS_CHOICES)
 
     # ── กำลังพลทั้งหมด (ไม่รวม admin) — fetch once, reuse ──────────
-    profile_list = list(
-        MilitaryUserProfile.objects
-        .exclude(role__in=("admin", "org_admin"))
-        .select_related("user")
-    )
+    _profile_qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin"))
+    if org_id is not None:
+        _profile_qs = _profile_qs.filter(organization_id=org_id)
+    profile_list = list(_profile_qs.select_related("user"))
     total = len(profile_list)
 
     # ── ลงทะเบียนเรียน (distinct users ที่ active enrollment) ───────
-    enrolled = (CourseEnrollment.objects
+    enrolled_qs = (CourseEnrollment.objects
                 .filter(is_active=True,
                         user__military_profile__isnull=False)
-                .exclude(user__military_profile__role__in=("admin", "org_admin"))
-                .values("user").distinct().count())
+                .exclude(user__military_profile__role__in=("admin", "org_admin")))
+    if org_id is not None:
+        enrolled_qs = enrolled_qs.filter(user__military_profile__organization_id=org_id)
+    enrolled = enrolled_qs.values("user").distinct().count()
 
     # ── ผ่านมาตรฐาน vs ไม่ผ่าน vs ไม่มีเงื่อนไข (2 queries total) ──
     statuses = bulk_get_compliance_statuses(profile_list)
@@ -5172,7 +5295,10 @@ def api_reports_summary(request):
     trend_qs = (User.objects
                 .filter(date_joined__date__gte=since,
                         military_profile__isnull=False)
-                .exclude(military_profile__role__in=("admin", "org_admin"))
+                .exclude(military_profile__role__in=("admin", "org_admin")))
+    if org_id is not None:
+        trend_qs = trend_qs.filter(military_profile__organization_id=org_id)
+    trend_qs = (trend_qs
                 .annotate(period=trunc_fn)
                 .values("period")
                 .annotate(n=Count("id"))
@@ -5183,20 +5309,16 @@ def api_reports_summary(request):
              for row in trend_qs]
 
     # ── สรุปช่วงเวลา ──────────────────────────────────────────────────
-    new_today = User.objects.filter(
-        date_joined__date=today,
-        military_profile__isnull=False
-    ).exclude(military_profile__role__in=("admin","org_admin")).count()
+    def _new_count(since_filter):
+        qs = User.objects.filter(military_profile__isnull=False, **since_filter) \
+            .exclude(military_profile__role__in=("admin", "org_admin"))
+        if org_id is not None:
+            qs = qs.filter(military_profile__organization_id=org_id)
+        return qs.count()
 
-    new_week = User.objects.filter(
-        date_joined__date__gte=today - datetime.timedelta(days=6),
-        military_profile__isnull=False
-    ).exclude(military_profile__role__in=("admin","org_admin")).count()
-
-    new_month = User.objects.filter(
-        date_joined__date__gte=today.replace(day=1),
-        military_profile__isnull=False
-    ).exclude(military_profile__role__in=("admin","org_admin")).count()
+    new_today = _new_count({"date_joined__date": today})
+    new_week = _new_count({"date_joined__date__gte": today - datetime.timedelta(days=6)})
+    new_month = _new_count({"date_joined__date__gte": today.replace(day=1)})
 
     return JsonResponse({
         "generated_at":  datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -5225,14 +5347,21 @@ def api_reports_summary(request):
 
 
 @require_http_methods(["GET"])
-@_require_admin
+@_require_org_admin
 def api_reports_compliance_not_passed(request):
     """GET /military/api/v1/reports/compliance/not-passed/
     Params: passed=true|false, rank_class, rank, army_region, unit, search, page, per_page
+    org_admin เห็นแค่หน่วยตัวเอง — cache key ต้องแยกตาม org_id ด้วย
+    (ดูคอมเมนต์ตรง _cfile) ไม่งั้น org_admin อ่าน cache ที่ admin เต็มสร้างไว้
+    แล้วเห็นข้อมูลทุกหน่วยข้ามการ filter ไปได้
     """
     from .compliance import bulk_get_compliance_details, army_region_q
     from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES
     from django.db.models import Q
+
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
 
     want_passed = request.GET.get("passed", "false").lower() == "true"
     # enrolled_only=true → แสดงเฉพาะ "ลงทะเบียนแล้วแต่ยังไม่ผ่าน/หมดอายุ" (ตัดคนยังไม่ลงทะเบียนออก)
@@ -5251,6 +5380,8 @@ def api_reports_compliance_not_passed(request):
 
     qs = (MilitaryUserProfile.objects.filter(user__is_active=True)
           .exclude(role__in=("admin", "org_admin")).select_related("user", "organization"))
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     if filter_unit:
         qs = qs.filter(unit__icontains=filter_unit)
     if filter_region:
@@ -5265,11 +5396,14 @@ def api_reports_compliance_not_passed(request):
         )
 
     # File cache (Redis จาก uwsgi ไม่เสถียร → ใช้ไฟล์บน shared FS แทน) เฉพาะกรณีไม่มี filter (ที่ใช้บ่อย+หนัก)
+    # cache key ต้องรวม org scope ด้วย (org_id หรือ "all") กัน org_admin
+    # อ่าน cache ที่ admin เต็มสร้างไว้แล้วเห็นข้อมูลข้ามหน่วย
     import os as _os, json as _json, time as _time
     _cdir = "/openedx/data/mil_report_cache"
+    _cache_scope = str(org_id) if org_id is not None else "all"
     _cfile = None
     if not (filter_rank_class or filter_rank or filter_unit or filter_region or search_text):
-        _cfile = "%s/np_%s_%s.json" % (_cdir, want_passed, enrolled_only)
+        _cfile = "%s/np_%s_%s_%s.json" % (_cdir, want_passed, enrolled_only, _cache_scope)
         if request.GET.get("nocache") != "1":   # nocache=1 = warmer บังคับคำนวณ+เขียนทับ (atomic)
             try:
                 if _os.path.exists(_cfile) and (_time.time() - _os.path.getmtime(_cfile)) < 3600:
@@ -5342,15 +5476,20 @@ def api_reports_compliance_not_passed(request):
 
 
 @require_http_methods(["GET"])
-@_require_admin
+@_require_org_admin
 def api_reports_compliance_not_registered(request):
     """GET /military/api/v1/reports/compliance/not-registered/
     ผู้ที่มีหลักสูตรบังคับ (ตามชั้นยศ) แต่ "ยังไม่ลงทะเบียน" (ไม่มี active enrollment)
     Params: rank_class, rank, army_region, unit, search, page, per_page
+    org_admin เห็นแค่หน่วยตัวเอง
     """
     from .compliance import bulk_get_compliance_details, army_region_q
     from .models import MilitaryUserProfile, RANK_CHOICES, ARMY_REGION_CHOICES
     from django.db.models import Q
+
+    is_unscoped, org_id = get_org_scope(request)
+    if not is_unscoped and org_id is None:
+        return JsonResponse({"error": "ยังไม่ได้ผูกหน่วยงาน"}, status=400)
 
     filter_rank_class = request.GET.get("rank_class", "")
     filter_rank = request.GET.get("rank", "")
@@ -5365,6 +5504,8 @@ def api_reports_compliance_not_registered(request):
 
     qs = (MilitaryUserProfile.objects.filter(user__is_active=True)
           .exclude(role__in=("admin", "org_admin")).select_related("user", "organization"))
+    if org_id is not None:
+        qs = qs.filter(organization_id=org_id)
     if filter_unit:
         qs = qs.filter(unit__icontains=filter_unit)
     if filter_region:
