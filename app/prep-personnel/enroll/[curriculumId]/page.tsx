@@ -10,6 +10,8 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { api, EnrollDryRunResult, EnrollExecuteResult } from "@/lib/api"
 
+interface CatchUpResult { mode: "sync" | "async"; affected_count: number }
+
 function parseStudentIds(text: string): number[] {
   return Array.from(new Set(
     text.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).map(Number).filter(n => !Number.isNaN(n) && n > 0)
@@ -26,8 +28,26 @@ export default function EnrollPage() {
   const [executing, setExecuting] = useState(false)
   const [result, setResult] = useState<EnrollExecuteResult | null>(null)
   const [error, setError] = useState("")
+  const [catchingUp, setCatchingUp] = useState(false)
+  const [catchUpResult, setCatchUpResult] = useState<CatchUpResult | null>(null)
+  const [catchUpError, setCatchUpError] = useState("")
 
   const studentIds = parseStudentIds(idsText)
+
+  const handleCatchUp = async () => {
+    if (!confirm("ยืนยัน \"ตามให้ครบ\"? ระบบจะลงทะเบียนกำลังพลที่บรรจุไปแล้วเข้าวิชาที่เพิ่งเพิ่มใหม่ (วิชาเดิมจะไม่ถูกแตะต้องซ้ำ)")) return
+    setCatchingUp(true)
+    setCatchUpError("")
+    setCatchUpResult(null)
+    try {
+      const r = await api.catchUpEnrollment(curriculumId)
+      setCatchUpResult(r)
+    } catch (err) {
+      setCatchUpError(err instanceof Error ? err.message : "ดำเนินการไม่สำเร็จ")
+    } finally {
+      setCatchingUp(false)
+    }
+  }
 
   const handlePreview = async () => {
     if (studentIds.length === 0) { setError("กรุณากรอกรหัสผู้ใช้ (user_id) อย่างน้อย 1 คน"); return }
@@ -66,6 +86,29 @@ export default function EnrollPage() {
         <Link href="/prep-personnel" className="text-sm text-[#6b6478] hover:text-[#4A1A6B]">← กลับรายการหลักสูตร</Link>
         <h1 className="text-2xl font-bold text-[#4A1A6B] mt-2">บรรจุกำลังพลเข้าหลักสูตร</h1>
         <p className="text-sm text-[#6b6478] mt-1">ระบบจะลงทะเบียนกำลังพลเข้าเรียนทุกวิชาในหลักสูตรนี้โดยอัตโนมัติ — ตรวจสอบผลก่อนยืนยันเสมอ</p>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 space-y-2">
+        <h2 className="font-semibold text-amber-900">ตามให้ครบ (ถ้ามีวิชาใหม่ถูกเพิ่มภายหลัง)</h2>
+        <p className="text-sm text-amber-800">
+          ถ้าแผนกเตรียมการเพิ่มวิชาใหม่เข้าหลักสูตรนี้ <em>หลังจาก</em> ที่บรรจุกำลังพลไปแล้วบางส่วน
+          กำลังพลกลุ่มนั้นจะไม่ถูกลงทะเบียนวิชาใหม่ให้อัตโนมัติ — กดปุ่มนี้เพื่อให้ระบบตามลงทะเบียนวิชาใหม่ให้ทุกคนที่บรรจุไปแล้ว
+          (วิชาเดิมที่ลงทะเบียนอยู่แล้วจะไม่ถูกแตะต้องซ้ำ)
+        </p>
+        {catchUpError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{catchUpError}</div>
+        )}
+        {catchUpResult && (
+          <div className="bg-white border border-amber-200 px-3 py-2 rounded-lg text-sm text-amber-900">
+            {catchUpResult.affected_count === 0
+              ? "ยังไม่มีกำลังพลที่บรรจุไว้ก่อนหน้านี้ในหลักสูตรนี้"
+              : `ดำเนินการแล้ว ${catchUpResult.affected_count} คน (${catchUpResult.mode === "async" ? "กำลังประมวลผลเบื้องหลัง" : "เสร็จสมบูรณ์"})`}
+          </div>
+        )}
+        <button onClick={handleCatchUp} disabled={catchingUp}
+          className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50">
+          {catchingUp ? "กำลังดำเนินการ..." : "🔄 ตามให้ครบ"}
+        </button>
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">

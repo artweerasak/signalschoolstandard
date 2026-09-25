@@ -969,6 +969,10 @@ export const api = {
     fetchAPI<EnrollmentRequestDetail>(`api/v1/curriculum/enrollment-requests/${id}/`),
   retryEnrollment: (id: number) =>
     fetchAPIPost<EnrollmentRequestDetail>(`api/v1/curriculum/enrollment-requests/${id}/retry/`, {}),
+  catchUpEnrollment: (curriculumId: number) =>
+    fetchAPIPost<{ mode: "sync" | "async"; affected_count: number }>(
+      `api/v1/curriculum/curricula/${curriculumId}/catch-up-enrollment/`, {}
+    ),
 
   // ── Hybrid Grading + Co-Instructor (instructor) ──────────────────────────
   getMyCurriculumCourses: () =>
