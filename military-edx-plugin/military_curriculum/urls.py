@@ -41,6 +41,7 @@ from .evaluation_views import (
 from .transcript_views import (
     api_my_transcript,
     api_my_certificate,
+    api_org_completions,
 )
 
 app_name = "military_curriculum"
@@ -85,4 +86,7 @@ urlpatterns = [
     # Learner Transcript (student) — Sprint 5
     path("api/v1/curriculum/my/transcript/", api_my_transcript, name="api_my_transcript"),
     path("api/v1/curriculum/my/transcript/<int:curriculum_id>/certificate/", api_my_certificate, name="api_my_certificate"),
+
+    # Org-wide personnel completion history (org_admin) — Sprint 2 (2026-09)
+    path("api/v1/curriculum/org/completions/", api_org_completions, name="api_org_completions"),
 ]

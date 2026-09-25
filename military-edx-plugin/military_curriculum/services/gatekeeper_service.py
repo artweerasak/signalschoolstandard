@@ -96,6 +96,7 @@ def get_gated_transcript(student) -> list[dict]:
                 "grade_visible": visible,
                 "final_score": (str(final.final_score) if final.final_score is not None else None) if (final and visible) else None,
                 "passed": (final.passed if visible else None) if final else None,
+                "completed_at": (final.computed_at.isoformat() if final and visible else None),
                 "gate_reason": None if visible else "pending_course_evaluation",
             })
 

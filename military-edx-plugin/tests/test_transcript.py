@@ -167,3 +167,81 @@ class TestTranscriptAPI:
         client.force_login(student_user)
         resp = client.get("/military/api/v1/curriculum/my/transcript/99999/certificate/")
         assert resp.status_code == 404
+
+
+@pytest.fixture
+def org_admin_user(db, organization):
+    return _make_user("t_org_admin", "org_admin", organization)
+
+
+@pytest.fixture
+def other_organization(db):
+    return Organization.objects.create(name="หน่วยอื่น", code="T-02")
+
+
+@pytest.fixture
+def other_org_admin(db, other_organization):
+    return _make_user("t_other_org_admin", "org_admin", other_organization)
+
+
+class TestOrgCompletionsAPI:
+    def test_requires_login(self, db):
+        client = Client()
+        resp = client.get("/military/api/v1/curriculum/org/completions/")
+        assert resp.status_code == 401
+
+    def test_student_forbidden(self, db, student_user):
+        client = Client()
+        client.force_login(student_user)
+        resp = client.get("/military/api/v1/curriculum/org/completions/")
+        assert resp.status_code == 403
+
+    def test_org_admin_without_organization_gets_400(self, db):
+        unbound_org_admin = _make_user("t_unbound_org_admin", "org_admin")
+        client = Client()
+        client.force_login(unbound_org_admin)
+        resp = client.get("/military/api/v1/curriculum/org/completions/")
+        assert resp.status_code == 400
+
+    def test_org_admin_sees_own_unit_completions(
+        self, db, curriculum, curriculum_course, student_user, org_admin_user,
+    ):
+        FinalCourseResult.objects.create(
+            curriculum_course=curriculum_course, student=student_user, final_score=80, passed=True,
+        )
+        client = Client()
+        client.force_login(org_admin_user)
+        resp = client.get("/military/api/v1/curriculum/org/completions/")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 1
+        entry = body["results"][0]
+        assert entry["student_id"] == student_user.id
+        course = entry["curricula"][0]["courses"][0]
+        assert course["passed"] is True
+        assert course["completed_at"] is not None
+
+    def test_org_admin_cannot_see_other_unit(
+        self, db, curriculum, curriculum_course, student_user, other_org_admin,
+    ):
+        FinalCourseResult.objects.create(
+            curriculum_course=curriculum_course, student=student_user, final_score=80, passed=True,
+        )
+        client = Client()
+        client.force_login(other_org_admin)
+        resp = client.get("/military/api/v1/curriculum/org/completions/")
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0
+
+    def test_admin_sees_all_units_unfiltered(
+        self, db, curriculum, curriculum_course, student_user,
+    ):
+        admin = _make_user("t_admin_completions", "admin")
+        FinalCourseResult.objects.create(
+            curriculum_course=curriculum_course, student=student_user, final_score=80, passed=True,
+        )
+        client = Client()
+        client.force_login(admin)
+        resp = client.get("/military/api/v1/curriculum/org/completions/")
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1
