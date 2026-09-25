@@ -13,9 +13,14 @@ from django.db import IntegrityError
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
+from django.contrib.auth import get_user_model
+
 from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_SCHOOL
 
 from .models import Curriculum, CurriculumCourse, CurriculumRegionQuota
+from .permissions import require_school_curriculum_read, SIGNAL_SCHOOL_ORG_ID
+
+User = get_user_model()
 
 
 def _curriculum_summary(c: Curriculum) -> dict:
@@ -280,3 +285,71 @@ def api_curriculum_submit(request, curriculum_id: int):
     c.submitted_at = timezone.now()
     c.save(update_fields=["status", "submitted_at"])
     return JsonResponse(_curriculum_detail(c))
+
+
+@require_school_curriculum_read
+def api_school_curricula(request):
+    """
+    GET /military/api/v1/curriculum/school/curricula/?academic_year=
+    รายการหลักสูตรของ "โรงเรียนทหารสื่อสาร กรมการทหารสื่อสาร" (org id=161)
+    เท่านั้น — read-only สำหรับ org_admin ของหน่วยนี้โดยเฉพาะ (ดู
+    military_curriculum/permissions.py) scope ตายตัวที่ org=161 เสมอ
+    ไม่พึ่ง organization ของผู้เรียก (ต่างจาก api_curricula ที่ scope ตาม
+    หน่วยของผู้เรียกเอง)
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    qs = Curriculum.objects.filter(organization_id=SIGNAL_SCHOOL_ORG_ID)
+    academic_year = request.GET.get("academic_year", "").strip()
+    if academic_year:
+        try:
+            qs = qs.filter(academic_year=int(academic_year))
+        except ValueError:
+            return JsonResponse({"error": "academic_year ต้องเป็นตัวเลข"}, status=400)
+
+    results = [_curriculum_summary(c) for c in qs.select_related("organization").order_by("-academic_year", "name")]
+    return JsonResponse({"results": results, "count": len(results)})
+
+
+@require_school_curriculum_read
+def api_school_curriculum_roster(request, curriculum_id: int):
+    """
+    GET /military/api/v1/curriculum/school/curricula/{id}/roster/
+    รายชื่อ + จำนวนนักเรียนที่บรรจุในหลักสูตรนี้แล้ว (ของ รร.ส.สส. เท่านั้น —
+    404 ถ้า curriculum_id ไม่ใช่ของหน่วยนี้ กัน org_admin หน่วยอื่นเดา id
+    หลักสูตรของหน่วยอื่นมาดู แม้ผ่าน require_school_curriculum_read แล้วก็ตาม)
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id, organization_id=SIGNAL_SCHOOL_ORG_ID)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    student_ids = list(
+        c.enrollment_requests.filter(status__in=["completed", "partial_failed"])
+        .values_list("student_id", flat=True)
+    )
+    students = User.objects.filter(id__in=student_ids).select_related("military_profile")
+
+    results = []
+    for s in students:
+        p = getattr(s, "military_profile", None)
+        results.append({
+            "student_id": s.id,
+            "full_name": p.display_full_name if p else s.username,
+            "rank_display": p.get_rank_display() if p else "",
+            "unit": p.unit if p else "",
+        })
+    results.sort(key=lambda r: r["full_name"])
+
+    return JsonResponse({
+        "curriculum_id": c.id,
+        "curriculum_name": c.name,
+        "batch_code": c.batch_code,
+        "academic_year": c.academic_year,
+        "results": results,
+        "count": len(results),
+    })

@@ -12,6 +12,8 @@ from .curriculum_views import (
     api_curriculum_courses,
     api_curriculum_course_detail,
     api_curriculum_submit,
+    api_school_curricula,
+    api_school_curriculum_roster,
 )
 from .quota_views import (
     api_curricula_submitted,
@@ -56,6 +58,11 @@ urlpatterns = [
     path("api/v1/curriculum/curricula/<int:curriculum_id>/courses/", api_curriculum_courses, name="api_curriculum_courses"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/courses/<int:course_pk>/", api_curriculum_course_detail, name="api_curriculum_course_detail"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/submit/", api_curriculum_submit, name="api_curriculum_submit"),
+
+    # โรงเรียนทหารสื่อสาร (org id=161) — org_admin ของหน่วยนี้เห็น roster
+    # หลักสูตรแบบ read-only เพิ่มเติม (ดู military_curriculum/permissions.py)
+    path("api/v1/curriculum/school/curricula/", api_school_curricula, name="api_school_curricula"),
+    path("api/v1/curriculum/school/curricula/<int:curriculum_id>/roster/", api_school_curriculum_roster, name="api_school_curriculum_roster"),
 
     # Quota/Demand Report + Cascade Enrollment (prep_personnel) — Sprint 2
     path("api/v1/curriculum/curricula/<int:curriculum_id>/activate/", api_curriculum_activate, name="api_curriculum_activate"),
