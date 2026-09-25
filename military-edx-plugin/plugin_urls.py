@@ -15,4 +15,5 @@ urlpatterns = [
     path("", include("certificate_renewal.urls")),
     path("", include("military_reports.urls")),
     path("", include("military_profile.urls")),
+    path("", include("military_curriculum.urls")),
 ]

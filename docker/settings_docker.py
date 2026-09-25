@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "certificate_renewal",
     "military_reports",
     "expiry_notifications",
+    "military_curriculum",
 ]
 
 MIDDLEWARE = [

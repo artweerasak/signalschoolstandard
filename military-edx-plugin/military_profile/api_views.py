@@ -17,9 +17,12 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
-from django.utils.cache import patch_vary_headers
 
 from .models import MilitaryUserProfile, Organization, RANK_CHOICES, ARMY_REGION_CHOICES, encrypt_field, decrypt_field, hmac_field
+from .permissions import (
+    _apply_private_no_cache, _require_login, _require_admin,
+    _require_org_admin, _require_instructor,
+)
 from certificate_expiry.models import UserCertificateExpiry, CourseCertificateConfig
 from military_auth.models import PendingRegistration, RegistrationWhitelist, RegistrationConfig
 
@@ -31,7 +34,9 @@ except ImportError:
 User = get_user_model()
 
 # บทบาทที่ถือว่าเป็น "กำลังพล" — admin/org_admin เป็น system accounts ไม่นับ
-_SYSTEM_ROLES = ("admin", "org_admin")  # system accounts ไม่ใช่กำลังพล
+# prep_school/prep_personnel/evaluator เป็น functional role ระดับหน่วยงาน
+# เหมือน org_admin (ไม่ใช่ผู้เรียน) — เพิ่มเข้า _SYSTEM_ROLES ด้วยเหตุผลเดียวกัน
+_SYSTEM_ROLES = ("admin", "org_admin", "prep_school", "prep_personnel", "evaluator")  # system accounts ไม่ใช่กำลังพล
 _PERSONNEL_ROLES = ("instructor", "student")  # บทบาทกำลังพลจริง
 
 def _parse_date(value):
@@ -140,63 +145,6 @@ def _revoke_course_creator(user) -> None:
             )
     except Exception:
         pass
-
-
-def _apply_private_no_cache(resp):
-    """กัน shared cache (proxy/CDN) เก็บ response รายบุคคลแล้วเสิร์ฟข้ามผู้ใช้
-    อาการ: มือถือ/แท็บเล็ต (วิ่งผ่าน proxy) เห็นชื่อ/หน่วย/ใบประกาศของคนอื่น
-    ส่วนคอม (LAN ตรง ไม่ผ่าน cache) ปกติ — บังคับ per-user ไม่ให้แคชร่วม"""
-    try:
-        resp['Cache-Control'] = 'no-store, no-cache, private, max-age=0'
-        resp['Pragma'] = 'no-cache'
-        patch_vary_headers(resp, ('Cookie',))
-    except Exception:
-        pass
-    return resp
-
-
-def _require_login(view_func):
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
-        return _apply_private_no_cache(view_func(request, *args, **kwargs))
-    return wrapper
-
-
-def _require_admin(view_func):
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
-        # ต้องเป็น staff หรือมี role=admin ใน military profile — ป้องกัน non-military staff เข้าถึง API
-        profile = getattr(request.user, "military_profile", None)
-        is_military_admin = profile and profile.role == "admin"
-        if not (request.user.is_staff or is_military_admin):
-            return _apply_private_no_cache(JsonResponse({"error": "Forbidden"}, status=403))
-        return _apply_private_no_cache(view_func(request, *args, **kwargs))
-    return wrapper
-
-
-def _require_org_admin(view_func):
-    """ต้องเป็น admin หรือ org_admin เท่านั้น"""
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
-        profile = getattr(request.user, "military_profile", None)
-        if not (request.user.is_staff or (profile and profile.role in ("admin", "org_admin"))):
-            return _apply_private_no_cache(JsonResponse({"error": "Forbidden"}, status=403))
-        return _apply_private_no_cache(view_func(request, *args, **kwargs))
-    return wrapper
-
-
-def _require_instructor(view_func):
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return _apply_private_no_cache(JsonResponse({"error": "Unauthorized"}, status=401))
-        profile = getattr(request.user, "military_profile", None)
-        if not (request.user.is_staff or (profile and profile.role in ("admin", "instructor"))):
-            return _apply_private_no_cache(JsonResponse({"error": "Forbidden"}, status=403))
-        return _apply_private_no_cache(view_func(request, *args, **kwargs))
-    return wrapper
 
 
 def _ensure_edx_user_profile(user, full_name: str = "") -> None:

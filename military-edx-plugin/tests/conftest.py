@@ -32,6 +32,7 @@ def pytest_configure(config):
                 "certificate_expiry",
                 "military_reports",
                 "expiry_notifications",
+                "military_curriculum",
             ],
             USE_TZ=True,
             DEFAULT_AUTO_FIELD="django.db.models.BigAutoField",
