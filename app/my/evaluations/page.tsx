@@ -8,12 +8,16 @@
 import { useEffect, useState } from "react"
 import { api, PendingEvaluationItem } from "@/lib/api"
 
+const RATING_LABELS: Record<number, string> = {
+  5: "มากที่สุด", 4: "มาก", 3: "ปานกลาง", 2: "น้อย", 1: "น้อยที่สุด",
+}
+
 export default function MyEvaluationsPage() {
   const [pending, setPending] = useState<PendingEvaluationItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [activeForm, setActiveForm] = useState<PendingEvaluationItem | null>(null)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [answers, setAnswers] = useState<Record<string, string | number>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState("")
 
@@ -35,6 +39,9 @@ export default function MyEvaluationsPage() {
 
   const handleSubmit = async () => {
     if (!activeForm) return
+    const questions = activeForm.schema.questions || []
+    const missingRating = questions.find(q => (q.type ?? "text") === "rating" && !answers[q.key])
+    if (missingRating) { setSubmitError(`กรุณาให้คะแนน "${missingRating.label}"`); return }
     setSubmitting(true)
     setSubmitError("")
     try {
@@ -96,9 +103,24 @@ export default function MyEvaluationsPage() {
               )}
               {(activeForm.schema.questions || []).map(q => (
                 <div key={q.key}>
-                  <label className="block text-sm font-medium text-[#4a4456] mb-1">{q.label}</label>
-                  <textarea value={answers[q.key] || ""} onChange={e => setAnswers({ ...answers, [q.key]: e.target.value })}
-                    rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  <label className="block text-sm font-medium text-[#4a4456] mb-2">{q.label}</label>
+                  {(q.type ?? "text") === "rating" ? (
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button key={v} type="button" onClick={() => setAnswers({ ...answers, [q.key]: v })}
+                          className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border text-xs transition-colors
+                            ${answers[q.key] === v
+                              ? "bg-[#4A1A6B] border-[#4A1A6B] text-white font-semibold"
+                              : "border-gray-300 text-[#6b6478] hover:border-[#4A1A6B] hover:bg-purple-50"}`}>
+                          <span className="text-base font-bold leading-none">{v}</span>
+                          <span className="leading-tight text-center">{RATING_LABELS[v]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <textarea value={(answers[q.key] as string) || ""} onChange={e => setAnswers({ ...answers, [q.key]: e.target.value })}
+                      rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  )}
                 </div>
               ))}
               {(!activeForm.schema.questions || activeForm.schema.questions.length === 0) && (
