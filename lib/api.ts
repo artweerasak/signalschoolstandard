@@ -429,16 +429,39 @@ export interface EvaluatorCurriculumItem {
   status: "submitted" | "active" | "closed"
 }
 
+export interface EvaluationQuestion {
+  key: string
+  label: string
+  type: "rating" | "text"
+}
+
 export interface EvaluationFormItem {
   id: number
   curriculum_id: number
   curriculum_course_id: number | null
   level: "course" | "curriculum"
   title: string
-  schema: unknown
+  schema: { questions?: EvaluationQuestion[] }
   is_required: boolean
   is_active: boolean
   response_count: number
+}
+
+export interface EvaluationQuestionSummary {
+  key: string
+  label: string
+  type: "rating" | "text"
+  response_count: number
+  average?: number | null
+  distribution?: Record<string, number>
+  answers?: string[]
+}
+
+export interface EvaluationResponsesSummary {
+  form_id: number
+  title: string
+  answered_count: number
+  questions: EvaluationQuestionSummary[]
 }
 
 export interface EvaluationStatusRow {
@@ -498,7 +521,7 @@ export interface PendingEvaluationItem {
   level: "course" | "curriculum"
   curriculum_name: string
   curriculum_course_name: string | null
-  schema: { questions?: { key: string; label: string; type?: string }[] }
+  schema: { questions?: { key: string; label: string; type?: "rating" | "text" }[] }
 }
 
 // ── Learner Transcript (student) ────────────────────────────────────────────
@@ -1119,6 +1142,8 @@ export const api = {
   }) => fetchAPIPost<EvaluationFormItem>("api/v1/curriculum/evaluation-forms/", body),
   updateEvaluationForm: (id: number, body: Partial<{ title: string; schema: unknown; is_required: boolean; is_active: boolean }>) =>
     fetchAPIPost<EvaluationFormItem>(`api/v1/curriculum/evaluation-forms/${id}/`, body, "PATCH"),
+  getEvaluationFormResponsesSummary: (formId: number) =>
+    fetchAPI<EvaluationResponsesSummary>(`api/v1/curriculum/evaluation-forms/${formId}/responses/summary/`),
   getEvaluationStatusDashboard: (curriculumId: number) =>
     fetchAPI<EvaluationStatusDashboard>(`api/v1/curriculum/dashboard/evaluation-status/?curriculum_id=${curriculumId}`),
   getGradingStatusReport: (params?: { curriculum_id?: number; academic_year?: number }) => {
