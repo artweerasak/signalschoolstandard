@@ -1,0 +1,266 @@
+"""
+military_curriculum/quota_views.py
+
+Quota/Demand Report + Cascade Enrollment (prep_personnel) — Sprint 2
+
+prep_personnel มองเห็นได้ทุกหน่วยงาน (ไม่ org-scope เหมือน prep_school
+เพราะเป็นหน่วยงานกลาง/กพ. ที่ต้องบรรจุกำลังพลข้ามหน่วย) — ต่างจาก
+curriculum_views.py ที่ prep_school เห็นเฉพาะหน่วยตัวเอง
+
+⚠️ api_curriculum_enroll เป็น endpoint ที่เขียนเข้า production enrollment
+จริง (ผ่าน CourseEnrollment) — มี dry_run mode ให้ preview ก่อน execute จริง
+ตามคำแนะนำ risk mitigation ในแผน
+"""
+import json
+
+from django.contrib.auth import get_user_model
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+
+from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL
+
+from .models import Curriculum, CurriculumEnrollmentRequest
+from .services.enrollment_service import (
+    cascade_enroll_student,
+    preview_cascade_enroll,
+    retry_failed_courses,
+)
+
+User = get_user_model()
+
+# จำนวนคำขอต่อครั้งที่ยังรัน sync ได้ในเวลา HTTP request ปกติ — เกินกว่านี้
+# dispatch เป็น Celery task ต่อคนแทน กัน request timeout (ดู
+# military_curriculum/tasks.py:cascade_enroll_student_task)
+SYNC_ENROLL_THRESHOLD = 30
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curricula_submitted(request):
+    """GET /military/api/v1/curriculum/curricula/submitted/
+    รายการหลักสูตรที่ prep_school ส่งมาแล้ว (status=submitted) หรือที่
+    บรรจุอยู่แล้ว (status=active) — กรองด้วย ?status= ได้"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    status = request.GET.get("status")
+    qs = Curriculum.objects.filter(status=status) if status else Curriculum.objects.filter(
+        status__in=["submitted", "active"]
+    )
+    results = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "batch_code": c.batch_code,
+            "academic_year": c.academic_year,
+            "organization_name": c.organization.name if c.organization_id else None,
+            "status": c.status,
+            "quota_total": c.quota_total,
+            "course_count": c.courses.count(),
+            "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
+        }
+        for c in qs.select_related("organization").order_by("-submitted_at")
+    ]
+    return JsonResponse({"results": results, "count": len(results)})
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curriculum_activate(request, curriculum_id: int):
+    """POST /military/api/v1/curriculum/curricula/{id}/activate/  → submitted → active"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if c.status != "submitted":
+        return JsonResponse({"error": "เปิดใช้งานได้เฉพาะหลักสูตรที่ส่งมาแล้วเท่านั้น"}, status=409)
+
+    c.status = "active"
+    c.save(update_fields=["status"])
+    return JsonResponse({"id": c.id, "status": c.status})
+
+
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_quota_demand_report(request):
+    """GET /military/api/v1/curriculum/reports/quota-demand/?curriculum_id=&army_region=
+
+    เปรียบเทียบโควตาที่ตั้งไว้ (CurriculumRegionQuota) กับยอดขอจริง (จำนวน
+    CurriculumEnrollmentRequest ต่อหลักสูตร แบ่งตาม effective_army_region
+    ของนักเรียนที่ขอมา)"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    curriculum_id = request.GET.get("curriculum_id")
+    if not curriculum_id:
+        return JsonResponse({"error": "curriculum_id required"}, status=400)
+
+    try:
+        c = Curriculum.objects.prefetch_related("region_quotas").get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    region_filter = request.GET.get("army_region")
+
+    # นับยอดขอจริงต่อภูมิภาค จาก effective_army_region ของนักเรียนที่ถูกขอ
+    # บรรจุแล้ว (ทุกสถานะ ไม่ใช่แค่ completed เพราะ "ขอ" แล้วนับเป็นความ
+    # ต้องการ ไม่ว่าผลจะสำเร็จหรือไม่)
+    requested_by_region: dict[str, int] = {}
+    filled_by_region: dict[str, int] = {}
+    for req in c.enrollment_requests.select_related("student__military_profile__organization"):
+        profile = getattr(req.student, "military_profile", None)
+        region = profile.effective_army_region if profile else "ไม่ระบุ"
+        region = region or "ไม่ระบุ"
+        requested_by_region[region] = requested_by_region.get(region, 0) + 1
+        if req.status == "completed":
+            filled_by_region[region] = filled_by_region.get(region, 0) + 1
+
+    region_rows = []
+    for rq in c.region_quotas.all():
+        if region_filter and rq.army_region != region_filter:
+            continue
+        region_rows.append({
+            "army_region": rq.army_region,
+            "quota": rq.quota,
+            "requested": requested_by_region.get(rq.army_region, 0),
+            "filled": filled_by_region.get(rq.army_region, 0),
+        })
+
+    national_requested = sum(requested_by_region.values())
+    national_filled = sum(filled_by_region.values())
+
+    return JsonResponse({
+        "curriculum_id": c.id,
+        "curriculum_name": c.name,
+        "national_quota": c.quota_total,
+        "national_requested": national_requested,
+        "national_filled": national_filled,
+        "region_quotas": region_rows,
+    })
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curriculum_enroll(request, curriculum_id: int):
+    """POST /military/api/v1/curriculum/curricula/{id}/enroll/
+    {"student_ids": [1,2,3], "dry_run": false}
+
+    dry_run=true: preview ผลลัพธ์ต่อคนต่อวิชาโดยไม่เขียนอะไรลง DB เลย (ไม่
+    สร้าง CurriculumEnrollmentRequest, ไม่ enroll จริง) — ให้ตรวจสอบก่อน
+    execute จริงครั้งแรกตามคำแนะนำ risk mitigation
+
+    dry_run=false (ปกติ): สร้าง CurriculumEnrollmentRequest ต่อคน (ถ้ายังไม่
+    มี — idempotent ผ่าน unique_together) แล้ว enroll จริง — sync ถ้าจำนวน
+    ไม่เกิน SYNC_ENROLL_THRESHOLD ไม่งั้น dispatch เป็น Celery task ต่อคน
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if c.status != "active":
+        return JsonResponse({"error": "บรรจุนักเรียนได้เฉพาะหลักสูตรที่เปิดใช้งาน (active) เท่านั้น"}, status=409)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    student_ids = data.get("student_ids") or []
+    if not isinstance(student_ids, list) or not student_ids:
+        return JsonResponse({"error": "student_ids (list) required"}, status=400)
+
+    dry_run = bool(data.get("dry_run", False))
+    students = list(User.objects.filter(id__in=student_ids))
+    found_ids = {s.id for s in students}
+    missing_ids = [sid for sid in student_ids if sid not in found_ids]
+
+    if dry_run:
+        preview = []
+        for student in students:
+            course_results = preview_cascade_enroll(c, student)
+            preview.append({
+                "student_id": student.id,
+                "would_succeed": all(r.success for r in course_results),
+                "courses": [
+                    {"course_id": r.course_id, "would_enroll": r.success, "error": r.error}
+                    for r in course_results
+                ],
+            })
+        return JsonResponse({"dry_run": True, "preview": preview, "missing_student_ids": missing_ids})
+
+    # ปกติ (execute จริง) — สร้าง/ดึง CurriculumEnrollmentRequest ต่อคนก่อน
+    created_requests = []
+    for student in students:
+        req, _ = CurriculumEnrollmentRequest.objects.get_or_create(
+            curriculum=c, student=student,
+            defaults={"requested_by": request.user},
+        )
+        created_requests.append(req)
+
+    if len(created_requests) <= SYNC_ENROLL_THRESHOLD:
+        for req in created_requests:
+            cascade_enroll_student(req)
+        mode = "sync"
+    else:
+        from .tasks import cascade_enroll_student_task
+        for req in created_requests:
+            cascade_enroll_student_task.delay(req.id)
+        mode = "async"
+
+    return JsonResponse({
+        "mode": mode,
+        "enrollment_request_ids": [r.id for r in created_requests],
+        "missing_student_ids": missing_ids,
+    }, status=201)
+
+
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_enrollment_request_detail(request, request_id: int):
+    """GET /military/api/v1/curriculum/enrollment-requests/{id}/"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        req = CurriculumEnrollmentRequest.objects.select_related("student", "curriculum").get(pk=request_id)
+    except CurriculumEnrollmentRequest.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    return JsonResponse({
+        "id": req.id,
+        "curriculum_id": req.curriculum_id,
+        "curriculum_name": req.curriculum.name,
+        "student_id": req.student_id,
+        "student_username": req.student.username,
+        "status": req.status,
+        "result_detail": req.result_detail,
+        "created_at": req.created_at.isoformat() if req.created_at else None,
+        "processed_at": req.processed_at.isoformat() if req.processed_at else None,
+    })
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_enrollment_request_retry(request, request_id: int):
+    """POST /military/api/v1/curriculum/enrollment-requests/{id}/retry/
+    retry เฉพาะวิชาที่ failed ในคำขอนี้ (ไม่แตะวิชาที่สำเร็จแล้ว)"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        req = CurriculumEnrollmentRequest.objects.get(pk=request_id)
+    except CurriculumEnrollmentRequest.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    if req.status not in ("partial_failed", "failed"):
+        return JsonResponse({"error": "retry ได้เฉพาะคำขอที่มีวิชาล้มเหลวเท่านั้น"}, status=409)
+
+    retry_failed_courses(req)
+    req.refresh_from_db()
+    return JsonResponse({"id": req.id, "status": req.status, "result_detail": req.result_detail})
