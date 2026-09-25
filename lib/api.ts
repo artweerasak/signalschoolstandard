@@ -252,7 +252,13 @@ export interface CurriculumSummary {
 
 export interface CurriculumDetail extends CurriculumSummary {
   eligible_rank_class: string
+  eligible_rank_min: string
+  eligible_rank_min_display: string | null
+  eligible_rank_max: string
+  eligible_rank_max_display: string | null
+  eligible_min_years_in_rank: number | null
   eligible_personnel_type: string
+  eligible_personnel_type_display: string | null
   region_quotas: CurriculumRegionQuota[]
   courses: CurriculumCourseItem[]
 }
@@ -285,6 +291,32 @@ export interface QuotaDemandReport {
   national_requested: number
   national_filled: number
   region_quotas: QuotaDemandRegionRow[]
+}
+
+export interface EligibleDensityRow {
+  organization_id: number | null
+  organization_name: string
+  eligible_count: number
+  needs_verification_count: number
+  total_in_scope: number
+}
+
+export interface EligibleDensityReport {
+  curriculum_id: number
+  curriculum_name: string
+  eligible_rank_min: string
+  eligible_rank_min_display: string | null
+  eligible_rank_max: string
+  eligible_rank_max_display: string | null
+  eligible_min_years_in_rank: number | null
+  eligible_personnel_type: string
+  eligible_personnel_type_display: string | null
+  national: {
+    eligible_count: number
+    needs_verification_count: number
+    total_in_scope: number
+  }
+  results: EligibleDensityRow[]
 }
 
 export interface EnrollCoursePreview {
@@ -892,13 +924,15 @@ export const api = {
   },
   createCurriculum: (body: {
     name: string; batch_code: string; academic_year: number; organization_id?: number
-    eligible_rank_class?: string; eligible_personnel_type?: string; quota_total?: number
+    eligible_rank_class?: string; eligible_rank_min?: string; eligible_rank_max?: string
+    eligible_min_years_in_rank?: number | null; eligible_personnel_type?: string; quota_total?: number
     region_quotas?: { army_region: string; quota: number }[]
   }) => fetchAPIPost<CurriculumDetail>("api/v1/curriculum/curricula/", body),
   getCurriculum: (id: number) => fetchAPI<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`),
   updateCurriculum: (id: number, body: Partial<{
     name: string; batch_code: string; academic_year: number
-    eligible_rank_class: string; eligible_personnel_type: string; quota_total: number
+    eligible_rank_class: string; eligible_rank_min: string; eligible_rank_max: string
+    eligible_min_years_in_rank: number | null; eligible_personnel_type: string; quota_total: number
   }>) => fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`, body, "PATCH"),
   addCurriculumCourse: (id: number, body: {
     course_id: string; display_name: string; credit_hours: number; credits: number
@@ -921,6 +955,8 @@ export const api = {
     fetchAPIPost<{ id: number; status: string }>(`api/v1/curriculum/curricula/${id}/activate/`, {}),
   getQuotaDemandReport: (curriculumId: number) =>
     fetchAPI<QuotaDemandReport>(`api/v1/curriculum/reports/quota-demand/?curriculum_id=${curriculumId}`),
+  getEligibleDensityReport: (curriculumId: number) =>
+    fetchAPI<EligibleDensityReport>(`api/v1/curriculum/reports/eligible-density/?curriculum_id=${curriculumId}`),
   previewEnrollStudents: (curriculumId: number, studentIds: number[]) =>
     fetchAPIPost<EnrollDryRunResult>(`api/v1/curriculum/curricula/${curriculumId}/enroll/`, {
       student_ids: studentIds, dry_run: true,
