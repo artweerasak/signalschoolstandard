@@ -7,11 +7,11 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { api, CurrentUser, PROFILE_UPDATED_EVENT } from "@/lib/api"
 import NotificationBell from "@/components/NotificationBell"
+import Crest from "@/components/Crest"
 
 const studentNavItems = [
   { href: "/my",              label: "หน้าหลัก",         icon: "🏠" },
@@ -63,8 +63,7 @@ function LearnerSidebar({ user }: { user: CurrentUser | null }) {
       <div className="flex flex-col items-center gap-3 px-6 py-8 border-b border-white/10">
         <div className="relative">
           <span className="absolute inset-0 rounded-full blur-md bg-[#C9A84C]/30 -z-10 scale-125" aria-hidden="true" />
-          <Image src="/signal_logo.png" alt="กรมการทหารสื่อสาร" width={60} height={60}
-            className="rounded-full border-2 border-[#C9A84C] bg-white p-0.5" />
+          <Crest size={60} className="border-2 border-[#C9A84C]" />
         </div>
         <div className="text-center">
           <p className="text-white text-sm font-bold">กรมการทหารสื่อสาร</p>
