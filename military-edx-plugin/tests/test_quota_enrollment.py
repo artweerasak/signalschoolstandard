@@ -89,6 +89,24 @@ class TestCurriculaSubmittedAndActivate:
         assert "หลักสูตรรอเปิด" in names
         assert "หลักสูตรทดสอบ" in names  # active ก็เห็นด้วย (default filter)
 
+    def test_list_shows_enrolled_count(self, db, prep_personnel_user, active_curriculum, organization):
+        """หน้ารายการหลักสูตรเดิมไม่เห็นว่าบรรจุไปแล้วกี่คน ต้องเข้าไปดูในหน้า
+        โควตาก่อนถึงจะรู้ — ผู้ใช้รายงานว่าไม่ชัดเจน เลยเพิ่ม enrolled_count
+        ให้เห็นตรงนี้เลย"""
+        s1 = _make_user("count_student_1", "student", organization)
+        s2 = _make_user("count_student_2", "student", organization)
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=s1, requested_by=prep_personnel_user, status="completed",
+        )
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=s2, requested_by=prep_personnel_user, status="partial_failed",
+        )
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get("/military/api/v1/curriculum/curricula/submitted/")
+        row = next(r for r in resp.json()["results"] if r["id"] == active_curriculum.id)
+        assert row["enrolled_count"] == 2
+
     def test_activate_success(self, db, prep_personnel_user, submitted_curriculum):
         client = Client()
         client.force_login(prep_personnel_user)
@@ -465,3 +483,20 @@ class TestPersonnelSearch:
         row = resp.json()["results"][0]
         assert row["organization_id"] == organization.id
         assert row["organization_name"] == organization.name
+
+    def test_filter_by_organization_id_browses_whole_unit_without_name_search(self, db, prep_personnel_user, organization):
+        """แก้ปัญหาค้นหาชื่อไม่เจอเพราะพิมพ์ชื่อ-นามสกุลไม่ตรงกัน (เว้นวรรค/
+        ไม่ใส่นามสกุล) — เลือกดูทั้งหน่วยแทนได้โดยไม่ต้องพิมพ์ q เลย"""
+        other_org = Organization.objects.create(name="หน่วยอื่น เพิ่มเติม", code="Q-ORG-OTHER")
+        _make_user("org_browse_in_unit_1", "student", organization)
+        _make_user("org_browse_in_unit_2", "student", organization)
+        _make_user("org_browse_other_unit", "student", other_org)
+
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/personnel-search/?organization_id={organization.id}")
+        assert resp.status_code == 200
+        names = {r["full_name"] for r in resp.json()["results"]}
+        assert any("org_browse_in_unit_1" in n for n in names)
+        assert any("org_browse_in_unit_2" in n for n in names)
+        assert not any("org_browse_other_unit" in n for n in names)
