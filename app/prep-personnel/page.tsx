@@ -71,7 +71,7 @@ export default function PrepPersonnelPage() {
                 <th className="px-4 py-3">หน่วยที่ส่ง</th>
                 <th className="px-4 py-3">รุ่น/ปี</th>
                 <th className="px-4 py-3">วิชา</th>
-                <th className="px-4 py-3">โควตา</th>
+                <th className="px-4 py-3 w-40">บรรจุแล้ว / โควตา</th>
                 <th className="px-4 py-3">สถานะ</th>
                 <th className="px-4 py-3">จัดการ</th>
               </tr>
@@ -83,7 +83,19 @@ export default function PrepPersonnelPage() {
                   <td className="px-4 py-3 text-[#6b6478] text-xs">{c.organization_name || "-"}</td>
                   <td className="px-4 py-3 text-[#6b6478]">{c.batch_code} / {c.academic_year}</td>
                   <td className="px-4 py-3 text-[#6b6478]">{c.course_count}</td>
-                  <td className="px-4 py-3 text-[#6b6478]">{c.quota_total}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-mono text-sm ${c.enrolled_count > c.quota_total && c.quota_total > 0 ? "text-red-600 font-semibold" : "text-[#2D0F42]"}`}>
+                        {c.enrolled_count} / {c.quota_total}
+                      </span>
+                    </div>
+                    {c.quota_total > 0 && (
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1 overflow-hidden">
+                        <div className={`h-1.5 rounded-full ${c.enrolled_count > c.quota_total ? "bg-red-500" : "bg-[#4A1A6B]"}`}
+                          style={{ width: `${Math.min(100, Math.round((c.enrolled_count / c.quota_total) * 100))}%` }} />
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusPill tone={STATUS_TONES[c.status] || "neutral"}>
                       {STATUS_LABELS[c.status] || c.status}

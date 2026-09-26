@@ -275,6 +275,7 @@ export interface SubmittedCurriculumItem {
   organization_name: string | null
   status: "submitted" | "active"
   quota_total: number
+  enrolled_count: number
   course_count: number
   submitted_at: string | null
 }
@@ -1075,9 +1076,10 @@ export const api = {
     fetchAPIPost<{ organization_id: number; organization_name: string; quota: number }>(
       `api/v1/curriculum/curricula/${curriculumId}/org-quotas/`, { organization_id: organizationId, quota }
     ),
-  searchPersonnel: (params: { q?: string; army_region?: string; page?: number; page_size?: number }) => {
+  searchPersonnel: (params: { q?: string; organization_id?: number; army_region?: string; page?: number; page_size?: number }) => {
     const qs = new URLSearchParams()
     if (params.q) qs.set("q", params.q)
+    if (params.organization_id) qs.set("organization_id", String(params.organization_id))
     if (params.army_region) qs.set("army_region", params.army_region)
     if (params.page) qs.set("page", String(params.page))
     if (params.page_size) qs.set("page_size", String(params.page_size))
