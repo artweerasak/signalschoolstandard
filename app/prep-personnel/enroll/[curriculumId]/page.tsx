@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { api, EnrollDryRunResult, EnrollExecuteResult, PersonnelSearchRow } from "@/lib/api"
+import { api, EnrollDryRunResult, EnrollExecuteResult, PersonnelSearchRow, Organization } from "@/lib/api"
 
 interface CatchUpResult { mode: "sync" | "async"; affected_count: number }
 
@@ -18,7 +18,10 @@ export default function EnrollPage() {
   const curriculumId = Number(params.curriculumId)
 
   const [nationalQuota, setNationalQuota] = useState<number | null>(null)
+  const [alreadyEnrolled, setAlreadyEnrolled] = useState(0)
 
+  const [orgs, setOrgs] = useState<Organization[]>([])
+  const [orgFilter, setOrgFilter] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<PersonnelSearchRow[]>([])
   const [searching, setSearching] = useState(false)
@@ -35,20 +38,37 @@ export default function EnrollPage() {
 
   useEffect(() => {
     if (!curriculumId) return
-    api.getOrgQuotas(curriculumId).then(r => setNationalQuota(r.national_quota)).catch(() => {})
+    api.getOrgQuotas(curriculumId)
+      .then(r => { setNationalQuota(r.national_quota); setAlreadyEnrolled(r.national_requested) })
+      .catch(() => {})
+    api.organizationsPublic().then(r => setOrgs(r.results)).catch(() => {})
   }, [curriculumId])
 
   useEffect(() => {
-    if (!searchQuery.trim()) { setSearchResults([]); return }
+    if (!searchQuery.trim() && !orgFilter) { setSearchResults([]); return }
     const t = setTimeout(() => {
       setSearching(true)
-      api.searchPersonnel({ q: searchQuery, page_size: 20 })
+      api.searchPersonnel({
+        q: searchQuery.trim() || undefined,
+        organization_id: orgFilter ? Number(orgFilter) : undefined,
+        page_size: orgFilter ? 100 : 20,
+      })
         .then(r => setSearchResults(r.results))
         .catch(() => setSearchResults([]))
         .finally(() => setSearching(false))
     }, 300)
     return () => clearTimeout(t)
-  }, [searchQuery])
+  }, [searchQuery, orgFilter])
+
+  const selectAllShown = () => {
+    setSelected(prev => {
+      const next = new Map(prev)
+      for (const p of searchResults) next.set(p.id, p)
+      return next
+    })
+    setPreview(null)
+    setResult(null)
+  }
 
   const toggleSelect = (person: PersonnelSearchRow) => {
     setSelected(prev => {
@@ -113,6 +133,9 @@ export default function EnrollPage() {
       setResult(r)
       setPreview(null)
       setSelected(new Map())
+      api.getOrgQuotas(curriculumId)
+        .then(qr => { setNationalQuota(qr.national_quota); setAlreadyEnrolled(qr.national_requested) })
+        .catch(() => {})
     } catch (err) {
       setError(err instanceof Error ? err.message : "บรรจุไม่สำเร็จ")
     } finally {
@@ -152,34 +175,64 @@ export default function EnrollPage() {
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="block text-sm font-medium text-[#4a4456]">ค้นหากำลังพล (ชื่อหรือหน่วย)</label>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <label className="block text-sm font-medium text-[#4a4456]">ค้นหากำลังพล (ชื่อ/หน่วย หรือเลือกดูทั้งหน่วย)</label>
           {nationalQuota !== null && nationalQuota > 0 && (
-            <p className="text-sm text-[#6b6478]">เลือกแล้ว <span className="font-semibold text-[#4A1A6B]">{studentIds.length}</span> / {nationalQuota} คน</p>
+            <p className="text-sm text-[#6b6478]">
+              {alreadyEnrolled > 0 && (
+                <>บรรจุไปแล้ว <span className="font-semibold text-[#2D0F42]">{alreadyEnrolled}</span> คน{" + "}</>
+              )}
+              เลือกใหม่ <span className="font-semibold text-[#4A1A6B]">{studentIds.length}</span> คน
+              {" "}(รวม {alreadyEnrolled + studentIds.length} / {nationalQuota})
+            </p>
           )}
         </div>
-        <div className="relative">
+
+        <div className="flex flex-col sm:flex-row gap-2">
           <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             placeholder="พิมพ์ชื่อ หรือ หน่วยต้นสังกัด..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-          {searchQuery.trim() && (
-            <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+          <select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
+            className="sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm text-[#4a4456] focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+            <option value="">— หรือเลือกดูทั้งหน่วย —</option>
+            {orgs.map(o => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+        {orgFilter && (
+          <p className="text-xs text-[#9a92a8]">
+            กำลังแสดงรายชื่อทั้งหมดของหน่วยที่เลือก — พิมพ์ชื่อเพิ่มในช่องค้นหาเพื่อกรองให้แคบลงได้
+            <button type="button" onClick={() => setOrgFilter("")} className="ml-2 text-[#4A1A6B] hover:underline">ล้างตัวกรองหน่วย</button>
+          </p>
+        )}
+
+        <div className="relative">
+          {(searchQuery.trim() || orgFilter) && (
+            <div className="mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-sm max-h-72 overflow-y-auto">
               {searching ? (
                 <p className="px-3 py-2 text-sm text-[#9a92a8]">กำลังค้นหา...</p>
               ) : searchResults.length === 0 ? (
-                <p className="px-3 py-2 text-sm text-[#9a92a8]">ไม่พบกำลังพลที่ตรงกับคำค้นหา</p>
+                <p className="px-3 py-2 text-sm text-[#9a92a8]">ไม่พบกำลังพลที่ตรงกับเงื่อนไข</p>
               ) : (
-                searchResults.map(p => (
-                  <button type="button" key={p.id} onClick={() => toggleSelect(p)}
-                    className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 flex items-center justify-between gap-2
-                      ${selected.has(p.id) ? "bg-purple-50" : "hover:bg-[#f7f5fa]"}`}>
-                    <div className="min-w-0">
-                      <p className="font-medium text-[#2D0F42] truncate">{p.full_name}</p>
-                      <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
-                    </div>
-                    {selected.has(p.id) && <span className="text-[#4A1A6B] shrink-0">✓ เลือกแล้ว</span>}
-                  </button>
-                ))
+                <>
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-[#f7f5fa] border-b border-gray-100 sticky top-0">
+                    <p className="text-xs text-[#9a92a8]">พบ {searchResults.length} คน</p>
+                    <button type="button" onClick={selectAllShown}
+                      className="text-xs font-medium text-[#4A1A6B] hover:underline">เลือกทั้งหมดที่แสดง</button>
+                  </div>
+                  {searchResults.map(p => (
+                    <button type="button" key={p.id} onClick={() => toggleSelect(p)}
+                      className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 flex items-center justify-between gap-2
+                        ${selected.has(p.id) ? "bg-purple-50" : "hover:bg-[#f7f5fa]"}`}>
+                      <div className="min-w-0">
+                        <p className="font-medium text-[#2D0F42] truncate">{p.full_name}</p>
+                        <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
+                      </div>
+                      {selected.has(p.id) && <span className="text-[#4A1A6B] shrink-0">✓ เลือกแล้ว</span>}
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           )}
