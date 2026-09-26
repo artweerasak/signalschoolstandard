@@ -58,6 +58,10 @@ def api_curricula_submitted(request):
             "organization_name": c.organization.name if c.organization_id else None,
             "status": c.status,
             "quota_total": c.quota_total,
+            # จำนวนที่บรรจุไปแล้ว (นับทุกคำขอ ไม่ว่าผลจะสำเร็จครบ/บางส่วน — ถือว่า
+            # "อยู่ในระบบแล้ว") ให้เห็นชัดจากหน้ารายการเลย ไม่ต้องเข้าไปดูในหน้า
+            # โควตาก่อนถึงจะรู้ ตามที่ผู้ใช้รายงานว่าไม่ชัดเจน
+            "enrolled_count": c.enrollment_requests.count(),
             "course_count": c.courses.count(),
             "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
         }
@@ -322,13 +326,18 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
 @require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
 def api_curriculum_personnel_search(request):
     """
-    GET /military/api/v1/curriculum/personnel-search/?q=&army_region=&page=&page_size=
+    GET /military/api/v1/curriculum/personnel-search/?q=&organization_id=&army_region=&page=&page_size=
 
     ค้นหากำลังพลข้ามหน่วยทั้งหมด (ชื่อหรือหน่วย) — ใช้ในหน้าบรรจุกำลังพลของ
     prep_personnel เพื่อเลือกคนแบบค้นหา+multi-select แทนพิมพ์ user_id เอง
     ต่างจาก api_admin_users (military_profile) ที่ org_admin ถูกบังคับเห็นแค่
     หน่วยตัวเอง เพราะ prep_personnel ต้องเห็นข้ามหน่วยเสมอ (เหมือน
     api_quota_demand_report/api_eligible_density_report)
+
+    organization_id = กรองเฉพาะหน่วยนั้นแบบเป๊ะๆ (ต่างจาก army_region ที่กรอง
+    ทั้งทัพภาค) — เรียกโดยไม่ส่ง q เลยได้ เพื่อดูรายชื่อทั้งหน่วยมาเลือกทีละ
+    หลายคน แก้ปัญหาค้นหาชื่อไม่เจอเพราะสมัครพิมพ์ชื่อ-นามสกุลไม่ตรงกัน (เว้น
+    วรรค/ไม่ใส่นามสกุล) — เลือกดูเป็นหน่วยแทนแม่นยำกว่า
     """
     if request.method != "GET":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -340,6 +349,13 @@ def api_curriculum_personnel_search(request):
     q = request.GET.get("q", "").strip()
     if q:
         qs = qs.filter(Q(full_name_th__icontains=q) | Q(unit__icontains=q))
+
+    organization_id = request.GET.get("organization_id", "").strip()
+    if organization_id:
+        try:
+            qs = qs.filter(organization_id=int(organization_id))
+        except ValueError:
+            return JsonResponse({"error": "organization_id ต้องเป็นตัวเลข"}, status=400)
 
     region = request.GET.get("army_region", "").strip()
     if region:
@@ -353,7 +369,7 @@ def api_curriculum_personnel_search(request):
 
     try:
         page = max(1, int(request.GET.get("page", 1)))
-        page_size = min(50, int(request.GET.get("page_size", 20)))
+        page_size = min(100, int(request.GET.get("page_size", 20)))
     except (ValueError, TypeError):
         page, page_size = 1, 20
 
