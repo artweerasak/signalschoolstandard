@@ -193,7 +193,13 @@ def api_course_finalize(request, curriculum_course_id: int):
 def api_co_instructors(request, curriculum_course_id: int):
     """
     GET  /military/api/v1/curriculum/my-courses/{id}/co-instructors/
-    POST /military/api/v1/curriculum/my-courses/{id}/co-instructors/  {"user_id"}  → owner เท่านั้น
+    POST /military/api/v1/curriculum/my-courses/{id}/co-instructors/  {"user_id", "topic_note"}  → owner เท่านั้น
+
+    topic_note = ป้ายกำกับอิสระว่าผู้ช่วยสอนคนนี้ดูแลหัวข้อ/ส่วนไหน (ไม่บังคับ)
+    — เป็นแค่ label ไม่ใช่การจำกัดสิทธิ์จริง (ผู้ช่วยสอนทุกคนยังเห็น/ให้คะแนน
+    ได้ทุกคนในวิชานี้เท่ากัน) ใช้กับกรณีวิชาเดียวรวมหลายหัวข้อย่อยที่มีคน
+    รับผิดชอบต่างกัน (เช่น "วิชาแกนกลาง" ที่จริงๆ มีหลายหัวข้อสอนโดยหลายคน
+    แต่รวมเป็นวิชาเดียวในระบบเพราะข้อจำกัดด้านเวลา/อัตรากำลังครู)
     """
     cc, err = _get_course_scoped(request, curriculum_course_id)
     if err:
@@ -201,8 +207,14 @@ def api_co_instructors(request, curriculum_course_id: int):
 
     if request.method == "GET":
         results = [
-            {"user_id": a.user_id, "username": a.user.username, "is_owner": a.is_owner}
-            for a in cc.instructors.select_related("user")
+            {
+                "user_id": a.user_id,
+                "username": a.user.username,
+                "full_name": a.user.military_profile.full_name_th if hasattr(a.user, "military_profile") else a.user.username,
+                "is_owner": a.is_owner,
+                "topic_note": a.topic_note,
+            }
+            for a in cc.instructors.select_related("user", "user__military_profile")
         ]
         return JsonResponse({"results": results})
 
@@ -228,11 +240,12 @@ def api_co_instructors(request, curriculum_course_id: int):
     if CurriculumCourseInstructor.objects.filter(curriculum_course=cc, user=target_user).exists():
         return JsonResponse({"error": "ผู้ใช้นี้เป็นผู้สอนวิชานี้อยู่แล้ว"}, status=409)
 
+    topic_note = (data.get("topic_note") or "").strip()
     CurriculumCourseInstructor.objects.create(
-        curriculum_course=cc, user=target_user, is_owner=False, added_by=request.user,
+        curriculum_course=cc, user=target_user, is_owner=False, added_by=request.user, topic_note=topic_note,
     )
     sync_course_access_role(cc.course_id, target_user, add=True)
-    return JsonResponse({"user_id": target_user.id, "username": target_user.username}, status=201)
+    return JsonResponse({"user_id": target_user.id, "username": target_user.username, "topic_note": topic_note}, status=201)
 
 
 @csrf_exempt

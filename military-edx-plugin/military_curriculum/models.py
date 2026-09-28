@@ -319,6 +319,14 @@ class CurriculumCourseInstructor(models.Model):
     )
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="co_instructor_assignments")
     is_owner = models.BooleanField(default=False, verbose_name="เจ้าของวิชา")
+    topic_note = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="หัวข้อ/ความรับผิดชอบ",
+        help_text="ป้ายกำกับอิสระ ไม่ผูกกับสิทธิ์การเข้าถึงจริง (ผู้ช่วยสอนทุกคน"
+                   "ยังเห็น/ให้คะแนนได้ทุกคนในวิชานี้เท่ากันหมด) — ใช้ตอนวิชาเดียว"
+                   "รวมหลายหัวข้อย่อยที่มีผู้รับผิดชอบต่างกัน เพื่อให้รู้ว่าใคร"
+                   "ดูแลส่วนไหนโดยไม่ต้องแยกวิชาจริงในระบบ",
+    )
     added_by = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="co_instructors_added",
     )
