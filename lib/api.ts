@@ -436,7 +436,9 @@ export interface RosterRow {
 export interface CoInstructorRow {
   user_id: number
   username: string
+  full_name: string
   is_owner: boolean
+  topic_note: string
 }
 
 // ── Evaluation Gatekeeper (evaluator) ───────────────────────────────────────
@@ -1163,8 +1165,10 @@ export const api = {
     fetchAPIPost<{ finalized_count: number }>(`api/v1/curriculum/my-courses/${id}/finalize/`, {}),
   getCoInstructors: (id: number) =>
     fetchAPI<{ results: CoInstructorRow[] }>(`api/v1/curriculum/my-courses/${id}/co-instructors/`),
-  addCoInstructor: (id: number, userId: number) =>
-    fetchAPIPost<{ user_id: number; username: string }>(`api/v1/curriculum/my-courses/${id}/co-instructors/`, { user_id: userId }),
+  addCoInstructor: (id: number, userId: number, topicNote?: string) =>
+    fetchAPIPost<{ user_id: number; username: string; topic_note: string }>(
+      `api/v1/curriculum/my-courses/${id}/co-instructors/`, { user_id: userId, topic_note: topicNote }
+    ),
   removeCoInstructor: (id: number, userId: number) =>
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/my-courses/${id}/co-instructors/${userId}/`, {}, "DELETE"),
 
