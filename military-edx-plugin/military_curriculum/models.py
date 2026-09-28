@@ -36,6 +36,63 @@ def ranks_in_range(rank_min: str, rank_max: str) -> list:
     return [code for code, idx in RANK_ORDER.items() if lo <= idx <= hi]
 
 
+# ประเภทหลักสูตร (independent จากชื่อ/รุ่น/ปี ที่อาจสะกด/ตั้งชื่อต่างกันไปในแต่
+# ละปี เช่น "นายสิบชั้นต้นผ่านสื่อฯ" vs "นายสิบชั้นต้นเร่งรัด" ก็เป็นประเภท
+# nco_basic เหมือนกัน) — ใช้เป็นเงื่อนไข prerequisite ข้ามหลักสูตร (ดู
+# Curriculum.eligible_prerequisite_categories) เพิ่มตัวเลือกใหม่ได้ทีหลังง่ายๆ
+# แค่แก้ list นี้ ไม่ต้อง migration เพราะเก็บเป็น CharField ธรรมดา
+CURRICULUM_CATEGORY_CHOICES = [
+    ("nco_basic", "นายสิบชั้นต้น"),
+    ("nco_senior", "นายสิบชั้นสูง (อาวุโส)"),
+    ("officer_company", "นายทหารสัญญาบัตร ชั้นนายร้อย"),
+    ("officer_field", "นายทหารสัญญาบัตร ชั้นนายพัน"),
+    ("officer_senior", "นายทหารสัญญาบัตร ชั้นนายพล/เสนาธิการ"),
+    ("other", "อื่นๆ"),
+]
+CURRICULUM_CATEGORY_CODES = {code for code, _ in CURRICULUM_CATEGORY_CHOICES}
+
+
+def has_completed_curriculum_category(student, category_codes) -> bool:
+    """เช็ค*คนเดียว* ว่าเคยผ่าน (ทุกวิชาในหลักสูตรนั้น passed=True) หลักสูตร
+    ที่มี category อยู่ใน category_codes มาก่อนไหม (ไม่นับ category ที่ไม่มี
+    วิชาเลย เพราะไม่มีอะไรให้ตัดสินว่า "ผ่าน") หรือมีบันทึก
+    LegacyCurriculumCompletion (ผ่านมาก่อนระบบนี้จะมีข้อมูล) — ใช้กับ
+    เคสเดี่ยวๆ เท่านั้น ดู student_ids_completed_curriculum_category สำหรับ
+    เช็คหลายคนพร้อมกันแบบมีประสิทธิภาพ (รายงาน/ค้นหา)"""
+    if not category_codes:
+        return True
+    return student.id in student_ids_completed_curriculum_category(category_codes)
+
+
+def student_ids_completed_curriculum_category(category_codes) -> set:
+    """เช็คหลายคนพร้อมกัน คืน set ของ student_id ที่ผ่านเกณฑ์ — คิว query
+    ตามจำนวนหลักสูตรใน category นั้น (ไม่ใช่ตามจำนวนคน) ใช้กับรายงาน/ค้นหา
+    ที่ต้องกรองกำลังพลจำนวนมากพร้อมกัน"""
+    from django.db.models import Count
+
+    if not category_codes:
+        return set()
+
+    qualifying = set(
+        LegacyCurriculumCompletion.objects.filter(category__in=category_codes)
+        .values_list("student_id", flat=True)
+    )
+    for c in Curriculum.objects.filter(category__in=category_codes).prefetch_related("courses"):
+        course_ids = list(c.courses.values_list("id", flat=True))
+        if not course_ids:
+            continue
+        passed_all_ids = (
+            FinalCourseResult.objects
+            .filter(curriculum_course_id__in=course_ids, passed=True)
+            .values("student_id")
+            .annotate(n=Count("curriculum_course_id", distinct=True))
+            .filter(n=len(course_ids))
+            .values_list("student_id", flat=True)
+        )
+        qualifying.update(passed_all_ids)
+    return qualifying
+
+
 # ---------------------------------------------------------------------------
 # Curriculum (กรอบหลักสูตรประจำปี/รุ่น)
 # ---------------------------------------------------------------------------
@@ -84,6 +141,17 @@ class Curriculum(models.Model):
     eligible_personnel_type = models.CharField(
         max_length=100, choices=PERSONNEL_TYPE_CHOICES, blank=True, default="",
         verbose_name="ประเภทบุคลากรที่มีสิทธิ์",
+    )
+    category = models.CharField(
+        max_length=30, choices=CURRICULUM_CATEGORY_CHOICES, blank=True, default="",
+        verbose_name="ประเภทหลักสูตร",
+        help_text="ใช้จับคู่ว่าหลักสูตรนี้เป็นประเภทเดียวกับหลักสูตรอื่นไหม "
+                   "(ชื่อ/รุ่นต่างกันได้ แต่ category เดียวกัน) สำหรับ prerequisite",
+    )
+    eligible_prerequisite_categories = models.JSONField(
+        default=list, blank=True,
+        verbose_name="ต้องผ่านหลักสูตรประเภทใดมาก่อน",
+        help_text='list ของ category code เช่น ["nco_basic"] — ว่าง = ไม่มีเงื่อนไขนี้',
     )
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="draft", db_index=True,
@@ -323,6 +391,43 @@ class FinalCourseResult(models.Model):
 
     def __str__(self):
         return f"{self.student} — {self.curriculum_course}: {self.final_score}"
+
+
+class LegacyCurriculumCompletion(models.Model):
+    """บันทึกว่ากำลังพลเคยผ่านหลักสูตรประเภทนี้มาก่อนที่ระบบนี้จะมีข้อมูล
+    อิเล็กทรอนิกส์ (ก่อน digitize) — ไม่ผูกกับ Curriculum row จริงเพราะไม่มี
+    ข้อมูลย้อนหลังให้ผูก ใช้เป็น fallback คู่กับ FinalCourseResult ตอนเช็ค
+    eligible_prerequisite_categories (ดู has_completed_curriculum_category)
+    กันไม่ให้คนที่ผ่านหลักสูตรจริงแต่เรียนมาก่อนระบบนี้เกิด ถูกตัดสิทธิ์ผิดๆ
+
+    กำลังพลกรอกเองได้ (self-report เหมือน rank_effective_date ใน
+    military_profile) หรือเจ้าหน้าที่ (org_admin/prep_personnel) กรอกแทนให้
+    ก็ได้ — recorded_by เก็บว่าใครบันทึกไว้ เพื่อตรวจสอบย้อนหลังได้"""
+
+    student = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="legacy_curriculum_completions",
+    )
+    category = models.CharField(
+        max_length=30, choices=CURRICULUM_CATEGORY_CHOICES,
+        verbose_name="ประเภทหลักสูตรที่เคยผ่าน",
+    )
+    note = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="หมายเหตุ", help_text="เช่น ปีที่จบ/ชื่อหลักสูตรที่เรียนตอนนั้น",
+    )
+    recorded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="legacy_completions_recorded", verbose_name="ผู้บันทึก",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("student", "category")]
+        verbose_name = "ประวัติผ่านหลักสูตรก่อนมีระบบ"
+        verbose_name_plural = "ประวัติผ่านหลักสูตรก่อนมีระบบ"
+
+    def __str__(self):
+        return f"{self.student} — {self.get_category_display()}"
 
 
 # ---------------------------------------------------------------------------

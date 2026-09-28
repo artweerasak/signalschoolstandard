@@ -21,7 +21,10 @@ from django.http import JsonResponse
 
 from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL
 
-from .models import Curriculum, CurriculumEnrollmentRequest, CurriculumOrgQuota, ranks_in_range
+from .models import (
+    Curriculum, CurriculumEnrollmentRequest, CurriculumOrgQuota, ranks_in_range,
+    CURRICULUM_CATEGORY_CHOICES, student_ids_completed_curriculum_category,
+)
 from .services.enrollment_service import (
     cascade_enroll_student,
     preview_cascade_enroll,
@@ -167,6 +170,13 @@ def api_eligible_density_report(request):
     กำลังพลกรอกเองได้ใน /my/profile) — ถ้า eligible_min_years_in_rank เป็น 0
     หรือไม่ได้ตั้งไว้เลย ถือว่าไม่มีเงื่อนไขระยะเวลาครองยศ จะไม่ไปเช็ค
     rank_effective_date เลย (0 ปีทุกคนก็ผ่านอยู่แล้วไม่ว่าจะครองยศมานานเท่าไร)
+
+    ถ้าหลักสูตรกำหนด eligible_prerequisite_categories (ต้องผ่านหลักสูตร
+    ประเภทไหนมาก่อน เช่น ต้องผ่าน "นายสิบชั้นต้น" ก่อนถึงจะเข้าเกณฑ์ "นายสิบ
+    อาวุโส") จะกรองเฉพาะคนที่ผ่านแล้วจริง (ดู
+    models.py:student_ids_completed_curriculum_category — เช็คทั้งจาก
+    FinalCourseResult ในระบบ และ LegacyCurriculumCompletion สำหรับคนที่ผ่าน
+    มาก่อนระบบนี้จะมีข้อมูล)
     """
     if request.method != "GET":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -189,6 +199,10 @@ def api_eligible_density_report(request):
 
     if c.eligible_rank_min or c.eligible_rank_max:
         qs = qs.filter(rank__in=ranks_in_range(c.eligible_rank_min, c.eligible_rank_max))
+
+    if c.eligible_prerequisite_categories:
+        qualifying_ids = student_ids_completed_curriculum_category(c.eligible_prerequisite_categories)
+        qs = qs.filter(user_id__in=qualifying_ids)
 
     region_filter = request.GET.get("army_region", "").strip()
     if region_filter:
@@ -240,6 +254,10 @@ def api_eligible_density_report(request):
         "eligible_min_years_in_rank": c.eligible_min_years_in_rank,
         "eligible_personnel_type": c.eligible_personnel_type,
         "eligible_personnel_type_display": c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None,
+        "eligible_prerequisite_categories": c.eligible_prerequisite_categories,
+        "eligible_prerequisite_categories_display": [
+            dict(CURRICULUM_CATEGORY_CHOICES).get(code, code) for code in c.eligible_prerequisite_categories
+        ],
         "national": {
             "eligible_count": sum(r["eligible_count"] for r in rows),
             "needs_verification_count": sum(r["needs_verification_count"] for r in rows),
@@ -288,6 +306,7 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
         ]
         has_eligibility_criteria = bool(
             c.eligible_rank_min or c.eligible_rank_max or c.eligible_personnel_type
+            or c.eligible_prerequisite_categories
         )
         return JsonResponse({
             "curriculum_id": c.id,
@@ -300,6 +319,9 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
             "eligible_rank_min_display": c.get_eligible_rank_min_display() if c.eligible_rank_min else None,
             "eligible_rank_max_display": c.get_eligible_rank_max_display() if c.eligible_rank_max else None,
             "eligible_personnel_type_display": c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None,
+            "eligible_prerequisite_categories_display": [
+                dict(CURRICULUM_CATEGORY_CHOICES).get(code, code) for code in c.eligible_prerequisite_categories
+            ],
         })
 
     if request.method != "POST":
@@ -405,6 +427,11 @@ def api_curriculum_personnel_search(request):
                 # ตัดออกเฉพาะคนที่ทราบชัดว่าครองยศมาไม่ถึงเกณฑ์ — คนที่ไม่มี
                 # rank_effective_date เลยยังไม่ถูกตัดออก (ดู docstring ด้านบน)
                 qs = qs.exclude(rank_effective_date__isnull=False, rank_effective_date__gt=cutoff)
+            if elig_curriculum.eligible_prerequisite_categories:
+                qualifying_ids = student_ids_completed_curriculum_category(
+                    elig_curriculum.eligible_prerequisite_categories
+                )
+                qs = qs.filter(user_id__in=qualifying_ids)
 
     try:
         page = max(1, int(request.GET.get("page", 1)))

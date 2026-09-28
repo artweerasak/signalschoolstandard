@@ -14,6 +14,7 @@ from .curriculum_views import (
     api_curriculum_submit,
     api_school_curricula,
     api_school_curriculum_roster,
+    api_my_legacy_curriculum_completions,
 )
 from .quota_views import (
     api_curricula_submitted,
@@ -70,6 +71,10 @@ urlpatterns = [
     # หลักสูตรแบบ read-only เพิ่มเติม (ดู military_curriculum/permissions.py)
     path("api/v1/curriculum/school/curricula/", api_school_curricula, name="api_school_curricula"),
     path("api/v1/curriculum/school/curricula/<int:curriculum_id>/roster/", api_school_curriculum_roster, name="api_school_curriculum_roster"),
+
+    # กำลังพลกรอกเองว่าเคยผ่านหลักสูตรประเภทไหนมาก่อนระบบนี้ — ใช้เป็น fallback
+    # ของ eligible_prerequisite_categories (ดู models.py)
+    path("api/v1/curriculum/my/legacy-completions/", api_my_legacy_curriculum_completions, name="api_my_legacy_curriculum_completions"),
 
     # Quota/Demand Report + Cascade Enrollment (prep_personnel) — Sprint 2
     path("api/v1/curriculum/curricula/<int:curriculum_id>/activate/", api_curriculum_activate, name="api_curriculum_activate"),
