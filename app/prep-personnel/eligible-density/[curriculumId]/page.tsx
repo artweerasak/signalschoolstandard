@@ -84,6 +84,9 @@ export default function EligibleDensityReportPage() {
       : null,
     report.eligible_min_years_in_rank ? `ครองยศมาแล้วอย่างน้อย ${report.eligible_min_years_in_rank} ปี` : null,
     report.eligible_personnel_type_display,
+    report.eligible_prerequisite_categories_display.length > 0
+      ? `ต้องผ่านมาก่อน: ${report.eligible_prerequisite_categories_display.join(", ")}`
+      : null,
   ].filter(Boolean).join(" · ") || "ไม่ได้กำหนดเกณฑ์คุณสมบัติไว้ (นับกำลังพลทุกคน)"
 
   return (

@@ -16,6 +16,14 @@ const RANK_CHOICES = [
   ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],["COL_S","พันเอกพิเศษ"],
   ["BGEN","พลตรี"],["MGEN","พลโท"],["GEN","พลเอก"],
 ]
+const CURRICULUM_CATEGORY_CHOICES = [
+  ["nco_basic", "นายสิบชั้นต้น"],
+  ["nco_senior", "นายสิบชั้นสูง (อาวุโส)"],
+  ["officer_company", "นายทหารสัญญาบัตร ชั้นนายร้อย"],
+  ["officer_field", "นายทหารสัญญาบัตร ชั้นนายพัน"],
+  ["officer_senior", "นายทหารสัญญาบัตร ชั้นนายพล/เสนาธิการ"],
+  ["other", "อื่นๆ"],
+]
 
 function EditDatesSection({ profile, onDone }: { profile: MyProfile; onDone: () => void }) {
   const parseDate = (val: string | null | undefined): string => {
@@ -260,6 +268,124 @@ function EditRankSection({ profile, onDone }: { profile: MyProfile; onDone: () =
           {saving ? "กำลังบันทึก..." : "บันทึกชั้นยศ"}
         </button>
       </form>
+    </div>
+  )
+}
+
+function EditLegacyCompletionsSection() {
+  const [editing, setEditing] = useState(false)
+  const [saved, setSaved] = useState<{ category: string; category_display: string; note: string }[]>([])
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState("")
+
+  const load = () => {
+    setLoading(true)
+    api.getMyLegacyCurriculumCompletions()
+      .then(r => {
+        setSaved(r.results)
+        setChecked(new Set(r.results.map(x => x.category)))
+        setNotes(Object.fromEntries(r.results.map(x => [x.category, x.note])))
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(load, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError("")
+    try {
+      const savedCategories = new Set(saved.map(x => x.category))
+      const toAdd = [...checked].filter(c => !savedCategories.has(c) || notes[c] !== saved.find(x => x.category === c)?.note)
+      const toRemove = [...savedCategories].filter(c => !checked.has(c))
+      await Promise.all([
+        ...toAdd.map(c => api.setMyLegacyCurriculumCompletion(c, notes[c] || "")),
+        ...toRemove.map(c => api.deleteMyLegacyCurriculumCompletion(c)),
+      ])
+      setSuccess(true)
+      setEditing(false)
+      load()
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return null
+
+  if (!editing) {
+    return (
+      <div className="bg-white rounded-xl border border-[#f0ecf6] shadow-sm px-6 py-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="font-semibold text-[#2D0F42]">หลักสูตรที่เคยผ่านมาก่อนระบบนี้</h3>
+            <p className="text-xs text-[#9a92a8] mt-0.5">สำหรับคนที่จบนายสิบชั้นต้น/ชั้นนายร้อย ฯลฯ มาก่อนที่ระบบนี้จะเริ่มเก็บข้อมูล</p>
+          </div>
+          <button onClick={() => { setEditing(true); setSuccess(false) }}
+            className="text-sm text-[#7B3FA0] hover:underline shrink-0">แก้ไข</button>
+        </div>
+        {success && <p className="text-green-600 text-sm mb-2">✓ บันทึกแล้ว มีผลทันที</p>}
+        {saved.length === 0 ? (
+          <p className="text-sm text-[#9a92a8]">ยังไม่ได้ระบุ</p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {saved.map(s => (
+              <li key={s.category} className="flex gap-2">
+                <span className="text-[#2D0F42] font-medium">{s.category_display}</span>
+                {s.note && <span className="text-[#9a92a8]">— {s.note}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-[#7B3FA0] shadow-sm px-6 py-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-[#2D0F42]">แก้ไขหลักสูตรที่เคยผ่านมาก่อนระบบนี้</h3>
+          <p className="text-xs text-amber-600 mt-0.5">ใช้เป็นเงื่อนไขเข้าเรียนหลักสูตรขั้นสูงที่ต้องผ่านขั้นนี้มาก่อน — บันทึกแล้วมีผลทันที ไม่ต้องรออนุมัติ</p>
+        </div>
+        <button onClick={() => setEditing(false)} className="text-sm text-[#9a92a8] hover:text-[#6b6478] shrink-0">ยกเลิก</button>
+      </div>
+      <div className="space-y-3">
+        {CURRICULUM_CATEGORY_CHOICES.map(([code, label]) => {
+          const isChecked = checked.has(code)
+          return (
+            <div key={code} className="border border-gray-200 rounded-lg px-3 py-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={isChecked} className="accent-[#4A1A6B]"
+                  onChange={() => setChecked(prev => {
+                    const next = new Set(prev)
+                    if (next.has(code)) next.delete(code); else next.add(code)
+                    return next
+                  })} />
+                <span className="text-sm text-[#2D0F42]">{label}</span>
+              </label>
+              {isChecked && (
+                <input type="text" placeholder="หมายเหตุ (ไม่บังคับ) เช่น จบปี พ.ศ. ที่เท่าไร"
+                  value={notes[code] || ""}
+                  onChange={e => setNotes(prev => ({ ...prev, [code]: e.target.value }))}
+                  className="w-full mt-2 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7B3FA0]" />
+              )}
+            </div>
+          )
+        })}
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+        <button onClick={handleSave} disabled={saving}
+          className="bg-[#4A1A6B] hover:bg-[#2D0F42] disabled:opacity-50 text-white text-sm font-medium px-6 py-2 rounded-lg transition">
+          {saving ? "กำลังบันทึก..." : "บันทึก"}
+        </button>
+      </div>
     </div>
   )
 }
@@ -548,6 +674,7 @@ export default function MyProfilePage() {
 
       {/* Edit Rank */}
       {profile && <EditRankSection profile={profile} onDone={loadProfile} />}
+      <EditLegacyCompletionsSection />
 
       {/* Edit Gender */}
       {profile && <EditGenderSection profile={profile} onDone={loadProfile} />}
