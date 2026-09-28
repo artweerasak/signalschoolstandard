@@ -178,8 +178,11 @@ def _curriculum_detail(c: Curriculum) -> dict:
         {"id": q.id, "army_region": q.army_region, "quota": q.quota}
         for q in c.region_quotas.all()
     ]
-    data["courses"] = [
-        {
+    data["courses"] = []
+    for cc in c.courses.prefetch_related("instructors__user__military_profile").all():
+        owner = next((i for i in cc.instructors.all() if i.is_owner), None)
+        owner_profile = getattr(owner.user, "military_profile", None) if owner else None
+        data["courses"].append({
             "id": cc.id,
             "course_id": cc.course_id,
             "display_name": cc.display_name,
@@ -189,9 +192,9 @@ def _curriculum_detail(c: Curriculum) -> dict:
             "assessment_type": cc.assessment_type,
             "passing_score": str(cc.passing_score) if cc.passing_score is not None else None,
             "is_required": cc.is_required,
-        }
-        for cc in c.courses.all()
-    ]
+            "owner_user_id": owner.user_id if owner else None,
+            "owner_name": owner_profile.full_name_th if owner_profile else (owner.user.username if owner else None),
+        })
     return data
 
 
@@ -472,6 +475,92 @@ def api_curriculum_course_detail(request, curriculum_id: int, course_pk: int):
 
     cc.delete()
     return JsonResponse({"deleted": True})
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_SCHOOL, ROLE_ADMIN])
+def api_curriculum_course_instructor(request, curriculum_id: int, course_pk: int):
+    """
+    POST   /military/api/v1/curriculum/curricula/{id}/courses/{course_pk}/instructor/  {"user_id"}
+    DELETE /military/api/v1/curriculum/curricula/{id}/courses/{course_pk}/instructor/
+
+    มอบหมาย/ถอด "เจ้าของวิชา" (is_owner=True ใน CurriculumCourseInstructor)
+    — เดิมไม่มีช่องทางนี้เลยในแอปพลิเคชัน (มีแค่ api_co_instructors ที่ต้อง
+    เป็น owner อยู่แล้วถึงจะเพิ่มคนอื่นได้ = ไก่กับไข่ ไม่มีใครเป็น owner
+    คนแรกได้เลยนอกจากเข้า Django admin โดยตรง) ทำให้อาจารย์ที่ควรสอนวิชานั้น
+    มองไม่เห็นวิชา/รายชื่อนักเรียนใน /instructor เลยแม้แต่น้อย เพราะ
+    api_my_courses กรองจาก CurriculumCourseInstructor เท่านั้น — endpoint
+    นี้ให้ prep_school (ผู้สร้างหลักสูตร ทราบว่าใครสอนวิชาไหน) มอบหมายได้เอง
+    ไม่ต้องพึ่ง Django admin
+
+    ตั้ง owner ใหม่ = แทนที่ owner เดิม (ถ้ามี) เสมอ มีได้แค่ 1 คนต่อวิชา —
+    จะเพิ่มผู้ช่วยสอนคนอื่นได้ต้องให้ owner เพิ่มเองผ่าน api_co_instructors
+    อีกที (สงวนสิทธิ์นั้นไว้กับ owner ตามเดิม ไม่เปลี่ยน)
+
+    ⚠️ ผู้ใช้ที่จะมอบหมายต้องมี role="instructor" อยู่แล้วในระบบ ไม่งั้น
+    endpoint ฝั่ง /instructor/* อื่นๆ ทั้งหมด (require_role ROLE_INSTRUCTOR)
+    จะยังบล็อกเขาอยู่ดีแม้จะมี CurriculumCourseInstructor row แล้วก็ตาม
+    """
+    from military_profile.permissions import ROLE_INSTRUCTOR
+    from .models import CurriculumCourseInstructor
+    from .services.grading_service import sync_course_access_role
+
+    c, err = _get_curriculum_scoped(request, curriculum_id)
+    if err:
+        return err
+    if c.status == "closed":
+        return JsonResponse({"error": "แก้ไขผู้สอนไม่ได้ เพราะหลักสูตรนี้ปิดรุ่นแล้ว"}, status=409)
+
+    try:
+        cc = c.courses.get(pk=course_pk)
+    except CurriculumCourse.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    existing_owner = cc.instructors.filter(is_owner=True).first()
+
+    if request.method == "DELETE":
+        if existing_owner:
+            sync_course_access_role(cc.course_id, existing_owner.user, add=False)
+            existing_owner.delete()
+        return JsonResponse({"deleted": True})
+
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    user_id = data.get("user_id")
+    try:
+        target_user = User.objects.get(pk=user_id)
+    except (User.DoesNotExist, TypeError, ValueError):
+        return JsonResponse({"error": "ไม่พบผู้ใช้นี้"}, status=404)
+
+    target_profile = getattr(target_user, "military_profile", None)
+    if not target_profile or target_profile.role != ROLE_INSTRUCTOR:
+        return JsonResponse({"error": "มอบหมายได้เฉพาะผู้ใช้ที่มีสิทธิ์ role ครูอาจารย์ (instructor) เท่านั้น"}, status=400)
+
+    if existing_owner and existing_owner.user_id != target_user.id:
+        sync_course_access_role(cc.course_id, existing_owner.user, add=False)
+        existing_owner.delete()
+    elif existing_owner and existing_owner.user_id == target_user.id:
+        return JsonResponse({
+            "user_id": target_user.id,
+            "username": target_user.username,
+            "full_name": target_profile.full_name_th if target_profile else target_user.username,
+        })
+
+    CurriculumCourseInstructor.objects.create(
+        curriculum_course=cc, user=target_user, is_owner=True, added_by=request.user,
+    )
+    sync_course_access_role(cc.course_id, target_user, add=True)
+    return JsonResponse({
+        "user_id": target_user.id,
+        "username": target_user.username,
+        "full_name": target_profile.full_name_th if target_profile else target_user.username,
+    }, status=201)
 
 
 @csrf_exempt

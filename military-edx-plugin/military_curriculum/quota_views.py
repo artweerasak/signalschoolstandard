@@ -19,7 +19,7 @@ from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
-from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL
+from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL
 
 from .models import (
     Curriculum, CurriculumEnrollmentRequest, CurriculumOrgQuota, ranks_in_range,
@@ -354,16 +354,20 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
     return JsonResponse({"organization_id": org.id, "organization_name": org.name, "quota": oq.quota})
 
 
-@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+@require_role([ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL, ROLE_ADMIN])
 def api_curriculum_personnel_search(request):
     """
-    GET /military/api/v1/curriculum/personnel-search/?q=&organization_id=&army_region=&curriculum_id=&page=&page_size=
+    GET /military/api/v1/curriculum/personnel-search/?q=&organization_id=&army_region=&curriculum_id=&role=&page=&page_size=
 
     ค้นหากำลังพลข้ามหน่วยทั้งหมด (ชื่อหรือหน่วย) — ใช้ในหน้าบรรจุกำลังพลของ
     prep_personnel เพื่อเลือกคนแบบค้นหา+multi-select แทนพิมพ์ user_id เอง
     ต่างจาก api_admin_users (military_profile) ที่ org_admin ถูกบังคับเห็นแค่
     หน่วยตัวเอง เพราะ prep_personnel ต้องเห็นข้ามหน่วยเสมอ (เหมือน
-    api_quota_demand_report/api_eligible_density_report)
+    api_quota_demand_report/api_eligible_density_report) — prep_school ใช้
+    endpoint นี้ด้วยเพื่อค้นหาครูอาจารย์ (role=instructor) ตอนมอบหมายผู้สอน
+    วิชา (ดู api_curriculum_course_instructor ใน curriculum_views.py)
+
+    role = กรองเฉพาะ role นั้น (เช่น instructor) — ใช้ตอนหาคนมาเป็นผู้สอน
 
     curriculum_id = กรองให้เหลือเฉพาะคนที่เข้าเกณฑ์คุณสมบัติของหลักสูตรนั้น
     (ยศ/ประเภทบุคลากรตรงตาม eligible_rank_min–max/eligible_personnel_type)
@@ -385,6 +389,10 @@ def api_curriculum_personnel_search(request):
     from military_profile.models import MilitaryUserProfile
 
     qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin")).select_related("organization")
+
+    role_filter = request.GET.get("role", "").strip()
+    if role_filter:
+        qs = qs.filter(role=role_filter)
 
     q = request.GET.get("q", "").strip()
     if q:
