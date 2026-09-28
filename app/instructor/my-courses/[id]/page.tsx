@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { api, RosterRow, CoInstructorRow } from "@/lib/api"
+import { api, RosterRow, CoInstructorRow, PersonnelSearchRow } from "@/lib/api"
 
 type Tab = "roster" | "co-instructors"
 
@@ -38,7 +38,9 @@ export default function CurriculumCourseDetailPage() {
   const [savingGrade, setSavingGrade] = useState(false)
   const [gradeFormError, setGradeFormError] = useState("")
 
-  const [newCoInstructorId, setNewCoInstructorId] = useState("")
+  const [coInstructorQuery, setCoInstructorQuery] = useState("")
+  const [coInstructorResults, setCoInstructorResults] = useState<PersonnelSearchRow[]>([])
+  const [searchingCoInstructor, setSearchingCoInstructor] = useState(false)
   const [addingCoInstructor, setAddingCoInstructor] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
 
@@ -104,14 +106,25 @@ export default function CurriculumCourseDetailPage() {
     }
   }
 
-  const handleAddCoInstructor = async () => {
-    const userId = Number(newCoInstructorId)
-    if (!userId) { setError("กรุณากรอกรหัสผู้ใช้ (user_id) ให้ถูกต้อง"); return }
+  useEffect(() => {
+    if (tab !== "co-instructors" || !coInstructorQuery.trim()) { setCoInstructorResults([]); return }
+    const t = setTimeout(() => {
+      setSearchingCoInstructor(true)
+      api.searchPersonnel({ q: coInstructorQuery.trim(), role: "instructor", page_size: 20 })
+        .then(r => setCoInstructorResults(r.results))
+        .catch(() => setCoInstructorResults([]))
+        .finally(() => setSearchingCoInstructor(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [coInstructorQuery, tab])
+
+  const handleAddCoInstructor = async (userId: number) => {
     setAddingCoInstructor(true)
     setError("")
     try {
       await api.addCoInstructor(curriculumCourseId, userId)
-      setNewCoInstructorId("")
+      setCoInstructorQuery("")
+      setCoInstructorResults([])
       loadCoInstructors()
     } catch (err) {
       setError(err instanceof Error ? err.message : "เพิ่มไม่สำเร็จ")
@@ -213,14 +226,31 @@ export default function CurriculumCourseDetailPage() {
 
       {tab === "co-instructors" && (
         <div className="bg-white rounded-xl shadow-sm border p-5 space-y-4">
-          <div className="flex gap-2">
-            <input type="text" placeholder="รหัสผู้ใช้ (user_id) ของผู้ช่วยสอน" value={newCoInstructorId}
-              onChange={e => setNewCoInstructorId(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-            <button onClick={handleAddCoInstructor} disabled={addingCoInstructor}
-              className="bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
-              เพิ่ม
-            </button>
+          <div>
+            <p className="text-xs text-[#9a92a8] mb-2">
+              ค้นหาชื่ออาจารย์ (ต้องมีสิทธิ์ role ครูอาจารย์ในระบบก่อน) — ผู้ช่วยสอนที่เพิ่มจะเห็น/ให้คะแนนได้ทุกคนในวิชานี้เหมือนกันหมด
+              ยังแยกตามหัวข้อย่อยไม่ได้ ถ้าสอนคนละหัวข้อ แนะนำตั้งชื่อ &ldquo;รายการคะแนน&rdquo; ตอนกรอกคะแนนให้ระบุหัวข้อ/ผู้สอนกำกับไว้แทน
+            </p>
+            <input type="text" placeholder="พิมพ์ชื่ออาจารย์ที่ต้องการค้นหา..." value={coInstructorQuery}
+              onChange={e => setCoInstructorQuery(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+            {coInstructorQuery.trim() && (
+              <div className="mt-1 border border-gray-200 rounded-lg divide-y max-h-56 overflow-y-auto">
+                {searchingCoInstructor ? (
+                  <p className="px-3 py-2 text-sm text-[#9a92a8]">กำลังค้นหา...</p>
+                ) : coInstructorResults.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-[#9a92a8]">ไม่พบอาจารย์ที่ตรงกับคำค้นหา</p>
+                ) : (
+                  coInstructorResults.map(p => (
+                    <button type="button" key={p.id} disabled={addingCoInstructor} onClick={() => handleAddCoInstructor(p.id)}
+                      className="w-full text-left px-3 py-2 hover:bg-[#f7f5fa] text-sm disabled:opacity-50">
+                      <p className="font-medium text-[#2D0F42]">{p.full_name}</p>
+                      <p className="text-xs text-[#9a92a8]">{p.organization_name || p.unit}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {loadingCoInstructors ? (
