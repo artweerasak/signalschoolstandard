@@ -12,7 +12,7 @@ curriculum_views.py ที่ prep_school เห็นเฉพาะหน่�
 ตามคำแนะนำ risk mitigation ในแผน
 """
 import json
-from datetime import date
+from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.models import Q
@@ -328,13 +328,22 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
 @require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
 def api_curriculum_personnel_search(request):
     """
-    GET /military/api/v1/curriculum/personnel-search/?q=&organization_id=&army_region=&page=&page_size=
+    GET /military/api/v1/curriculum/personnel-search/?q=&organization_id=&army_region=&curriculum_id=&page=&page_size=
 
     ค้นหากำลังพลข้ามหน่วยทั้งหมด (ชื่อหรือหน่วย) — ใช้ในหน้าบรรจุกำลังพลของ
     prep_personnel เพื่อเลือกคนแบบค้นหา+multi-select แทนพิมพ์ user_id เอง
     ต่างจาก api_admin_users (military_profile) ที่ org_admin ถูกบังคับเห็นแค่
     หน่วยตัวเอง เพราะ prep_personnel ต้องเห็นข้ามหน่วยเสมอ (เหมือน
     api_quota_demand_report/api_eligible_density_report)
+
+    curriculum_id = กรองให้เหลือเฉพาะคนที่เข้าเกณฑ์คุณสมบัติของหลักสูตรนั้น
+    (ยศ/ประเภทบุคลากรตรงตาม eligible_rank_min–max/eligible_personnel_type)
+    เพื่อให้เจ้าหน้าที่หารายชื่อได้แคบลงตอนบรรจุ — ใช้ตรรกะเดียวกับ
+    api_eligible_density_report แต่ *ไม่* ตัดคนที่ยังตรวจสอบระยะเวลาครองยศ
+    ไม่ได้ (ไม่มี rank_effective_date) ออกไปด้วย เพราะการบรรจุจริงไม่ได้บังคับ
+    ตามเกณฑ์นี้อยู่แล้ว (ดู cascade_enroll_student) — ตัดออกเฉพาะคนที่ทราบ
+    ชัดเจนว่าครองยศมาไม่ถึงเกณฑ์ (มี rank_effective_date แต่ยังไม่ถึง) เท่านั้น
+    ไม่งั้นจะซ่อนคนที่มีสิทธิ์จริงแต่แค่ยังไม่ได้กรอกข้อมูลไปโดยไม่ได้ตั้งใจ
 
     organization_id = กรองเฉพาะหน่วยนั้นแบบเป๊ะๆ (ต่างจาก army_region ที่กรอง
     ทั้งทัพภาค) — เรียกโดยไม่ส่ง q เลยได้ เพื่อดูรายชื่อทั้งหน่วยมาเลือกทีละ
@@ -368,6 +377,27 @@ def api_curriculum_personnel_search(request):
                 Q(organization__army_region=region)
                 | (Q(organization__isnull=True) & Q(army_region=region))
             )
+
+    curriculum_id_for_eligibility = request.GET.get("curriculum_id", "").strip()
+    if curriculum_id_for_eligibility:
+        try:
+            elig_curriculum = Curriculum.objects.get(pk=int(curriculum_id_for_eligibility))
+        except (Curriculum.DoesNotExist, ValueError):
+            elig_curriculum = None
+        if elig_curriculum:
+            if elig_curriculum.eligible_personnel_type:
+                qs = qs.filter(personnel_type=elig_curriculum.eligible_personnel_type)
+            if elig_curriculum.eligible_rank_min or elig_curriculum.eligible_rank_max:
+                qs = qs.filter(rank__in=ranks_in_range(
+                    elig_curriculum.eligible_rank_min, elig_curriculum.eligible_rank_max,
+                ))
+            if elig_curriculum.eligible_min_years_in_rank:
+                cutoff = date.today() - timedelta(
+                    days=round(elig_curriculum.eligible_min_years_in_rank * 365.25)
+                )
+                # ตัดออกเฉพาะคนที่ทราบชัดว่าครองยศมาไม่ถึงเกณฑ์ — คนที่ไม่มี
+                # rank_effective_date เลยยังไม่ถูกตัดออก (ดู docstring ด้านบน)
+                qs = qs.exclude(rank_effective_date__isnull=False, rank_effective_date__gt=cutoff)
 
     try:
         page = max(1, int(request.GET.get("page", 1)))

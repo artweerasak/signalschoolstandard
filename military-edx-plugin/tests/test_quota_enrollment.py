@@ -24,7 +24,7 @@ from military_profile.models import MilitaryUserProfile, Organization, encrypt_f
 User = get_user_model()
 
 
-def _make_user(username, role, organization=None, army_region=""):
+def _make_user(username, role, organization=None, army_region="", rank="", rank_effective_date=None, personnel_type="military"):
     user = User.objects.create_user(username=username, password="testpass123")
     MilitaryUserProfile.objects.create(
         user=user,
@@ -35,6 +35,9 @@ def _make_user(username, role, organization=None, army_region=""):
         role=role,
         organization=organization,
         army_region=army_region,
+        rank=rank,
+        rank_effective_date=rank_effective_date,
+        personnel_type=personnel_type,
     )
     return user
 
@@ -500,3 +503,51 @@ class TestPersonnelSearch:
         assert any("org_browse_in_unit_1" in n for n in names)
         assert any("org_browse_in_unit_2" in n for n in names)
         assert not any("org_browse_other_unit" in n for n in names)
+
+    def test_curriculum_id_narrows_to_eligible_rank_and_type(self, db, prep_personnel_user, organization):
+        c = Curriculum.objects.create(
+            name="หลักสูตรกรองสิทธิ์", batch_code="1", academic_year=2570,
+            organization=organization, created_by=prep_personnel_user,
+            eligible_rank_min="CPL", eligible_rank_max="SGT2", eligible_personnel_type="military",
+        )
+        _make_user("elig_in_range", "student", organization, rank="SGT2")
+        _make_user("elig_below_range", "student", organization, rank="PVT")
+        _make_user("elig_wrong_type", "student", organization, rank="CPL", personnel_type="civilian")
+
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/personnel-search/?curriculum_id={c.id}")
+        names = {r["full_name"] for r in resp.json()["results"]}
+        assert any("elig_in_range" in n for n in names)
+        assert not any("elig_below_range" in n for n in names)
+        assert not any("elig_wrong_type" in n for n in names)
+
+    def test_curriculum_id_keeps_unverified_years_in_rank_but_drops_confirmed_too_new(self, db, prep_personnel_user, organization):
+        import datetime
+        c = Curriculum.objects.create(
+            name="หลักสูตรกรองปีครองยศ", batch_code="1", academic_year=2570,
+            organization=organization, created_by=prep_personnel_user,
+            eligible_rank_min="CSGT", eligible_rank_max="CSGT", eligible_min_years_in_rank=2,
+        )
+        old_enough = datetime.date.today() - datetime.timedelta(days=3 * 365)
+        too_recent = datetime.date.today() - datetime.timedelta(days=30)
+        _make_user("years_veteran", "student", organization, rank="CSGT", rank_effective_date=old_enough)
+        _make_user("years_too_new", "student", organization, rank="CSGT", rank_effective_date=too_recent)
+        _make_user("years_unverified", "student", organization, rank="CSGT", rank_effective_date=None)
+
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/personnel-search/?curriculum_id={c.id}")
+        names = {r["full_name"] for r in resp.json()["results"]}
+        assert any("years_veteran" in n for n in names)
+        assert any("years_unverified" in n for n in names)
+        assert not any("years_too_new" in n for n in names)
+
+    def test_curriculum_id_ignored_when_curriculum_not_found(self, db, prep_personnel_user, organization):
+        _make_user("elig_fallback_user", "student", organization)
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get("/military/api/v1/curriculum/personnel-search/?curriculum_id=999999")
+        assert resp.status_code == 200
+        names = {r["full_name"] for r in resp.json()["results"]}
+        assert any("elig_fallback_user" in n for n in names)
