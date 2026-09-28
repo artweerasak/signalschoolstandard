@@ -159,12 +159,14 @@ def api_eligible_density_report(request):
 
     นับกำลังพลที่ยศอยู่ในช่วง eligible_rank_min–eligible_rank_max และ
     personnel_type ตรงกับ eligible_personnel_type ของหลักสูตร (ว่าง =
-    ไม่จำกัดด้านนั้น) ถ้าหลักสูตรกำหนด eligible_min_years_in_rank ด้วย จะ
-    เทียบกับ rank_effective_date ของแต่ละคน — คนที่ยศ/ประเภทตรงเกณฑ์แต่ไม่มี
-    rank_effective_date ให้ตรวจสอบระยะเวลาครองยศไม่ได้ จะถูกนับแยกเป็น
-    needs_verification_count (ไม่นับเป็นทั้งเข้าเกณฑ์และไม่เข้าเกณฑ์) เพื่อให้
-    หน่วยตามไปเก็บข้อมูลกำลังพลของตัวเองให้ครบ (ดู EditRankSection ที่กำลังพล
-    กรอกเองได้ใน /my/profile)
+    ไม่จำกัดด้านนั้น) ถ้าหลักสูตรกำหนด eligible_min_years_in_rank เป็นค่า
+    มากกว่า 0 ด้วย จะเทียบกับ rank_effective_date ของแต่ละคน — คนที่ยศ/ประเภท
+    ตรงเกณฑ์แต่ไม่มี rank_effective_date ให้ตรวจสอบระยะเวลาครองยศไม่ได้ จะถูก
+    นับแยกเป็น needs_verification_count (ไม่นับเป็นทั้งเข้าเกณฑ์และไม่เข้าเกณฑ์)
+    เพื่อให้หน่วยตามไปเก็บข้อมูลกำลังพลของตัวเองให้ครบ (ดู EditRankSection ที่
+    กำลังพลกรอกเองได้ใน /my/profile) — ถ้า eligible_min_years_in_rank เป็น 0
+    หรือไม่ได้ตั้งไว้เลย ถือว่าไม่มีเงื่อนไขระยะเวลาครองยศ จะไม่ไปเช็ค
+    rank_effective_date เลย (0 ปีทุกคนก็ผ่านอยู่แล้วไม่ว่าจะครองยศมานานเท่าไร)
     """
     if request.method != "GET":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -216,7 +218,7 @@ def api_eligible_density_report(request):
         })
         bucket["total_in_scope"] += 1
 
-        if min_years is not None:
+        if min_years:
             if not p.rank_effective_date:
                 bucket["needs_verification_count"] += 1
                 continue
