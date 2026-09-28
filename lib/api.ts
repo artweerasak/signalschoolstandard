@@ -478,6 +478,7 @@ export interface EvaluationStatusRow {
 export interface EvaluationStatusDashboard {
   curriculum_id: number
   curriculum_name: string
+  has_required_form: boolean
   results: EvaluationStatusRow[]
   count: number
 }

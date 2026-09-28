@@ -222,7 +222,13 @@ export default function EvaluatorCurriculumPage() {
         )}
       </Card>
 
-      {dashboard && (
+      {dashboard && !dashboard.has_required_form && (
+        <Card className="p-5 text-sm text-[#6b6478]">
+          ยังไม่ได้สร้างแบบประเมินบังคับระดับหลักสูตรสำหรับหลักสูตรนี้ — สร้างแบบประเมินก่อนถึงจะเริ่มติดตามสถานะรายบุคคลได้
+        </Card>
+      )}
+
+      {dashboard && dashboard.has_required_form && (
         <Card className="overflow-hidden">
           <div className="p-4 border-b border-[#f0ecf6]"><h2 className="font-semibold text-[#2D0F42]">สถานะรายบุคคล (ระดับหลักสูตรรวม)</h2></div>
           <table className="w-full text-sm">
