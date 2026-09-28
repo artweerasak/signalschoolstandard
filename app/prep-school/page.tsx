@@ -37,6 +37,15 @@ const RANK_CHOICES = [
 const PERSONNEL_TYPE_CHOICES = [
   ["military", "ทหาร"], ["civilian", "ลูกจ้างประจำ"], ["government", "พนักงานราชการ"],
 ]
+// ต้องตรงกับ CURRICULUM_CATEGORY_CHOICES ใน military_curriculum/models.py เป๊ะ
+const CURRICULUM_CATEGORY_CHOICES = [
+  ["nco_basic", "นายสิบชั้นต้น"],
+  ["nco_senior", "นายสิบชั้นสูง (อาวุโส)"],
+  ["officer_company", "นายทหารสัญญาบัตร ชั้นนายร้อย"],
+  ["officer_field", "นายทหารสัญญาบัตร ชั้นนายพัน"],
+  ["officer_senior", "นายทหารสัญญาบัตร ชั้นนายพล/เสนาธิการ"],
+  ["other", "อื่นๆ"],
+]
 
 interface FormData {
   name: string
@@ -49,13 +58,17 @@ interface FormData {
   eligible_rank_max: string
   eligible_min_years_in_rank: string
   eligible_personnel_type: string
+  category: string
+  eligible_prerequisite_categories: string[]
   quota_total: number
 }
 const EMPTY_FORM: FormData = {
   name: "", batch_code: "", academic_year: new Date().getFullYear() + 543,
   start_date: "", end_date: "",
   eligible_rank_class: "", eligible_rank_min: "", eligible_rank_max: "",
-  eligible_min_years_in_rank: "", eligible_personnel_type: "", quota_total: 0,
+  eligible_min_years_in_rank: "", eligible_personnel_type: "",
+  category: "", eligible_prerequisite_categories: [],
+  quota_total: 0,
 }
 
 export default function PrepSchoolPage() {
@@ -252,6 +265,45 @@ export default function PrepSchoolPage() {
                   <input type="text" placeholder="เช่น ต้องผ่านหลักสูตรพื้นฐานมาก่อน" value={form.eligible_rank_class}
                     onChange={e => setForm({ ...form, eligible_rank_class: e.target.value })}
                     className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+              </div>
+              <div className="border-t border-[#e6e1ee] pt-4">
+                <p className="text-sm font-semibold text-[#2D0F42] mb-1">ประเภทหลักสูตร (ไม่บังคับ)</p>
+                <p className="text-xs text-[#9a92a8] mb-3">
+                  ใช้จับคู่ว่าหลักสูตรนี้เป็นประเภทเดียวกับหลักสูตรอื่นไหม แม้ชื่อ/รุ่นจะต่างกันไปในแต่ละปี
+                  (เช่น &ldquo;นายสิบชั้นต้นผ่านสื่อฯ&rdquo; กับ &ldquo;นายสิบชั้นต้นเร่งรัด&rdquo; เป็นประเภทเดียวกันได้) —
+                  ใช้กับเงื่อนไข &ldquo;ต้องผ่านหลักสูตรประเภทนี้มาก่อน&rdquo; ของหลักสูตรอื่น
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">หลักสูตรนี้เป็นประเภท</label>
+                  <select value={form.category}
+                    onChange={e => setForm({ ...form, category: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+                    <option value="">— ไม่ระบุ —</option>
+                    {CURRICULUM_CATEGORY_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  </select>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">ต้องผ่านหลักสูตรประเภทใดมาก่อน</label>
+                  <div className="flex flex-wrap gap-2">
+                    {CURRICULUM_CATEGORY_CHOICES.map(([code, label]) => {
+                      const checked = form.eligible_prerequisite_categories.includes(code)
+                      return (
+                        <label key={code} className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer ${
+                          checked ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-[#4a4456] border-[#d9d2e6]"
+                        }`}>
+                          <input type="checkbox" className="hidden" checked={checked}
+                            onChange={() => setForm(f => ({
+                              ...f,
+                              eligible_prerequisite_categories: checked
+                                ? f.eligible_prerequisite_categories.filter(c => c !== code)
+                                : [...f.eligible_prerequisite_categories, code],
+                            }))} />
+                          {label}
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
               <div>

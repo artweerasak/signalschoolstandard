@@ -247,9 +247,18 @@ export interface CurriculumSummary {
   organization_name: string | null
   status: "draft" | "submitted" | "active" | "closed"
   quota_total: number
+  category: string
+  category_display: string | null
   course_count: number
   created_at: string | null
   submitted_at: string | null
+}
+
+export interface LegacyCurriculumCompletionRow {
+  category: string
+  category_display: string
+  note: string
+  created_at?: string | null
 }
 
 export interface CurriculumDetail extends CurriculumSummary {
@@ -261,6 +270,8 @@ export interface CurriculumDetail extends CurriculumSummary {
   eligible_min_years_in_rank: number | null
   eligible_personnel_type: string
   eligible_personnel_type_display: string | null
+  eligible_prerequisite_categories: string[]
+  eligible_prerequisite_categories_display: string[]
   region_quotas: CurriculumRegionQuota[]
   courses: CurriculumCourseItem[]
 }
@@ -316,6 +327,8 @@ export interface EligibleDensityReport {
   eligible_min_years_in_rank: number | null
   eligible_personnel_type: string
   eligible_personnel_type_display: string | null
+  eligible_prerequisite_categories: string[]
+  eligible_prerequisite_categories_display: string[]
   national: {
     eligible_count: number
     needs_verification_count: number
@@ -343,6 +356,7 @@ export interface OrgQuotaReport {
   eligible_rank_min_display: string | null
   eligible_rank_max_display: string | null
   eligible_personnel_type_display: string | null
+  eligible_prerequisite_categories_display: string[]
 }
 
 export interface PersonnelSearchRow {
@@ -1040,6 +1054,7 @@ export const api = {
     start_date?: string | null; end_date?: string | null
     eligible_rank_class?: string; eligible_rank_min?: string; eligible_rank_max?: string
     eligible_min_years_in_rank?: number | null; eligible_personnel_type?: string; quota_total?: number
+    category?: string; eligible_prerequisite_categories?: string[]
     region_quotas?: { army_region: string; quota: number }[]
   }) => fetchAPIPost<CurriculumDetail>("api/v1/curriculum/curricula/", body),
   getCurriculum: (id: number) => fetchAPI<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`),
@@ -1048,7 +1063,16 @@ export const api = {
     start_date: string | null; end_date: string | null
     eligible_rank_class: string; eligible_rank_min: string; eligible_rank_max: string
     eligible_min_years_in_rank: number | null; eligible_personnel_type: string; quota_total: number
+    category: string; eligible_prerequisite_categories: string[]
   }>) => fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`, body, "PATCH"),
+  deleteCurriculum: (id: number) =>
+    fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/curricula/${id}/`, {}, "DELETE"),
+  getMyLegacyCurriculumCompletions: () =>
+    fetchAPI<{ results: LegacyCurriculumCompletionRow[]; count: number }>("api/v1/curriculum/my/legacy-completions/"),
+  setMyLegacyCurriculumCompletion: (category: string, note?: string) =>
+    fetchAPIPost<LegacyCurriculumCompletionRow>("api/v1/curriculum/my/legacy-completions/", { category, note }),
+  deleteMyLegacyCurriculumCompletion: (category: string) =>
+    fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/my/legacy-completions/?category=${encodeURIComponent(category)}`, {}, "DELETE"),
   addCurriculumCourse: (id: number, body: {
     course_id: string; display_name: string; credit_hours: number; credits: number
     assessment_type?: "score" | "pass_fail"; passing_score?: number

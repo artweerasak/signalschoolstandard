@@ -13,6 +13,42 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "ร่าง", submitted: "ส่งให้แผนกเตรียมพลแล้ว", active: "ใช้งาน", closed: "ปิดรุ่น",
 }
 
+const RANK_CHOICES = [
+  ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
+  ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],["CSGT_S","จ่าสิบเอกพิเศษ"],
+  ["WO1","พันจ่าตรี"],["WO2","พันจ่าโท"],["WO3","พันจ่าเอก"],
+  ["2LT","ร้อยตรี"],["1LT","ร้อยโท"],["CPT","ร้อยเอก"],
+  ["MAJ","พันตรี"],["LTCOL","พันโท"],["COL","พันเอก"],["COL_S","พันเอกพิเศษ"],
+  ["BGEN","พลตรี"],["MGEN","พลโท"],["GEN","พลเอก"],
+]
+const PERSONNEL_TYPE_CHOICES = [
+  ["military", "ทหาร"], ["civilian", "ลูกจ้างประจำ"], ["government", "พนักงานราชการ"],
+]
+const CURRICULUM_CATEGORY_CHOICES = [
+  ["nco_basic", "นายสิบชั้นต้น"],
+  ["nco_senior", "นายสิบชั้นสูง (อาวุโส)"],
+  ["officer_company", "นายทหารสัญญาบัตร ชั้นนายร้อย"],
+  ["officer_field", "นายทหารสัญญาบัตร ชั้นนายพัน"],
+  ["officer_senior", "นายทหารสัญญาบัตร ชั้นนายพล/เสนาธิการ"],
+  ["other", "อื่นๆ"],
+]
+
+interface EditForm {
+  name: string
+  batch_code: string
+  academic_year: number
+  start_date: string
+  end_date: string
+  eligible_rank_min: string
+  eligible_rank_max: string
+  eligible_min_years_in_rank: string
+  eligible_personnel_type: string
+  eligible_rank_class: string
+  category: string
+  eligible_prerequisite_categories: string[]
+  quota_total: number
+}
+
 interface CourseForm {
   course_id: string
   display_name: string
@@ -44,6 +80,12 @@ export default function CurriculumDetailPage() {
   const [courseResults, setCourseResults] = useState<Course[]>([])
   const [searchingCourses, setSearchingCourses] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editForm, setEditForm] = useState<EditForm | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState("")
+  const [deleting, setDeleting] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -141,6 +183,79 @@ export default function CurriculumDetailPage() {
     }
   }
 
+  const openEdit = () => {
+    if (!curriculum) return
+    setEditForm({
+      name: curriculum.name,
+      batch_code: curriculum.batch_code,
+      academic_year: curriculum.academic_year,
+      start_date: curriculum.start_date || "",
+      end_date: curriculum.end_date || "",
+      eligible_rank_min: curriculum.eligible_rank_min,
+      eligible_rank_max: curriculum.eligible_rank_max,
+      eligible_min_years_in_rank: curriculum.eligible_min_years_in_rank != null ? String(curriculum.eligible_min_years_in_rank) : "",
+      eligible_personnel_type: curriculum.eligible_personnel_type,
+      eligible_rank_class: curriculum.eligible_rank_class,
+      category: curriculum.category,
+      eligible_prerequisite_categories: curriculum.eligible_prerequisite_categories,
+      quota_total: curriculum.quota_total,
+    })
+    setEditError("")
+    setShowEditModal(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editForm) return
+    if (!editForm.name.trim()) { setEditError("กรุณากรอกชื่อหลักสูตร"); return }
+    if (!editForm.batch_code.trim()) { setEditError("กรุณากรอกรุ่นที่"); return }
+    if (editForm.start_date && editForm.end_date && editForm.start_date > editForm.end_date) {
+      setEditError("วันเริ่มหลักสูตรต้องไม่หลังวันจบหลักสูตร"); return
+    }
+    setSavingEdit(true)
+    setEditError("")
+    try {
+      const body: Record<string, unknown> = {
+        name: editForm.name.trim(),
+        batch_code: editForm.batch_code.trim(),
+        academic_year: editForm.academic_year,
+        start_date: editForm.start_date || null,
+        end_date: editForm.end_date || null,
+      }
+      if (isDraft) {
+        Object.assign(body, {
+          eligible_rank_min: editForm.eligible_rank_min,
+          eligible_rank_max: editForm.eligible_rank_max,
+          eligible_min_years_in_rank: editForm.eligible_min_years_in_rank ? Number(editForm.eligible_min_years_in_rank) : null,
+          eligible_personnel_type: editForm.eligible_personnel_type,
+          eligible_rank_class: editForm.eligible_rank_class,
+          category: editForm.category,
+          eligible_prerequisite_categories: editForm.eligible_prerequisite_categories,
+          quota_total: editForm.quota_total,
+        })
+      }
+      await api.updateCurriculum(curriculumId, body)
+      setShowEditModal(false)
+      load()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm(`ยืนยันลบหลักสูตร "${curriculum?.name}" ทิ้งทั้งหมด? ลบแล้วกู้คืนไม่ได้ (ลบได้เฉพาะสถานะร่างเท่านั้น)`)) return
+    setDeleting(true)
+    setError("")
+    try {
+      await api.deleteCurriculum(curriculumId)
+      router.push("/prep-school")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ลบไม่สำเร็จ")
+      setDeleting(false)
+    }
+  }
+
   if (loading) return <div className="flex h-full items-center justify-center text-[#9a92a8]">กำลังโหลด...</div>
   if (error) return <div className="p-6"><div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div></div>
   if (!curriculum) return null
@@ -154,12 +269,24 @@ export default function CurriculumDetailPage() {
             <h1 className="text-2xl font-bold text-[#4A1A6B]">{curriculum.name}</h1>
             <p className="text-sm text-[#6b6478] mt-1">รุ่น {curriculum.batch_code} · ปีการศึกษา {curriculum.academic_year}</p>
           </div>
-          {isDraft && (
-            <button onClick={handleSubmit} disabled={submitting}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50">
-              {submitting ? "กำลังส่ง..." : "ส่งให้แผนกเตรียมพล →"}
+          <div className="flex items-center gap-2">
+            <button onClick={openEdit}
+              className="border border-[#d9d2e6] text-[#4A1A6B] hover:bg-[#f7f5fa] text-sm font-medium px-4 py-2.5 rounded-lg">
+              แก้ไขข้อมูล
             </button>
-          )}
+            {isDraft && (
+              <button onClick={handleDelete} disabled={deleting}
+                className="border border-red-200 text-red-600 hover:bg-red-50 text-sm font-medium px-4 py-2.5 rounded-lg disabled:opacity-50">
+                {deleting ? "กำลังลบ..." : "ลบหลักสูตร"}
+              </button>
+            )}
+            {isDraft && (
+              <button onClick={handleSubmit} disabled={submitting}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50">
+                {submitting ? "กำลังส่ง..." : "ส่งให้แผนกเตรียมพล →"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -184,6 +311,10 @@ export default function CurriculumDetailPage() {
               : "ไม่ระบุ"}
           </p>
         </div>
+        <div>
+          <p className="text-[#9a92a8] text-xs">ประเภทหลักสูตร</p>
+          <p className="font-medium mt-0.5">{curriculum.category_display || "ไม่ระบุ"}</p>
+        </div>
         <div className="col-span-2 md:col-span-4">
           <p className="text-[#9a92a8] text-xs">คุณสมบัติผู้เข้าเรียน</p>
           <p className="font-medium mt-0.5">
@@ -193,11 +324,22 @@ export default function CurriculumDetailPage() {
             {curriculum.eligible_min_years_in_rank ? ` · ครองยศมาแล้วอย่างน้อย ${curriculum.eligible_min_years_in_rank} ปี` : ""}
             {curriculum.eligible_personnel_type_display ? ` · ${curriculum.eligible_personnel_type_display}` : ""}
           </p>
+          {curriculum.eligible_prerequisite_categories_display.length > 0 && (
+            <p className="text-sm text-[#4a4456] mt-1">
+              ต้องผ่านมาก่อน: {curriculum.eligible_prerequisite_categories_display.join(", ")}
+            </p>
+          )}
           {curriculum.eligible_rank_class && (
             <p className="text-xs text-[#9a92a8] mt-1">หมายเหตุ: {curriculum.eligible_rank_class}</p>
           )}
         </div>
       </div>
+
+      {!isDraft && (
+        <p className="text-xs text-[#9a92a8]">
+          แก้ไขได้เฉพาะชื่อ/รุ่น/ปี/ระยะเวลาหลักสูตร — เกณฑ์คุณสมบัติ/ประเภทหลักสูตร/โควตา แก้ไขได้เฉพาะตอนสถานะร่างเท่านั้น
+        </p>
+      )}
 
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-[#2D0F42]">วิชาในหลักสูตร ({curriculum.courses.length})</h2>
@@ -355,6 +497,155 @@ export default function CurriculumDetailPage() {
               <button onClick={handleSaveCourse} disabled={savingCourse}
                 className="bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-medium px-6 py-2 rounded-lg disabled:opacity-50">
                 {savingCourse ? "กำลังบันทึก..." : "เพิ่มวิชา"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && editForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
+              <h3 className="font-bold text-[#2D0F42]">แก้ไขข้อมูลหลักสูตร</h3>
+              <button onClick={() => setShowEditModal(false)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {editError && (
+                <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-3 py-2 rounded-xl text-sm">{editError}</div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ชื่อหลักสูตร</label>
+                <input type="text" value={editForm.name}
+                  onChange={e => setEditForm(f => f && { ...f, name: e.target.value })}
+                  className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">รุ่นที่</label>
+                  <input type="text" value={editForm.batch_code}
+                    onChange={e => setEditForm(f => f && { ...f, batch_code: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">ปีการศึกษา (พ.ศ.)</label>
+                  <input type="number" value={editForm.academic_year}
+                    onChange={e => setEditForm(f => f && { ...f, academic_year: Number(e.target.value) })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">วันเริ่มหลักสูตร</label>
+                  <input type="date" value={editForm.start_date}
+                    onChange={e => setEditForm(f => f && { ...f, start_date: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">วันจบหลักสูตร</label>
+                  <input type="date" value={editForm.end_date}
+                    onChange={e => setEditForm(f => f && { ...f, end_date: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+              </div>
+
+              {isDraft ? (
+                <div className="border-t border-[#e6e1ee] pt-4 space-y-3">
+                  <p className="text-sm font-semibold text-[#2D0F42]">เกณฑ์คุณสมบัติ/ประเภทหลักสูตร/โควตา</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-[#4a4456] mb-1">ยศต่ำสุด</label>
+                      <select value={editForm.eligible_rank_min}
+                        onChange={e => setEditForm(f => f && { ...f, eligible_rank_min: e.target.value })}
+                        className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                        <option value="">ไม่จำกัด</option>
+                        {RANK_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#4a4456] mb-1">ยศสูงสุด</label>
+                      <select value={editForm.eligible_rank_max}
+                        onChange={e => setEditForm(f => f && { ...f, eligible_rank_max: e.target.value })}
+                        className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                        <option value="">ไม่จำกัด</option>
+                        {RANK_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-[#4a4456] mb-1">ระยะเวลาครองยศขั้นต่ำ (ปี)</label>
+                      <input type="number" min={0} placeholder="ไม่จำกัด" value={editForm.eligible_min_years_in_rank}
+                        onChange={e => setEditForm(f => f && { ...f, eligible_min_years_in_rank: e.target.value })}
+                        className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[#4a4456] mb-1">ประเภทบุคลากร</label>
+                      <select value={editForm.eligible_personnel_type}
+                        onChange={e => setEditForm(f => f && { ...f, eligible_personnel_type: e.target.value })}
+                        className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                        <option value="">ทุกประเภท</option>
+                        {PERSONNEL_TYPE_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">หลักสูตรนี้เป็นประเภท</label>
+                    <select value={editForm.category}
+                      onChange={e => setEditForm(f => f && { ...f, category: e.target.value })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                      <option value="">— ไม่ระบุ —</option>
+                      {CURRICULUM_CATEGORY_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ต้องผ่านหลักสูตรประเภทใดมาก่อน</label>
+                    <div className="flex flex-wrap gap-2">
+                      {CURRICULUM_CATEGORY_CHOICES.map(([code, label]) => {
+                        const checked = editForm.eligible_prerequisite_categories.includes(code)
+                        return (
+                          <label key={code} className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer ${
+                            checked ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-[#4a4456] border-[#d9d2e6]"
+                          }`}>
+                            <input type="checkbox" className="hidden" checked={checked}
+                              onChange={() => setEditForm(f => f && {
+                                ...f,
+                                eligible_prerequisite_categories: checked
+                                  ? f.eligible_prerequisite_categories.filter(c => c !== code)
+                                  : [...f.eligible_prerequisite_categories, code],
+                              })} />
+                            {label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">คำอธิบายเพิ่มเติม (ไม่บังคับ)</label>
+                    <input type="text" value={editForm.eligible_rank_class}
+                      onChange={e => setEditForm(f => f && { ...f, eligible_rank_class: e.target.value })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#4a4456] mb-1">โควตารวม</label>
+                    <input type="number" value={editForm.quota_total}
+                      onChange={e => setEditForm(f => f && { ...f, quota_total: Number(e.target.value) })}
+                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#9a92a8] border-t border-[#e6e1ee] pt-3">
+                  เกณฑ์คุณสมบัติ/ประเภทหลักสูตร/โควตา แก้ไขได้เฉพาะตอนสถานะร่างเท่านั้น
+                </p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
+              <button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-sm text-[#6b6478] hover:text-[#2D0F42]">
+                ยกเลิก
+              </button>
+              <button onClick={handleSaveEdit} disabled={savingEdit}
+                className="bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-medium px-6 py-2 rounded-lg disabled:opacity-50">
+                {savingEdit ? "กำลังบันทึก..." : "บันทึก"}
               </button>
             </div>
           </div>

@@ -51,6 +51,9 @@ export default function EnrollPage() {
             ? `ยศ ${r.eligible_rank_min_display || "ไม่จำกัด"} – ${r.eligible_rank_max_display || "ไม่จำกัด"}`
             : null,
           r.eligible_personnel_type_display,
+          r.eligible_prerequisite_categories_display.length > 0
+            ? `ต้องผ่านมาก่อน: ${r.eligible_prerequisite_categories_display.join(", ")}`
+            : null,
         ].filter(Boolean).join(" · "))
       })
       .catch(() => {})
