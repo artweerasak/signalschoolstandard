@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { api, CurriculumDetail, Course } from "@/lib/api"
+import { api, CurriculumDetail, Course, PersonnelSearchRow } from "@/lib/api"
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "ร่าง", submitted: "ส่งให้แผนกเตรียมพลแล้ว", active: "ใช้งาน", closed: "ปิดรุ่น",
@@ -86,6 +86,13 @@ export default function CurriculumDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState("")
   const [deleting, setDeleting] = useState(false)
+
+  const [assigningCourseId, setAssigningCourseId] = useState<number | null>(null)
+  const [instructorQuery, setInstructorQuery] = useState("")
+  const [instructorResults, setInstructorResults] = useState<PersonnelSearchRow[]>([])
+  const [searchingInstructor, setSearchingInstructor] = useState(false)
+  const [savingInstructor, setSavingInstructor] = useState(false)
+  const [instructorError, setInstructorError] = useState("")
 
   const load = () => {
     setLoading(true)
@@ -256,6 +263,50 @@ export default function CurriculumDetailPage() {
     }
   }
 
+  const openAssignInstructor = (courseId: number) => {
+    setAssigningCourseId(courseId)
+    setInstructorQuery("")
+    setInstructorResults([])
+    setInstructorError("")
+  }
+
+  useEffect(() => {
+    if (assigningCourseId === null || !instructorQuery.trim()) { setInstructorResults([]); return }
+    const t = setTimeout(() => {
+      setSearchingInstructor(true)
+      api.searchPersonnel({ q: instructorQuery.trim(), role: "instructor", page_size: 20 })
+        .then(r => setInstructorResults(r.results))
+        .catch(() => setInstructorResults([]))
+        .finally(() => setSearchingInstructor(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [instructorQuery, assigningCourseId])
+
+  const handlePickInstructor = async (person: PersonnelSearchRow) => {
+    if (assigningCourseId === null) return
+    setSavingInstructor(true)
+    setInstructorError("")
+    try {
+      await api.setCourseInstructor(curriculumId, assigningCourseId, person.id)
+      setAssigningCourseId(null)
+      load()
+    } catch (err) {
+      setInstructorError(err instanceof Error ? err.message : "มอบหมายไม่สำเร็จ")
+    } finally {
+      setSavingInstructor(false)
+    }
+  }
+
+  const handleRemoveInstructor = async (courseId: number) => {
+    if (!confirm("ยืนยันถอดผู้สอนคนนี้ออกจากวิชานี้?")) return
+    try {
+      await api.removeCourseInstructor(curriculumId, courseId)
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ถอดผู้สอนไม่สำเร็จ")
+    }
+  }
+
   if (loading) return <div className="flex h-full items-center justify-center text-[#9a92a8]">กำลังโหลด...</div>
   if (error) return <div className="p-6"><div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div></div>
   if (!curriculum) return null
@@ -371,6 +422,7 @@ export default function CurriculumDetailPage() {
                 <th className="px-4 py-3">ชั่วโมง</th>
                 <th className="px-4 py-3">หน่วยกิต</th>
                 <th className="px-4 py-3">การวัดผล</th>
+                <th className="px-4 py-3">ผู้สอน</th>
                 {isDraft && <th className="px-4 py-3">จัดการ</th>}
               </tr>
             </thead>
@@ -385,6 +437,26 @@ export default function CurriculumDetailPage() {
                   <td className="px-4 py-3 text-[#6b6478]">
                     {c.assessment_type === "score" ? `คะแนน (ผ่าน ${c.passing_score ?? "-"})` : "ผ่าน/ไม่ผ่าน"}
                   </td>
+                  <td className="px-4 py-3">
+                    {c.owner_name ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[#2D0F42]">{c.owner_name}</span>
+                        {canAddCourse && (
+                          <>
+                            <button onClick={() => openAssignInstructor(c.id)} className="text-[#4A1A6B] hover:underline text-xs">เปลี่ยน</button>
+                            <button onClick={() => handleRemoveInstructor(c.id)} className="text-red-500 hover:underline text-xs">ถอด</button>
+                          </>
+                        )}
+                      </div>
+                    ) : canAddCourse ? (
+                      <button onClick={() => openAssignInstructor(c.id)}
+                        className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                        ⚠️ ยังไม่ได้มอบหมาย — มอบหมายผู้สอน
+                      </button>
+                    ) : (
+                      <span className="text-xs text-[#9a92a8]">ยังไม่ได้มอบหมาย</span>
+                    )}
+                  </td>
                   {isDraft && (
                     <td className="px-4 py-3">
                       <button onClick={() => handleRemoveCourse(c.id)} className="text-red-500 hover:underline text-xs font-medium">
@@ -398,6 +470,43 @@ export default function CurriculumDetailPage() {
           </table>
         )}
       </div>
+
+      {assigningCourseId !== null && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
+              <h3 className="font-bold text-[#2D0F42]">มอบหมายผู้สอน</h3>
+              <button onClick={() => setAssigningCourseId(null)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              {instructorError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{instructorError}</div>
+              )}
+              <p className="text-xs text-[#9a92a8]">ค้นหาจากรายชื่อผู้ใช้ที่มีสิทธิ์ครูอาจารย์ (role=instructor) ในระบบเท่านั้น</p>
+              <input type="text" placeholder="พิมพ์ชื่ออาจารย์ที่ต้องการค้นหา..." value={instructorQuery}
+                onChange={e => setInstructorQuery(e.target.value)} autoFocus
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg divide-y">
+                {searchingInstructor ? (
+                  <p className="px-3 py-2 text-sm text-[#9a92a8]">กำลังค้นหา...</p>
+                ) : !instructorQuery.trim() ? (
+                  <p className="px-3 py-2 text-sm text-[#9a92a8]">พิมพ์ชื่อเพื่อค้นหา</p>
+                ) : instructorResults.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-[#9a92a8]">ไม่พบอาจารย์ที่ตรงกับคำค้นหา (ต้องมี role=instructor ในระบบก่อน)</p>
+                ) : (
+                  instructorResults.map(p => (
+                    <button type="button" key={p.id} disabled={savingInstructor} onClick={() => handlePickInstructor(p)}
+                      className="w-full text-left px-3 py-2 hover:bg-[#f7f5fa] text-sm disabled:opacity-50">
+                      <p className="font-medium text-[#2D0F42]">{p.full_name}</p>
+                      <p className="text-xs text-[#9a92a8]">{p.organization_name || p.unit}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCourseModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
