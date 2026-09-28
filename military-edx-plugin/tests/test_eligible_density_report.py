@@ -120,6 +120,25 @@ class TestEligibleDensityReport:
         assert row["needs_verification_count"] == 1
         assert row["total_in_scope"] == 3
 
+    def test_zero_min_years_in_rank_does_not_require_verification(self, db, org_a, prep_personnel_user, curriculum_factory):
+        # eligible_min_years_in_rank=0 หมายถึง "ไม่มีเงื่อนไขระยะเวลาครองยศ"
+        # (0 ปีทุกคนก็ผ่านอยู่แล้ว) จึงไม่ควรไปเช็ค rank_effective_date เลย —
+        # ก่อนแก้บั๊กนี้ คนที่ยังไม่ได้กรอก rank_effective_date (ส่วนใหญ่ในระบบ
+        # จริง เพราะเป็นฟิลด์ self-edit ใหม่) จะตกไปอยู่ needs_verification_count
+        # ทำให้ eligible_count ดูเป็น 0 ทั้งที่มีคนเข้าเกณฑ์ยศจริงจำนวนมาก
+        c = curriculum_factory(eligible_rank_min="CPL", eligible_rank_max="SGT2", eligible_min_years_in_rank=0)
+
+        _make_user("t_zero_years_unverified", "student", org_a, rank="CPL", rank_effective_date=None)
+        _make_user("t_zero_years_verified", "student", org_a, rank="SGT2", rank_effective_date=TODAY)
+
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/reports/eligible-density/?curriculum_id={c.id}")
+        assert resp.status_code == 200
+        row = resp.json()["results"][0]
+        assert row["eligible_count"] == 2
+        assert row["needs_verification_count"] == 0
+
     def test_filters_by_personnel_type(self, db, org_a, prep_personnel_user, curriculum_factory):
         c = curriculum_factory(eligible_personnel_type="civilian")
 
