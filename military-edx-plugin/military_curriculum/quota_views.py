@@ -15,6 +15,7 @@ import json
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
@@ -498,8 +499,12 @@ def api_curriculum_enroll(request, curriculum_id: int):
         mode = "sync"
     else:
         from .tasks import cascade_enroll_student_task
-        for req in created_requests:
-            cascade_enroll_student_task.delay(req.id)
+        request_ids = [r.id for r in created_requests]
+        # ต้องรอให้ transaction ของ get_or_create ด้านบน commit ก่อน ไม่งั้น
+        # worker อาจหยิบงานไปประมวลผลเร็วเกินไปจนยังมองไม่เห็น row ที่เพิ่ง
+        # สร้าง (ได้ "not found" เงียบๆ ค้างเป็น pending ถาวร — เจอเหตุการณ์จริง
+        # 74 คนค้าง 3 วันเพราะจุดนี้ก่อนแก้)
+        transaction.on_commit(lambda: [cascade_enroll_student_task.delay(rid) for rid in request_ids])
         mode = "async"
 
     return JsonResponse({
@@ -548,8 +553,8 @@ def api_catch_up_enrollment(request, curriculum_id: int):
         mode = "sync"
     else:
         from .tasks import cascade_enroll_student_task
-        for req in requests_to_process:
-            cascade_enroll_student_task.delay(req.id)
+        request_ids = [r.id for r in requests_to_process]
+        transaction.on_commit(lambda: [cascade_enroll_student_task.delay(rid) for rid in request_ids])
         mode = "async"
 
     return JsonResponse({"mode": mode, "affected_count": len(requests_to_process)})
@@ -583,7 +588,13 @@ def api_enrollment_request_detail(request, request_id: int):
 @require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
 def api_enrollment_request_retry(request, request_id: int):
     """POST /military/api/v1/curriculum/enrollment-requests/{id}/retry/
-    retry เฉพาะวิชาที่ failed ในคำขอนี้ (ไม่แตะวิชาที่สำเร็จแล้ว)"""
+
+    status=partial_failed/failed: retry เฉพาะวิชาที่ failed (ไม่แตะวิชาที่
+    สำเร็จแล้ว) — status=pending: รัน cascade_enroll_student เต็มรูปแบบ
+    (ยังไม่เคยพยายาม enroll วิชาไหนเลย ไม่มี result_detail ให้ retry เจาะจง
+    เป็นรายวิชา) เผื่อคำขอค้างสถานะ pending ถาวรจากปัญหา task dispatch
+    (ดู tasks.py + transaction.on_commit ใน api_curriculum_enroll — ตอนนี้แก้
+    ต้นตอแล้ว แต่เก็บทางแก้ไขด้วยมือนี้ไว้เผื่อเจอเคสค้างอีกในอนาคต)"""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -592,9 +603,12 @@ def api_enrollment_request_retry(request, request_id: int):
     except CurriculumEnrollmentRequest.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
-    if req.status not in ("partial_failed", "failed"):
-        return JsonResponse({"error": "retry ได้เฉพาะคำขอที่มีวิชาล้มเหลวเท่านั้น"}, status=409)
+    if req.status == "pending":
+        cascade_enroll_student(req)
+    elif req.status in ("partial_failed", "failed"):
+        retry_failed_courses(req)
+    else:
+        return JsonResponse({"error": "retry ได้เฉพาะคำขอที่ pending หรือมีวิชาล้มเหลวเท่านั้น"}, status=409)
 
-    retry_failed_courses(req)
     req.refresh_from_db()
     return JsonResponse({"id": req.id, "status": req.status, "result_detail": req.result_detail})
