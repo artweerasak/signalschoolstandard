@@ -19,7 +19,7 @@ from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
-from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL
+from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL, ROLE_INSTRUCTOR
 
 from .models import (
     Curriculum, CurriculumEnrollmentRequest, CurriculumOrgQuota, ranks_in_range,
@@ -354,7 +354,7 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
     return JsonResponse({"organization_id": org.id, "organization_name": org.name, "quota": oq.quota})
 
 
-@require_role([ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL, ROLE_ADMIN])
+@require_role([ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL, ROLE_INSTRUCTOR, ROLE_ADMIN])
 def api_curriculum_personnel_search(request):
     """
     GET /military/api/v1/curriculum/personnel-search/?q=&organization_id=&army_region=&curriculum_id=&role=&page=&page_size=
@@ -365,7 +365,9 @@ def api_curriculum_personnel_search(request):
     หน่วยตัวเอง เพราะ prep_personnel ต้องเห็นข้ามหน่วยเสมอ (เหมือน
     api_quota_demand_report/api_eligible_density_report) — prep_school ใช้
     endpoint นี้ด้วยเพื่อค้นหาครูอาจารย์ (role=instructor) ตอนมอบหมายผู้สอน
-    วิชา (ดู api_curriculum_course_instructor ใน curriculum_views.py)
+    วิชา (ดู api_curriculum_course_instructor ใน curriculum_views.py) และ
+    instructor เองก็ใช้ค้นหาครูอาจารย์คนอื่นตอนเพิ่มผู้ช่วยสอน (ดู
+    api_co_instructors ใน grading_views.py)
 
     role = กรองเฉพาะ role นั้น (เช่น instructor) — ใช้ตอนหาคนมาเป็นผู้สอน
 

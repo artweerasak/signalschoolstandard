@@ -187,3 +187,17 @@ class TestPersonnelSearchRoleFilterForInstructorAssignment:
         names = {r["full_name"] for r in resp.json()["results"]}
         assert any("instr_search_target" in n for n in names)
         assert not any("instr_search_noise" in n for n in names)
+
+    def test_instructor_can_also_search_by_role(self, db, organization):
+        """instructor เองก็ต้องค้นหาได้ด้วย ตอนเพิ่มผู้ช่วยสอนให้วิชาตัวเอง
+        (ดู app/instructor/my-courses/[id]/page.tsx) — เคยลืมใส่ ROLE_INSTRUCTOR
+        ใน require_role ตอนแรก ทำให้ค้นหาแล้วเงียบๆ ไม่ขึ้นผลเลย (frontend
+        กลืน error 403 กลายเป็น list ว่าง)"""
+        instructor_caller = _make_user("instr_search_caller", "instructor", organization)
+        _make_user("instr_search_target_2", "instructor", organization)
+        client = Client()
+        client.force_login(instructor_caller)
+        resp = client.get("/military/api/v1/curriculum/personnel-search/?role=instructor")
+        assert resp.status_code == 200
+        names = {r["full_name"] for r in resp.json()["results"]}
+        assert any("instr_search_target_2" in n for n in names)
