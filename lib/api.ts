@@ -234,6 +234,8 @@ export interface CurriculumCourseItem {
   assessment_type: "score" | "pass_fail"
   passing_score: string | null
   is_required: boolean
+  owner_user_id: number | null
+  owner_name: string | null
 }
 
 export interface CurriculumSummary {
@@ -1105,16 +1107,25 @@ export const api = {
     fetchAPIPost<{ organization_id: number; organization_name: string; quota: number }>(
       `api/v1/curriculum/curricula/${curriculumId}/org-quotas/`, { organization_id: organizationId, quota }
     ),
-  searchPersonnel: (params: { q?: string; organization_id?: number; army_region?: string; curriculum_id?: number; page?: number; page_size?: number }) => {
+  searchPersonnel: (params: { q?: string; organization_id?: number; army_region?: string; curriculum_id?: number; role?: string; page?: number; page_size?: number }) => {
     const qs = new URLSearchParams()
     if (params.q) qs.set("q", params.q)
     if (params.organization_id) qs.set("organization_id", String(params.organization_id))
     if (params.army_region) qs.set("army_region", params.army_region)
     if (params.curriculum_id) qs.set("curriculum_id", String(params.curriculum_id))
+    if (params.role) qs.set("role", params.role)
     if (params.page) qs.set("page", String(params.page))
     if (params.page_size) qs.set("page_size", String(params.page_size))
     return fetchAPI<PersonnelSearchResponse>(`api/v1/curriculum/personnel-search/?${qs}`)
   },
+  setCourseInstructor: (curriculumId: number, coursePk: number, userId: number) =>
+    fetchAPIPost<{ user_id: number; username: string; full_name: string }>(
+      `api/v1/curriculum/curricula/${curriculumId}/courses/${coursePk}/instructor/`, { user_id: userId }
+    ),
+  removeCourseInstructor: (curriculumId: number, coursePk: number) =>
+    fetchAPIPost<{ deleted: boolean }>(
+      `api/v1/curriculum/curricula/${curriculumId}/courses/${coursePk}/instructor/`, {}, "DELETE"
+    ),
   previewEnrollStudents: (curriculumId: number, studentIds: number[]) =>
     fetchAPIPost<EnrollDryRunResult>(`api/v1/curriculum/curricula/${curriculumId}/enroll/`, {
       student_ids: studentIds, dry_run: true,
