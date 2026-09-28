@@ -176,6 +176,25 @@ class TestCoInstructors:
         ).exists()
         mock_sync.assert_called_once_with(curriculum_course.course_id, other_instructor, add=True)
 
+    def test_add_co_instructor_with_topic_note(self, db, owner_user, curriculum_course, other_instructor):
+        """วิชาเดียวรวมหลายหัวข้อย่อยที่มีผู้รับผิดชอบต่างกัน — topic_note เป็น
+        ป้ายกำกับอิสระ ไม่ใช่การจำกัดสิทธิ์จริง"""
+        with patch("military_curriculum.grading_views.sync_course_access_role"):
+            client = Client()
+            client.force_login(owner_user)
+            resp = client.post(
+                f"/military/api/v1/curriculum/my-courses/{curriculum_course.id}/co-instructors/",
+                data=json.dumps({"user_id": other_instructor.id, "topic_note": "หัวข้อการซ่อมบำรุง"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 201, resp.content
+        assert resp.json()["topic_note"] == "หัวข้อการซ่อมบำรุง"
+
+        get_resp = client.get(f"/military/api/v1/curriculum/my-courses/{curriculum_course.id}/co-instructors/")
+        row = next(r for r in get_resp.json()["results"] if r["user_id"] == other_instructor.id)
+        assert row["topic_note"] == "หัวข้อการซ่อมบำรุง"
+        assert row["full_name"]
+
     def test_non_owner_co_instructor_cannot_add_another(self, db, owner_user, curriculum_course, other_instructor, organization):
         # ทำให้ other_instructor เป็น co-instructor (ไม่ใช่ owner) ก่อน
         CurriculumCourseInstructor.objects.create(
