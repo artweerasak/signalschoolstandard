@@ -269,7 +269,14 @@ def api_evaluation_form_responses_summary(request, form_id: int):
 def api_evaluation_status_dashboard(request):
     """GET /military/api/v1/curriculum/dashboard/evaluation-status/?curriculum_id=
     matrix นักเรียน × แบบประเมินบังคับ — evaluator/prep_school เห็นได้เสมอ
-    ไม่ถูก gate (gate มีไว้ป้องกันฝั่ง student เท่านั้น)"""
+    ไม่ถูก gate (gate มีไว้ป้องกันฝั่ง student เท่านั้น)
+
+    is_evaluation_complete() คืน True โดย default เมื่อไม่มีแบบประเมินบังคับ
+    เลย (ตั้งใจให้ผ่าน gate ใบรับรอง ไม่บล็อกเพราะยังไม่มีแบบฟอร์ม) — แต่
+    ความหมายนั้นใช้ตรงนี้ไม่ได้ เพราะจะทำให้ทุกคนขึ้น "ประเมินแล้ว" ทั้งที่
+    ยังไม่เคยมีแบบประเมินให้ทำเลย จึงคืน has_required_form แยกต่างหาก ให้
+    ฝั่ง frontend รู้ว่าต้องไม่แสดงสถานะ "ประเมินแล้ว/ยังไม่ประเมิน" ถ้ายังไม่มี
+    แบบฟอร์มบังคับระดับหลักสูตรจริง"""
     if request.method != "GET":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -281,6 +288,10 @@ def api_evaluation_status_dashboard(request):
         curriculum = Curriculum.objects.get(pk=curriculum_id)
     except Curriculum.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
+
+    has_required_form = EvaluationForm.objects.filter(
+        is_active=True, is_required=True, level="curriculum", curriculum=curriculum,
+    ).exists()
 
     student_ids = set(
         curriculum.enrollment_requests.filter(status__in=["completed", "partial_failed"])
@@ -300,6 +311,7 @@ def api_evaluation_status_dashboard(request):
     return JsonResponse({
         "curriculum_id": curriculum.id,
         "curriculum_name": curriculum.name,
+        "has_required_form": has_required_form,
         "results": rows,
         "count": len(rows),
     })

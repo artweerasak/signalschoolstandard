@@ -320,6 +320,25 @@ class TestEvaluationStatusDashboard:
         resp = client.get(f"/military/api/v1/curriculum/dashboard/evaluation-status/?curriculum_id={curriculum.id}")
         assert resp.json()["results"][0]["curriculum_evaluation_complete"] is True
 
+    def test_dashboard_flags_when_no_required_form_exists_yet(self, db, evaluator_user, curriculum, student_user):
+        # เคยเป็นบั๊ก: is_evaluation_complete() คืน True by default เมื่อไม่มี
+        # แบบประเมินบังคับเลย (ตั้งใจให้ผ่าน gate ใบรับรอง) ทำให้หน้า evaluator
+        # ขึ้น "ประเมินแล้ว" กับทุกคนทั้งที่ยังไม่เคยสร้างแบบประเมินเลยสักฟอร์ม
+        client = Client()
+        client.force_login(evaluator_user)
+        resp = client.get(f"/military/api/v1/curriculum/dashboard/evaluation-status/?curriculum_id={curriculum.id}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_required_form"] is False
+        assert body["results"][0]["curriculum_evaluation_complete"] is True
+
+        EvaluationForm.objects.create(
+            curriculum=curriculum, level="curriculum", title="x", schema={},
+            is_required=True, created_by=evaluator_user,
+        )
+        resp = client.get(f"/military/api/v1/curriculum/dashboard/evaluation-status/?curriculum_id={curriculum.id}")
+        assert resp.json()["has_required_form"] is True
+
 
 class TestStudentFacingEndpoints:
     def test_any_role_can_see_pending_evaluations(self, db, curriculum, evaluator_user, student_user):
