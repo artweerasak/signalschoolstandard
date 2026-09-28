@@ -11,6 +11,7 @@ from .curriculum_views import (
     api_curriculum_detail,
     api_curriculum_courses,
     api_curriculum_course_detail,
+    api_curriculum_course_instructor,
     api_curriculum_submit,
     api_school_curricula,
     api_school_curriculum_roster,
@@ -65,6 +66,7 @@ urlpatterns = [
     path("api/v1/curriculum/curricula/<int:curriculum_id>/", api_curriculum_detail, name="api_curriculum_detail"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/courses/", api_curriculum_courses, name="api_curriculum_courses"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/courses/<int:course_pk>/", api_curriculum_course_detail, name="api_curriculum_course_detail"),
+    path("api/v1/curriculum/curricula/<int:curriculum_id>/courses/<int:course_pk>/instructor/", api_curriculum_course_instructor, name="api_curriculum_course_instructor"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/submit/", api_curriculum_submit, name="api_curriculum_submit"),
 
     # โรงเรียนทหารสื่อสาร (org id=161) — org_admin ของหน่วยนี้เห็น roster
