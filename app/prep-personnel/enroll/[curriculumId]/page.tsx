@@ -19,6 +19,9 @@ export default function EnrollPage() {
 
   const [nationalQuota, setNationalQuota] = useState<number | null>(null)
   const [alreadyEnrolled, setAlreadyEnrolled] = useState(0)
+  const [hasEligibilityCriteria, setHasEligibilityCriteria] = useState(false)
+  const [eligibilityLabel, setEligibilityLabel] = useState("")
+  const [eligibleOnly, setEligibleOnly] = useState(true)
 
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [orgFilter, setOrgFilter] = useState("")
@@ -39,7 +42,17 @@ export default function EnrollPage() {
   useEffect(() => {
     if (!curriculumId) return
     api.getOrgQuotas(curriculumId)
-      .then(r => { setNationalQuota(r.national_quota); setAlreadyEnrolled(r.national_requested) })
+      .then(r => {
+        setNationalQuota(r.national_quota)
+        setAlreadyEnrolled(r.national_requested)
+        setHasEligibilityCriteria(r.has_eligibility_criteria)
+        setEligibilityLabel([
+          r.eligible_rank_min_display || r.eligible_rank_max_display
+            ? `ยศ ${r.eligible_rank_min_display || "ไม่จำกัด"} – ${r.eligible_rank_max_display || "ไม่จำกัด"}`
+            : null,
+          r.eligible_personnel_type_display,
+        ].filter(Boolean).join(" · "))
+      })
       .catch(() => {})
     api.organizationsPublic().then(r => setOrgs(r.results)).catch(() => {})
   }, [curriculumId])
@@ -51,6 +64,7 @@ export default function EnrollPage() {
       api.searchPersonnel({
         q: searchQuery.trim() || undefined,
         organization_id: orgFilter ? Number(orgFilter) : undefined,
+        curriculum_id: hasEligibilityCriteria && eligibleOnly ? curriculumId : undefined,
         page_size: orgFilter ? 100 : 20,
       })
         .then(r => setSearchResults(r.results))
@@ -58,7 +72,7 @@ export default function EnrollPage() {
         .finally(() => setSearching(false))
     }, 300)
     return () => clearTimeout(t)
-  }, [searchQuery, orgFilter])
+  }, [searchQuery, orgFilter, eligibleOnly, hasEligibilityCriteria, curriculumId])
 
   const selectAllShown = () => {
     setSelected(prev => {
@@ -205,6 +219,17 @@ export default function EnrollPage() {
             กำลังแสดงรายชื่อทั้งหมดของหน่วยที่เลือก — พิมพ์ชื่อเพิ่มในช่องค้นหาเพื่อกรองให้แคบลงได้
             <button type="button" onClick={() => setOrgFilter("")} className="ml-2 text-[#4A1A6B] hover:underline">ล้างตัวกรองหน่วย</button>
           </p>
+        )}
+
+        {hasEligibilityCriteria && (
+          <label className="flex items-center gap-2 text-sm text-[#4a4456] bg-[#f7f5fa] border border-[#e6e1ee] rounded-lg px-3 py-2">
+            <input type="checkbox" checked={eligibleOnly} onChange={e => setEligibleOnly(e.target.checked)}
+              className="accent-[#4A1A6B]" />
+            <span>
+              แสดงเฉพาะผู้มีสิทธิ์ตามเกณฑ์หลักสูตร
+              {eligibilityLabel && <span className="text-[#9a92a8]"> ({eligibilityLabel})</span>}
+            </span>
+          </label>
         )}
 
         <div className="relative">
