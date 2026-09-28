@@ -286,6 +286,9 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
             }
             for oq in c.org_quotas.select_related("organization").order_by("organization__name")
         ]
+        has_eligibility_criteria = bool(
+            c.eligible_rank_min or c.eligible_rank_max or c.eligible_personnel_type
+        )
         return JsonResponse({
             "curriculum_id": c.id,
             "curriculum_name": c.name,
@@ -293,6 +296,10 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
             "national_requested": sum(requested_by_org.values()),
             "national_filled": sum(filled_by_org.values()),
             "org_quotas": rows,
+            "has_eligibility_criteria": has_eligibility_criteria,
+            "eligible_rank_min_display": c.get_eligible_rank_min_display() if c.eligible_rank_min else None,
+            "eligible_rank_max_display": c.get_eligible_rank_max_display() if c.eligible_rank_max else None,
+            "eligible_personnel_type_display": c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None,
         })
 
     if request.method != "POST":

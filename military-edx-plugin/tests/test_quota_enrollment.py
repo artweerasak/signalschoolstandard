@@ -428,6 +428,29 @@ class TestOrgQuotas:
         assert row["requested"] == 1
         assert row["filled"] == 1
 
+    def test_get_reports_no_eligibility_criteria_when_none_set(self, db, prep_personnel_user, active_curriculum):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/org-quotas/")
+        body = resp.json()
+        assert body["has_eligibility_criteria"] is False
+        assert body["eligible_rank_min_display"] is None
+
+    def test_get_reports_eligibility_criteria_when_set(self, db, prep_personnel_user, organization):
+        creator = _make_user("orgquota_elig_creator", "prep_school", organization)
+        c = Curriculum.objects.create(
+            name="หลักสูตรมีเกณฑ์", batch_code="1", academic_year=2570,
+            organization=organization, created_by=creator, status="active", quota_total=10,
+            eligible_rank_min="CPL", eligible_rank_max="SGT2",
+        )
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{c.id}/org-quotas/")
+        body = resp.json()
+        assert body["has_eligibility_criteria"] is True
+        assert body["eligible_rank_min_display"] == "สิบตรี"
+        assert body["eligible_rank_max_display"] == "สิบเอก"
+
     def test_set_quota_rejects_negative(self, db, prep_personnel_user, active_curriculum, organization):
         client = Client()
         client.force_login(prep_personnel_user)
