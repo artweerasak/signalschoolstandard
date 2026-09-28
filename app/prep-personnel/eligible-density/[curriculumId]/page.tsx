@@ -10,7 +10,20 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
+import { Doughnut } from "react-chartjs-2"
+import { Chart, ArcElement, Tooltip, Legend } from "chart.js"
 import { api, EligibleDensityReport } from "@/lib/api"
+
+Chart.register(ArcElement, Tooltip, Legend)
+
+const REGION_COLORS: Record<string, string> = {
+  "1": "#4A1A6B",
+  "2": "#8B5CF6",
+  "3": "#F59E0B",
+  "4": "#10B981",
+  central: "#3B82F6",
+  none: "#9CA3AF",
+}
 
 const REGION_OPTIONS = [
   { value: "", label: "ทุกทัพภาค" },
@@ -41,14 +54,23 @@ export default function EligibleDensityReportPage() {
 
   const grouped = useMemo(() => {
     if (!report) return []
-    const groups = new Map<string, { label: string; rows: typeof report.results }>()
+    const groups = new Map<string, { key: string; label: string; rows: typeof report.results }>()
     for (const row of report.results) {
       const key = row.army_region || "none"
-      if (!groups.has(key)) groups.set(key, { label: row.army_region_display, rows: [] })
+      if (!groups.has(key)) groups.set(key, { key, label: row.army_region_display, rows: [] })
       groups.get(key)!.rows.push(row)
     }
-    return Array.from(groups.values())
+    return Array.from(groups.values()).sort(
+      (a, b) => b.rows.reduce((s, r) => s + r.eligible_count, 0) - a.rows.reduce((s, r) => s + r.eligible_count, 0)
+    )
   }, [report])
+
+  const regionChartData = useMemo(() => {
+    const withCounts = grouped
+      .map(g => ({ ...g, total: g.rows.reduce((s, r) => s + r.eligible_count, 0) }))
+      .filter(g => g.total > 0)
+    return withCounts
+  }, [grouped])
 
   if (loading) return <div className="flex h-full items-center justify-center text-[#9a92a8]">กำลังโหลด...</div>
   if (error) return <div className="p-6"><div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div></div>
@@ -106,6 +128,58 @@ export default function EligibleDensityReportPage() {
         </div>
       </div>
 
+      {!regionFilter && regionChartData.length > 1 && (
+        <div className="bg-white rounded-xl border shadow-sm p-5 print:border-black print:shadow-none">
+          <h2 className="font-semibold text-[#2D0F42] mb-1">ความคับคั่งแยกตามทัพภาค</h2>
+          <p className="text-xs text-[#9a92a8] mb-4">คลิกที่ทัพภาคเพื่อดูรายละเอียดเป็นรายหน่วยด้านล่าง</p>
+          <div className="flex flex-col md:flex-row items-center gap-6">
+            <div className="w-56 h-56 shrink-0">
+              <Doughnut
+                data={{
+                  labels: regionChartData.map(g => g.label),
+                  datasets: [{
+                    data: regionChartData.map(g => g.total),
+                    backgroundColor: regionChartData.map(g => REGION_COLORS[g.key] || "#9CA3AF"),
+                    borderWidth: 0,
+                    hoverOffset: 6,
+                  }],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  cutout: "65%",
+                  plugins: { legend: { display: false } },
+                  onClick: (_evt, elements) => {
+                    const idx = elements[0]?.index
+                    if (idx === undefined) return
+                    const key = regionChartData[idx].key
+                    setRegionFilter(key === "none" ? "none" : key)
+                  },
+                }}
+              />
+            </div>
+            <div className="flex-1 w-full space-y-2 print:w-full">
+              {regionChartData.map((g, i) => {
+                const total = regionChartData.reduce((s, x) => s + x.total, 0)
+                const pct = total > 0 ? Math.round((g.total / total) * 100) : 0
+                return (
+                  <button key={g.key} onClick={() => setRegionFilter(g.key)}
+                    className="w-full flex items-center gap-3 text-left px-2 py-1.5 rounded-lg hover:bg-[#f7f5fa] print:hover:bg-white">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: REGION_COLORS[g.key] || "#9CA3AF" }} />
+                    <span className="text-sm text-[#2D0F42] flex-1">
+                      {i === 0 && <span className="text-amber-600 font-semibold mr-1">อันดับ 1</span>}
+                      {g.label}
+                    </span>
+                    <span className="text-sm font-semibold text-[#4A1A6B]">{g.total} คน</span>
+                    <span className="text-xs text-[#9a92a8] w-10 text-right">{pct}%</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {grouped.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-[#f0ecf6] py-12 text-center text-[#9a92a8] text-sm">
           ไม่พบกำลังพลที่ตรงเกณฑ์เลย
@@ -128,14 +202,27 @@ export default function EligibleDensityReportPage() {
                 </tr>
               </thead>
               <tbody>
-                {group.rows.map(r => (
+                {group.rows.map((r, i) => {
+                  const maxInGroup = Math.max(...group.rows.map(x => x.eligible_count), 1)
+                  return (
                   <tr key={r.organization_id ?? "none"} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa] print:hover:bg-white">
-                    <td className="px-4 py-3 font-medium">{r.organization_name}</td>
-                    <td className="px-4 py-3 font-semibold text-[#4A1A6B]">{r.eligible_count}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {i === 0 && r.eligible_count > 0 && <span className="text-amber-600 font-semibold mr-1.5">อันดับ 1</span>}
+                      {r.organization_name}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[#4A1A6B] w-8 shrink-0">{r.eligible_count}</span>
+                        <div className="w-24 bg-gray-100 rounded-full h-1.5 overflow-hidden print:hidden">
+                          <div className="h-1.5 rounded-full bg-[#4A1A6B]" style={{ width: `${(r.eligible_count / maxInGroup) * 100}%` }} />
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-amber-600">{r.needs_verification_count || "—"}</td>
                     <td className="px-4 py-3 text-[#6b6478]">{r.total_in_scope}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -89,6 +89,7 @@ export default function QuotaReportPage() {
 
   const usedOrgIds = new Set(report.org_quotas.map(r => r.organization_id))
   const availableOrgs = allOrgs.filter(o => !usedOrgIds.has(o.id))
+  const quotaSum = report.org_quotas.reduce((s, r) => s + r.quota, 0)
 
   return (
     <div className="p-6 space-y-6">
@@ -102,6 +103,11 @@ export default function QuotaReportPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
       )}
 
+      <div className="bg-[#f7f5fa] border border-[#e6e1ee] rounded-xl p-4 text-sm text-[#4a4456] space-y-1.5">
+        <p><span className="font-semibold text-[#2D0F42]">วิธีใช้หน้านี้:</span> ตั้ง "โควตา" คือเป้าจำนวนกำลังพลที่แต่ละหน่วยควรได้เข้าเรียนหลักสูตรนี้ (แก้ไขตอนไหนก็ได้ ไม่ผูกกับตอนสร้างหลักสูตร) — การตั้งโควตาที่นี่<span className="font-medium">ยังไม่ได้บรรจุใครเข้าเรียน</span> ต้องไปที่หน้า "บรรจุกำลังพล" เพื่อเลือกคนแล้วลงทะเบียนจริงอีกที</p>
+        <p><span className="font-semibold text-[#2D0F42]">ยอดขอ</span> = จำนวนคำขอบรรจุที่ส่งเข้าระบบแล้วทั้งหมด (รวมกรณีบางวิชาลงทะเบียนไม่สำเร็จด้วย) &nbsp;·&nbsp; <span className="font-semibold text-[#2D0F42]">บรรจุสำเร็จ</span> = ลงทะเบียนสำเร็จครบทุกวิชาแล้วจริง</p>
+      </div>
+
       <div className="bg-white rounded-xl border shadow-sm p-5">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-medium">ภาพรวมทั้งประเทศ</p>
@@ -110,6 +116,11 @@ export default function QuotaReportPage() {
           </p>
         </div>
         <Bar requested={report.national_requested} quota={report.national_quota} />
+        {quotaSum !== report.national_quota && (
+          <p className="text-xs text-amber-600 mt-2">
+            ⚠️ รวมโควตาที่แบ่งให้แต่ละหน่วยแล้ว ({quotaSum} คน) {quotaSum > report.national_quota ? "เกิน" : "ยังไม่ครบ"}เป้าหมายรวมทั้งประเทศ ({report.national_quota} คน) — ระบบไม่ได้บังคับให้ตรงกันเป๊ะ แค่แจ้งเตือนให้ตรวจสอบ
+          </p>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm p-5">
@@ -148,8 +159,8 @@ export default function QuotaReportPage() {
               <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
                 <th className="px-4 py-3">หน่วยงาน</th>
                 <th className="px-4 py-3 w-40">โควตา</th>
-                <th className="px-4 py-3">ยอดขอ</th>
-                <th className="px-4 py-3">บรรจุสำเร็จ</th>
+                <th className="px-4 py-3" title="คำขอบรรจุที่ส่งเข้าระบบแล้วทั้งหมด รวมกรณีบางวิชาลงทะเบียนไม่สำเร็จด้วย">ยอดขอ</th>
+                <th className="px-4 py-3" title="ลงทะเบียนสำเร็จครบทุกวิชาแล้วจริง">บรรจุสำเร็จ</th>
                 <th className="px-4 py-3 w-32">สัดส่วน</th>
               </tr>
             </thead>
