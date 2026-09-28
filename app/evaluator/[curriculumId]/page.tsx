@@ -168,7 +168,7 @@ export default function EvaluatorCurriculumPage() {
         <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-4 py-3 rounded-xl text-sm">{error}</div>
       )}
 
-      {dashboard && (
+      {dashboard && dashboard.has_required_form && (
         <Card className="p-5">
           <p className="text-sm text-[#6b6478]">
             ประเมินครบแล้ว <span className="font-mono font-semibold text-[#4A1A6B]">{dashboard.results.filter(r => r.curriculum_evaluation_complete).length} / {dashboard.count}</span> คน
