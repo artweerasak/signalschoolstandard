@@ -10,11 +10,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { Doughnut } from "react-chartjs-2"
-import { Chart, ArcElement, Tooltip, Legend } from "chart.js"
+import { Doughnut, Bar } from "react-chartjs-2"
+import { Chart, ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from "chart.js"
 import { api, EligibleDensityReport } from "@/lib/api"
 
-Chart.register(ArcElement, Tooltip, Legend)
+Chart.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
+
+const UNIT_CHART_LIMIT = 10
 
 const REGION_COLORS: Record<string, string> = {
   "1": "#4A1A6B",
@@ -192,6 +194,39 @@ export default function EligibleDensityReportPage() {
                 {group.label} <span className="text-[#9a92a8] font-normal text-sm">(เข้าเกณฑ์รวม {group.rows.reduce((s, r) => s + r.eligible_count, 0)} คน)</span>
               </h2>
             </div>
+            {(() => {
+              const withCounts = group.rows.filter(r => r.eligible_count > 0)
+              if (withCounts.length < 2) return null
+              const shown = withCounts.slice(0, UNIT_CHART_LIMIT)
+              return (
+                <div className="p-4 border-b print:hidden" style={{ height: `${Math.max(120, shown.length * 36)}px` }}>
+                  <Bar
+                    data={{
+                      labels: shown.map(r => r.organization_name),
+                      datasets: [{
+                        data: shown.map(r => r.eligible_count),
+                        backgroundColor: REGION_COLORS[group.key] || "#4A1A6B",
+                        borderRadius: 4,
+                        barThickness: 18,
+                      }],
+                    }}
+                    options={{
+                      indexAxis: "y",
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { display: false } },
+                      scales: {
+                        x: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } },
+                        y: { ticks: { font: { size: 11 } } },
+                      },
+                    }}
+                  />
+                  {withCounts.length > UNIT_CHART_LIMIT && (
+                    <p className="text-xs text-[#9a92a8] mt-1">แสดง {UNIT_CHART_LIMIT} หน่วยแรกที่เข้าเกณฑ์มากสุด — ดูครบทุกหน่วยในตารางด้านล่าง</p>
+                  )}
+                </div>
+              )
+            })()}
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#e6e1ee] text-left text-xs text-[#6b6478] uppercase">
