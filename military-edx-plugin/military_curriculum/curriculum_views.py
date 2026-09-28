@@ -11,15 +11,19 @@ import json
 from datetime import date
 
 from django.db import IntegrityError
+from django.db.models import ProtectedError
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
 from django.contrib.auth import get_user_model
 
-from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_SCHOOL
+from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_SCHOOL, _require_login
 from military_profile.models import PERSONNEL_TYPE_CHOICES
 
-from .models import Curriculum, CurriculumCourse, CurriculumRegionQuota, RANK_ORDER
+from .models import (
+    Curriculum, CurriculumCourse, CurriculumRegionQuota, RANK_ORDER,
+    CURRICULUM_CATEGORY_CHOICES, CURRICULUM_CATEGORY_CODES, LegacyCurriculumCompletion,
+)
 from .permissions import require_school_curriculum_read, SIGNAL_SCHOOL_ORG_ID
 
 User = get_user_model()
@@ -106,6 +110,33 @@ def _clean_eligibility_fields(data: dict, existing: Curriculum | None = None) ->
     return updates, None
 
 
+def _clean_category_fields(data: dict, existing: Curriculum | None = None) -> tuple:
+    """เตรียม+ตรวจสอบ category (ประเภทหลักสูตรนี้เอง) และ
+    eligible_prerequisite_categories (ต้องผ่านหลักสูตรประเภทไหนมาก่อน) —
+    คืน (updates, error) แบบเดียวกับ _clean_eligibility_fields"""
+    updates: dict = {}
+
+    if "category" in data:
+        v = (data["category"] or "").strip()
+        if v and v not in CURRICULUM_CATEGORY_CODES:
+            return {}, "category ไม่ถูกต้อง"
+        updates["category"] = v
+
+    if "eligible_prerequisite_categories" in data:
+        raw = data["eligible_prerequisite_categories"]
+        if raw in (None, ""):
+            updates["eligible_prerequisite_categories"] = []
+        elif isinstance(raw, list):
+            invalid = [v for v in raw if v not in CURRICULUM_CATEGORY_CODES]
+            if invalid:
+                return {}, f"eligible_prerequisite_categories มีค่าไม่ถูกต้อง: {', '.join(invalid)}"
+            updates["eligible_prerequisite_categories"] = list(dict.fromkeys(raw))  # de-dup, คง order
+        else:
+            return {}, "eligible_prerequisite_categories ต้องเป็น list"
+
+    return updates, None
+
+
 def _curriculum_summary(c: Curriculum) -> dict:
     """แปลง Curriculum เป็น dict สำหรับ list view (ไม่รวมวิชาย่อย — ดู detail)"""
     return {
@@ -119,6 +150,8 @@ def _curriculum_summary(c: Curriculum) -> dict:
         "organization_name": c.organization.name if c.organization_id else None,
         "status": c.status,
         "quota_total": c.quota_total,
+        "category": c.category,
+        "category_display": c.get_category_display() if c.category else None,
         "course_count": c.courses.count(),
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
@@ -135,6 +168,12 @@ def _curriculum_detail(c: Curriculum) -> dict:
     data["eligible_min_years_in_rank"] = c.eligible_min_years_in_rank
     data["eligible_personnel_type"] = c.eligible_personnel_type
     data["eligible_personnel_type_display"] = c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None
+    data["category"] = c.category
+    data["category_display"] = c.get_category_display() if c.category else None
+    data["eligible_prerequisite_categories"] = c.eligible_prerequisite_categories
+    data["eligible_prerequisite_categories_display"] = [
+        dict(CURRICULUM_CATEGORY_CHOICES).get(code, code) for code in c.eligible_prerequisite_categories
+    ]
     data["region_quotas"] = [
         {"id": q.id, "army_region": q.army_region, "quota": q.quota}
         for q in c.region_quotas.all()
@@ -220,6 +259,10 @@ def api_curricula(request):
     if date_error:
         return JsonResponse({"error": date_error}, status=400)
 
+    category_fields, category_error = _clean_category_fields(data)
+    if category_error:
+        return JsonResponse({"error": category_error}, status=400)
+
     try:
         c = Curriculum.objects.create(
             name=name,
@@ -233,6 +276,8 @@ def api_curricula(request):
             eligible_rank_max=eligibility.get("eligible_rank_max", ""),
             eligible_min_years_in_rank=eligibility.get("eligible_min_years_in_rank"),
             eligible_personnel_type=eligibility.get("eligible_personnel_type", ""),
+            category=category_fields.get("category", ""),
+            eligible_prerequisite_categories=category_fields.get("eligible_prerequisite_categories", []),
             quota_total=data.get("quota_total") or 0,
             created_by=request.user,
         )
@@ -271,8 +316,18 @@ def _get_curriculum_scoped(request, curriculum_id):
 @require_role([ROLE_PREP_SCHOOL, ROLE_ADMIN])
 def api_curriculum_detail(request, curriculum_id: int):
     """
-    GET   /military/api/v1/curriculum/curricula/{id}/  → detail
-    PATCH /military/api/v1/curriculum/curricula/{id}/  → แก้ไข (เฉพาะ status=draft)
+    GET    /military/api/v1/curriculum/curricula/{id}/  → detail
+    PATCH  /military/api/v1/curriculum/curricula/{id}/  → แก้ไข
+    DELETE /military/api/v1/curriculum/curricula/{id}/  → ลบ (เฉพาะ status=draft)
+
+    PATCH แบ่งเป็น 2 กลุ่ม:
+    - metadata ล้วน (name/batch_code/academic_year/start_date/end_date) —
+      แก้ได้ทุกสถานะ ไม่กระทบตรรกะอื่น (แก้ให้ตามที่ผู้ใช้รายงานว่าพิมพ์ผิด
+      แล้วแก้ไม่ได้เลยแม้จะส่งไปแล้ว)
+    - เกณฑ์คุณสมบัติ/ประเภทหลักสูตร/โควตา (eligible_*, category,
+      eligible_prerequisite_categories, quota_total) — แก้ได้เฉพาะ draft
+      เท่านั้นเหมือนเดิม เพราะกระทบการกรอง/รายงานที่อาจมีคนอ้างอิงไปแล้วหลัง
+      ส่งหลักสูตร (submitted/active)
     """
     c, err = _get_curriculum_scoped(request, curriculum_id)
     if err:
@@ -281,33 +336,61 @@ def api_curriculum_detail(request, curriculum_id: int):
     if request.method == "GET":
         return JsonResponse(_curriculum_detail(c))
 
-    if request.method == "PATCH":
+    if request.method == "DELETE":
         if c.status != "draft":
-            return JsonResponse({"error": "แก้ไขได้เฉพาะหลักสูตรสถานะร่างเท่านั้น"}, status=409)
+            return JsonResponse({"error": "ลบได้เฉพาะหลักสูตรสถานะร่างเท่านั้น"}, status=409)
+        try:
+            c.delete()
+        except ProtectedError:
+            return JsonResponse({"error": "ลบไม่ได้ เพราะมีข้อมูลการบรรจุกำลังพลผูกอยู่แล้ว"}, status=409)
+        return JsonResponse({"deleted": True})
+
+    if request.method == "PATCH":
         try:
             data = json.loads(request.body)
         except (json.JSONDecodeError, ValueError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        for field in ("name", "batch_code", "eligible_rank_class"):
+        RESTRICTED_FIELDS = (
+            "eligible_rank_class", "eligible_rank_min", "eligible_rank_max",
+            "eligible_min_years_in_rank", "eligible_personnel_type",
+            "category", "eligible_prerequisite_categories", "quota_total",
+        )
+        if c.status != "draft" and any(f in data for f in RESTRICTED_FIELDS):
+            return JsonResponse(
+                {"error": "แก้ไขเกณฑ์คุณสมบัติ/ประเภทหลักสูตร/โควตาได้เฉพาะหลักสูตรสถานะร่างเท่านั้น (ชื่อ/รุ่น/ปี/ระยะเวลาแก้ได้ทุกสถานะ)"},
+                status=409,
+            )
+
+        for field in ("name", "batch_code"):
             if field in data:
                 setattr(c, field, (data[field] or "").strip())
         if "academic_year" in data:
             c.academic_year = data["academic_year"]
-        if "quota_total" in data:
-            c.quota_total = data["quota_total"] or 0
-
-        eligibility, elig_error = _clean_eligibility_fields(data, existing=c)
-        if elig_error:
-            return JsonResponse({"error": elig_error}, status=400)
-        for k, v in eligibility.items():
-            setattr(c, k, v)
 
         dates, date_error = _clean_curriculum_dates(data, existing=c)
         if date_error:
             return JsonResponse({"error": date_error}, status=400)
         for k, v in dates.items():
             setattr(c, k, v)
+
+        if c.status == "draft":
+            if "eligible_rank_class" in data:
+                c.eligible_rank_class = (data["eligible_rank_class"] or "").strip()
+            if "quota_total" in data:
+                c.quota_total = data["quota_total"] or 0
+
+            eligibility, elig_error = _clean_eligibility_fields(data, existing=c)
+            if elig_error:
+                return JsonResponse({"error": elig_error}, status=400)
+            for k, v in eligibility.items():
+                setattr(c, k, v)
+
+            category_fields, category_error = _clean_category_fields(data, existing=c)
+            if category_error:
+                return JsonResponse({"error": category_error}, status=400)
+            for k, v in category_fields.items():
+                setattr(c, k, v)
 
         c.save()
         return JsonResponse(_curriculum_detail(c))
@@ -479,3 +562,65 @@ def api_school_curriculum_roster(request, curriculum_id: int):
         "results": results,
         "count": len(results),
     })
+
+
+@csrf_exempt
+@_require_login
+def api_my_legacy_curriculum_completions(request):
+    """
+    GET    /military/api/v1/curriculum/my/legacy-completions/
+    POST   /military/api/v1/curriculum/my/legacy-completions/  {"category": "nco_basic", "note": "..."}
+    DELETE /military/api/v1/curriculum/my/legacy-completions/?category=nco_basic
+
+    กำลังพลกรอกเองได้ว่าเคยผ่านหลักสูตรประเภทไหนมาก่อนที่ระบบนี้จะมีข้อมูล
+    (เช่น จบนายสิบชั้นต้นมาหลายปีก่อนระบบจะเกิด) มีผลทันทีไม่ต้องรออนุมัติ —
+    หลักการเดียวกับ rank/rank_effective_date self-edit ใน
+    military_profile.api_views.api_my_profile_complete (v1, ไม่มี approval
+    gate เพราะ org_admin ยังไม่ถูกแบ่งมอบหน้าที่ชัดเจนในหลายหน่วย) ใช้กัน
+    ไม่ให้คนที่มีสิทธิ์จริงถูกตัดออกจากการค้นหา/รายงานที่มีเงื่อนไข
+    eligible_prerequisite_categories เพียงเพราะไม่มีข้อมูลอิเล็กทรอนิกส์
+    ย้อนหลัง (ดู models.py:has_completed_curriculum_category)
+    """
+    if request.method == "GET":
+        rows = [
+            {
+                "category": r.category,
+                "category_display": r.get_category_display(),
+                "note": r.note,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in LegacyCurriculumCompletion.objects.filter(student=request.user).order_by("category")
+        ]
+        return JsonResponse({"results": rows, "count": len(rows)})
+
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        category = (data.get("category") or "").strip()
+        if not category or category not in CURRICULUM_CATEGORY_CODES:
+            return JsonResponse({"error": "category ไม่ถูกต้อง"}, status=400)
+
+        note = (data.get("note") or "").strip()
+        obj, _ = LegacyCurriculumCompletion.objects.update_or_create(
+            student=request.user, category=category,
+            defaults={"note": note, "recorded_by": request.user},
+        )
+        return JsonResponse({
+            "category": obj.category,
+            "category_display": obj.get_category_display(),
+            "note": obj.note,
+        }, status=201)
+
+    if request.method == "DELETE":
+        category = (request.GET.get("category") or "").strip()
+        if not category:
+            return JsonResponse({"error": "category required"}, status=400)
+        deleted, _ = LegacyCurriculumCompletion.objects.filter(
+            student=request.user, category=category,
+        ).delete()
+        return JsonResponse({"deleted": bool(deleted)})
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)

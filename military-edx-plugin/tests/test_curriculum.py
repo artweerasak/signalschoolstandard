@@ -147,10 +147,20 @@ class TestCurriculumAPI:
         assert resp.status_code == 200, resp.content
         assert resp.json()["status"] == "submitted"
 
-        # 4) แก้ไขไม่ได้อีกแล้วหลัง submit
+        # 4) หลัง submit แก้ metadata ล้วน (ชื่อ/รุ่น/ปี/ระยะเวลา) ได้ปกติ แต่
+        # เกณฑ์คุณสมบัติ/โควตา/ประเภทหลักสูตรแก้ไม่ได้อีกแล้ว (ดู
+        # tests/test_curriculum_category_prerequisite.py:TestCurriculumEditableFieldsRegardlessOfStatus
+        # สำหรับเทสละเอียดของพฤติกรรมนี้)
         resp = client.patch(
             f"/military/api/v1/curriculum/curricula/{curriculum_id}/",
             data=json.dumps({"name": "เปลี่ยนชื่อ"}), content_type="application/json",
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["name"] == "เปลี่ยนชื่อ"
+
+        resp = client.patch(
+            f"/military/api/v1/curriculum/curricula/{curriculum_id}/",
+            data=json.dumps({"quota_total": 999}), content_type="application/json",
         )
         assert resp.status_code == 409
 
