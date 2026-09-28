@@ -41,6 +41,7 @@ export default function CurriculumCourseDetailPage() {
   const [coInstructorQuery, setCoInstructorQuery] = useState("")
   const [coInstructorResults, setCoInstructorResults] = useState<PersonnelSearchRow[]>([])
   const [searchingCoInstructor, setSearchingCoInstructor] = useState(false)
+  const [coInstructorTopicNote, setCoInstructorTopicNote] = useState("")
   const [addingCoInstructor, setAddingCoInstructor] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
 
@@ -122,9 +123,10 @@ export default function CurriculumCourseDetailPage() {
     setAddingCoInstructor(true)
     setError("")
     try {
-      await api.addCoInstructor(curriculumCourseId, userId)
+      await api.addCoInstructor(curriculumCourseId, userId, coInstructorTopicNote.trim() || undefined)
       setCoInstructorQuery("")
       setCoInstructorResults([])
+      setCoInstructorTopicNote("")
       loadCoInstructors()
     } catch (err) {
       setError(err instanceof Error ? err.message : "เพิ่มไม่สำเร็จ")
@@ -229,8 +231,11 @@ export default function CurriculumCourseDetailPage() {
           <div>
             <p className="text-xs text-[#9a92a8] mb-2">
               ค้นหาชื่ออาจารย์ (ต้องมีสิทธิ์ role ครูอาจารย์ในระบบก่อน) — ผู้ช่วยสอนที่เพิ่มจะเห็น/ให้คะแนนได้ทุกคนในวิชานี้เหมือนกันหมด
-              ยังแยกตามหัวข้อย่อยไม่ได้ ถ้าสอนคนละหัวข้อ แนะนำตั้งชื่อ &ldquo;รายการคะแนน&rdquo; ตอนกรอกคะแนนให้ระบุหัวข้อ/ผู้สอนกำกับไว้แทน
+              (หัวข้อ/ความรับผิดชอบด้านล่างเป็นแค่ป้ายกำกับ ไม่ได้จำกัดสิทธิ์จริง)
             </p>
+            <input type="text" placeholder="หัวข้อ/ความรับผิดชอบ (ไม่บังคับ) เช่น หัวข้อการซ่อมบำรุง" value={coInstructorTopicNote}
+              onChange={e => setCoInstructorTopicNote(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
             <input type="text" placeholder="พิมพ์ชื่ออาจารย์ที่ต้องการค้นหา..." value={coInstructorQuery}
               onChange={e => setCoInstructorQuery(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
@@ -260,8 +265,10 @@ export default function CurriculumCourseDetailPage() {
               <tbody className="divide-y">
                 {coInstructors.map(ci => (
                   <tr key={ci.user_id}>
-                    <td className="px-2 py-2 font-mono text-xs text-[#6b6478]">{ci.user_id}</td>
-                    <td className="px-2 py-2">{ci.username}</td>
+                    <td className="px-2 py-2">
+                      <p className="font-medium text-[#2D0F42]">{ci.full_name || ci.username}</p>
+                      {ci.topic_note && <p className="text-xs text-[#9a92a8]">{ci.topic_note}</p>}
+                    </td>
                     <td className="px-2 py-2">
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                         ci.is_owner ? "bg-purple-100 text-[#4A1A6B]" : "bg-[#f0ecf6] text-[#6b6478]"
