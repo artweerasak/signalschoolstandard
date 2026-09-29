@@ -41,6 +41,8 @@ export default function ImportQuestionsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteMsg, setDeleteMsg] = useState("");
+  const [indexStatus, setIndexStatus] = useState<"idle" | "polling" | "done" | "timeout">("idle");
+  const [indexCount, setIndexCount] = useState<{ current: number; expected: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const LETTER_MAP: Record<string, string> = {
@@ -140,10 +142,45 @@ export default function ImportQuestionsPage() {
     }
   }
 
+  async function pollIndexStatus(libraryKey: string, expected: number) {
+    // Question creation itself is synchronous (already done by the time we
+    // get here) but Studio's Library search index is updated by a
+    // fire-and-forget Celery task, so there's a real gap -- usually a
+    // couple seconds -- before newly imported questions actually show up
+    // when browsing the Library. Poll the real index count instead of
+    // guessing a fixed delay, so the person doing the import sees exactly
+    // when it's safe to go look.
+    setIndexStatus("polling");
+    setIndexCount({ current: 0, expected });
+    const maxTries = 20;
+    for (let i = 0; i < maxTries; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const res = await fetch(
+          `/military/api/v1/import/libraries/${encodeURIComponent(libraryKey)}/index-status/`,
+          { credentials: "include" },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setIndexCount({ current: data.count, expected });
+          if (data.count >= expected) {
+            setIndexStatus("done");
+            return;
+          }
+        }
+      } catch {
+        // transient network hiccup -- just try again next tick
+      }
+    }
+    setIndexStatus("timeout");
+  }
+
   async function handleImport() {
     if (!file || !selectedLib) return;
     setLoading(true);
     setError("");
+    setIndexStatus("idle");
+    setIndexCount(null);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -158,6 +195,9 @@ export default function ImportQuestionsPage() {
       if (!res.ok) throw new Error(data.error || "Import ไม่สำเร็จ");
       setImportResult(data);
       setStep("done");
+      if (data.index_expected != null) {
+        pollIndexStatus(selectedLib, data.index_expected);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -427,6 +467,29 @@ export default function ImportQuestionsPage() {
           <p className="text-[#6b6478] text-sm">
             นำเข้าเข้า Library: <strong>{selectedLibTitle}</strong>
           </p>
+
+          {/* สถานะ index — คำถามถูกสร้างในฐานข้อมูลแล้วตอนขึ้น "นำเข้าสำเร็จ"
+              ด้านบน แต่ต้องรอ Meilisearch reindex เบื้องหลังอีกสักครู่ก่อนจะ
+              โผล่ในหน้า Library ของ Studio */}
+          {indexStatus === "polling" && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 inline-flex items-center gap-2 text-sm text-blue-700">
+              <span className="inline-block w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              กำลังอัปเดตดัชนีค้นหา...
+              {indexCount && ` (${indexCount.current}/${indexCount.expected})`}
+            </div>
+          )}
+          {indexStatus === "done" && (
+            <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 inline-block text-sm text-green-700">
+              ✅ พร้อมแสดงในหน้า Library แล้ว
+            </div>
+          )}
+          {indexStatus === "timeout" && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 inline-block text-sm text-yellow-700">
+              ⏳ ระบบกำลังประมวลผลอยู่ (นานกว่าปกติ) — ข้อสอบถูกบันทึกเรียบร้อยแล้ว
+              ลองรีเฟรชหน้า Library อีกครั้งในอีกสักครู่
+            </div>
+          )}
+
           {importResult.import_errors?.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-left text-sm">
               {importResult.import_errors.map((e: string, i: number) => <p key={i} className="text-red-600">• {e}</p>)}
