@@ -15,8 +15,9 @@ class MilitaryProfileConfig(AppConfig):
         # ครูจึงไม่ต้องไปใส่ "military-pdf-viewer" ใน Advanced Settings รายวิชาเองอีก
         try:
             from cms.djangoapps.contentstore.views import component as _component
-            if "military-pdf-viewer" not in _component.DEFAULT_ADVANCED_MODULES:
-                _component.DEFAULT_ADVANCED_MODULES.append("military-pdf-viewer")
+            for _mod in ("military-pdf-viewer", "military-random-quiz"):
+                if _mod not in _component.DEFAULT_ADVANCED_MODULES:
+                    _component.DEFAULT_ADVANCED_MODULES.append(_mod)
         except Exception:
             # LMS / สภาพแวดล้อมที่ไม่มี contentstore — ข้ามได้
             pass
