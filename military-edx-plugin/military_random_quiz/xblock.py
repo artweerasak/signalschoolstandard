@@ -26,7 +26,7 @@ import random as _random_mod
 
 import pkg_resources
 from xblock.core import XBlock
-from xblock.fields import Scope, String, Integer, Float, List, Dict
+from xblock.fields import Scope, String, Integer, Float, List, Dict, Boolean
 from xblock.fragment import Fragment
 
 from .olx import parse_multiplechoice_olx, public_choices
@@ -74,6 +74,12 @@ class MilitaryRandomQuizXBlock(XBlock):
         display_name="ข้อที่เลือกจากคลัง",
         default=[],
         scope=Scope.settings,
+    )
+    randomize = Boolean(
+        display_name="สุ่มข้อสอบ",
+        default=True,
+        scope=Scope.settings,
+        help="ติ๊ก = สุ่ม N ข้อจากคลังต่อคน (คนละชุด) — ไม่ติ๊ก = ทุกคนได้ข้อสอบครบตามที่เลือก เรียงลำดับเดิม ไม่สุ่ม",
     )
     count = Integer(
         display_name="จำนวนข้อสุ่มต่อคน",
@@ -126,6 +132,13 @@ class MilitaryRandomQuizXBlock(XBlock):
             return
         if not self.selected_block_keys:
             return
+
+        if not self.randomize:
+            # ไม่สุ่ม -- ทุกคนได้ข้อสอบครบตามที่เลือกไว้ เรียงลำดับเดิมเป๊ะ
+            if self.assigned_block_keys != self.selected_block_keys:
+                self.assigned_block_keys = list(self.selected_block_keys)
+            return
+
         try:
             children = [self._library_usage_key(k) for k in self.selected_block_keys]
         except Exception:
@@ -141,7 +154,9 @@ class MilitaryRandomQuizXBlock(XBlock):
         from xmodule.item_bank_block import ItemBankMixin
         result = ItemBankMixin.make_selection(selected, children, self.count)
         if any(result.get(k) for k in ("invalid", "overlimit", "added")):
-            lib_key = children[0].library_key if children else None
+            # .lib_key (ไม่ใช่ .library_key) -- ชื่อ attribute จริงของ
+            # LibraryUsageLocatorV2 ยืนยันผ่าน shell กับ production จริง
+            lib_key = children[0].lib_key if children else None
             new_assigned = []
             for block_type, block_id in result["selected"]:
                 from opaque_keys.edx.locator import LibraryUsageLocatorV2
@@ -150,7 +165,11 @@ class MilitaryRandomQuizXBlock(XBlock):
 
     def _shuffled_choice_order(self, question_key, num_choices):
         """ลำดับการแสดงตัวเลือกที่คงที่ต่อ (นักเรียน, ข้อ) คู่หนึ่งๆ -- สลับแค่ตำแหน่ง
-        แสดงผล ไม่ใช่ตัว index ที่ใช้ตรวจคำตอบ (index อิง OLX order เดิมเสมอ)"""
+        แสดงผล ไม่ใช่ตัว index ที่ใช้ตรวจคำตอบ (index อิง OLX order เดิมเสมอ)
+        ไม่สุ่ม (randomize=False) -- ไม่สลับตัวเลือกด้วย เพื่อให้ "ไม่สุ่ม" หมายถึง
+        ทุกคนเห็นข้อสอบเหมือนกันทุกกระเบียดนิ้วจริงๆ ไม่ใช่แค่ไม่ตัดข้อ"""
+        if not self.randomize:
+            return list(range(num_choices))
         seed = "{}:{}".format(self.scope_ids.user_id, question_key)
         order = list(range(num_choices))
         _random_mod.Random(seed).shuffle(order)
@@ -262,6 +281,7 @@ class MilitaryRandomQuizXBlock(XBlock):
         frag.add_javascript(self.resource_string("static/military_random_quiz/studio.js"))
         frag.initialize_js("MilitaryRandomQuizStudio", {
             "selected_block_keys": self.selected_block_keys,
+            "randomize": self.randomize,
         })
         return frag
 
@@ -345,6 +365,8 @@ class MilitaryRandomQuizXBlock(XBlock):
             return {"error": "Forbidden"}
         self.display_name = data.get("display_name", self.display_name)
         self.library_key = data.get("library_key", self.library_key)
+        randomize = data.get("randomize")
+        self.randomize = bool(randomize) if randomize is not None else self.randomize
         self.selected_block_keys = data.get("selected_block_keys", self.selected_block_keys) or []
         # "is not None" rather than a truthy check -- weight=0 (an
         # intentionally ungraded practice quiz) must not silently fall back

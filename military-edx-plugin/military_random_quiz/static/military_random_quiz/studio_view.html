@@ -33,8 +33,12 @@
     </table>
   </div>
 
+  <label class="mil-rq-selectall">
+    <input type="checkbox" id="mil-rq-randomize" checked /> สุ่มข้อสอบ (ไม่ติ๊ก = ทุกคนได้ข้อสอบครบชุดเดียวกัน เรียงลำดับเดิม)
+  </label>
+
   <div class="mil-rq-settings-row">
-    <label class="mil-rq-field mil-rq-field-inline">
+    <label class="mil-rq-field mil-rq-field-inline" id="mil-rq-count-field">
       <span>จำนวนข้อสุ่มต่อคน</span>
       <input type="number" id="mil-rq-count" value="{count}" min="1" />
     </label>
