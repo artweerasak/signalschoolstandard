@@ -4391,7 +4391,8 @@ def api_video_share(request):
 def api_video_upload(request):
     """
     POST /military/api/v1/videos/upload/
-    บันทึกไฟล์ที่ videos/{username}/{course_slug}/
+    บันทึกไฟล์ที่ videos/{username}/{course_slug}/ — รับได้ทั้งไฟล์วิดีโอและ
+    ไฟล์เสียง (ครูใช้เก็บไฟล์เสียงตัวอย่างประกอบการสอนด้วย ไม่ใช่แค่วิดีโอ)
     ต้องส่ง course_slug มาด้วย
     """
     import logging as _logging
@@ -4414,11 +4415,16 @@ def api_video_upload(request):
         _vlog.error('upload: subject dir not found: %s', dest_dir)
         return JsonResponse({'error': f'ไม่พบหมวดหมู่ "{course_slug}" กรุณาสร้างก่อนอัปโหลด'}, status=400)
 
+    # ครูขอใช้คลังนี้เก็บไฟล์เสียงตัวอย่างประกอบการสอนด้วย (ไม่ใช่แค่วิดีโอ) —
+    # ปลอดภัยที่จะเพิ่ม เพราะ endpoint นี้แค่เขียนไฟล์ดิบลงดิสก์แล้วคืน URL
+    # ไม่มีการประมวลผล/transcode เฉพาะวิดีโอเลย (ดู api_video_list/_scan_folder)
     _VIDEO_ALLOWED_EXTS = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v', '.flv', '.wmv'}
+    _AUDIO_ALLOWED_EXTS = {'.mp3', '.wav', '.m4a', '.ogg', '.aac', '.wma', '.flac'}
+    _MEDIA_ALLOWED_EXTS = _VIDEO_ALLOWED_EXTS | _AUDIO_ALLOWED_EXTS
     uploaded_file = request.FILES['file']
     _orig_ext = _os.path.splitext(uploaded_file.name)[1].lower()
-    if _orig_ext not in _VIDEO_ALLOWED_EXTS:
-        return JsonResponse({'error': f'ไม่รองรับไฟล์ประเภท "{_orig_ext}" กรุณาอัปโหลดไฟล์วิดีโอเท่านั้น'}, status=400)
+    if _orig_ext not in _MEDIA_ALLOWED_EXTS:
+        return JsonResponse({'error': f'ไม่รองรับไฟล์ประเภท "{_orig_ext}" กรุณาอัปโหลดไฟล์วิดีโอหรือไฟล์เสียงเท่านั้น'}, status=400)
     # \w ใน Python ไม่นับวรรณยุกต์ไทย (Unicode category Mn) — ต้องเติม ก-๙
     # เองเหมือน pattern ที่ใช้อยู่แล้วตอน rename subject (ดู _re.sub ตัวอื่นในไฟล์
     # นี้) ไม่งั้นวรรณยุกต์ในชื่อไฟล์ทุกตัวโดนแทนด้วย _ (เช่น "สื่อสาร" → "ส__อสาร")
