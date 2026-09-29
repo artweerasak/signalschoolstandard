@@ -91,12 +91,29 @@ class MilitaryRandomQuizXBlock(XBlock):
         default=10.0,
         scope=Scope.settings,
     )
+    max_attempts = Integer(
+        display_name="จำนวนครั้งที่ทำได้",
+        default=1,
+        scope=Scope.settings,
+        help="ใส่ 0 = ไม่จำกัดจำนวนครั้ง",
+    )
+    show_answer_after_submit = Boolean(
+        display_name="เฉลยคำตอบหลังส่ง",
+        default=True,
+        scope=Scope.settings,
+    )
+    show_score_after_submit = Boolean(
+        display_name="แสดงคะแนนหลังส่ง",
+        default=True,
+        scope=Scope.settings,
+    )
 
     # ── ต่อนักเรียนแต่ละคน (Scope.user_state) ──────────────────────────
     assigned_block_keys = List(default=[], scope=Scope.user_state)
     submitted_answers = Dict(default={}, scope=Scope.user_state)  # {"lb:...": chosen_index}
     is_submitted = String(default="", scope=Scope.user_state)     # "" | "submitted"
-    raw_earned = Float(default=None, scope=Scope.user_state)
+    attempt_number = Integer(default=0, scope=Scope.user_state)   # จำนวนครั้งที่ส่งคำตอบไปแล้ว
+    raw_earned = Float(default=None, scope=Scope.user_state)      # คะแนน "สูงสุด" ที่เคยทำได้
 
     # ------------------------------------------------------------------
     # grading -- has_score=True หมายถึง XBlock grading machinery จะเรียก
@@ -175,9 +192,16 @@ class MilitaryRandomQuizXBlock(XBlock):
         _random_mod.Random(seed).shuffle(order)
         return order
 
-    def _load_questions_for_student(self):
-        """คืน [{key, stem, choices:[{index,text}], selected_display_order}, ...]
-        -- ไม่มี field บอกคำตอบที่ถูกต้องเลย (ดู olx.public_choices)"""
+    def _attempts_remaining(self):
+        """True ถ้ายังทำ(ซ้ำ)ได้อีก -- max_attempts=0 หมายถึงไม่จำกัด"""
+        if self.max_attempts == 0:
+            return True
+        return self.attempt_number < self.max_attempts
+
+    def _load_questions_for_student(self, reveal_correct=False):
+        """คืน [{key, stem, choices:[{index,text[,correct]}], answered}, ...]
+        -- ไม่มี field บอกคำตอบที่ถูกต้องเลย เว้นแต่ reveal_correct=True (ใช้เฉพาะ
+        ตอนส่งคำตอบไปแล้วและครูเปิด "เฉลยคำตอบหลังส่ง" ไว้ -- ดู olx.public_choices)"""
         from openedx.core.djangoapps.xblock.api import get_block_olx
         from openedx.core.djangoapps.xblock.data import LatestVersion
 
@@ -190,7 +214,8 @@ class MilitaryRandomQuizXBlock(XBlock):
             except Exception:
                 continue  # ข้อที่ดึง/parse ไม่ได้ -- ข้ามไปแทนที่จะทำทั้งหน้าเสีย
             order = self._shuffled_choice_order(key_str, len(choices))
-            display_choices = [public_choices(choices)[i] for i in order]
+            source = choices if reveal_correct else public_choices(choices)
+            display_choices = [source[i] for i in order]
             questions.append({
                 "key": key_str,
                 "stem": stem,
@@ -201,7 +226,9 @@ class MilitaryRandomQuizXBlock(XBlock):
 
     def student_view(self, context=None):
         self._ensure_assigned_questions()
-        questions = self._load_questions_for_student()
+        is_submitted = self.is_submitted == "submitted"
+        reveal = is_submitted and self.show_answer_after_submit
+        questions = self._load_questions_for_student(reveal_correct=reveal)
         html = self.resource_string("static/military_random_quiz/student_view.html")
         frag = Fragment(html.format(
             display_name=self.display_name or "แบบทดสอบสุ่มข้อ",
@@ -211,9 +238,14 @@ class MilitaryRandomQuizXBlock(XBlock):
         frag.add_javascript(self.resource_string("static/military_random_quiz/viewer.js"))
         frag.initialize_js("MilitaryRandomQuizXBlock", {
             "questions": questions,
-            "is_submitted": self.is_submitted == "submitted",
+            "is_submitted": is_submitted,
+            "reveal_answer": reveal,
+            "show_score": self.show_score_after_submit,
             "score": self.get_score(),
             "weight": self.weight,
+            "attempt_number": self.attempt_number,
+            "max_attempts": self.max_attempts,
+            "can_retake": is_submitted and self._attempts_remaining(),
         })
         return frag
 
@@ -224,6 +256,10 @@ class MilitaryRandomQuizXBlock(XBlock):
             return {"error": "ส่งคำตอบไปแล้ว ไม่สามารถส่งซ้ำได้"}
         if not self.assigned_block_keys:
             return {"error": "ยังไม่มีข้อสอบสำหรับผู้ใช้นี้"}
+        # ป้องกันไว้อีกชั้น เผื่อ state ไม่ตรงกัน (ปกติ retake_quiz จะกันไว้แล้วว่า
+        # ต้องเหลือจำนวนครั้งก่อนถึงจะเคลียร์ state ให้ทำรอบใหม่ได้)
+        if self.max_attempts != 0 and self.attempt_number >= self.max_attempts:
+            return {"error": "ทำครบจำนวนครั้งที่กำหนดแล้ว"}
 
         from openedx.core.djangoapps.xblock.api import get_block_olx
         from openedx.core.djangoapps.xblock.data import LatestVersion
@@ -249,13 +285,22 @@ class MilitaryRandomQuizXBlock(XBlock):
             if chosen_index is not None and choices[chosen_index]["correct"]:
                 correct_count += 1
 
+        this_attempt_score = (correct_count / total * self.weight) if total else 0.0
+
         self.submitted_answers = stored_answers
         self.is_submitted = "submitted"
-        self.raw_earned = (correct_count / total * self.weight) if total else 0.0
+        self.attempt_number += 1
+        # เก็บ "คะแนนสูงสุด" ที่เคยทำได้ -- ตามที่ผู้ใช้เลือกไว้สำหรับกรณีทำหลายรอบ
+        self.raw_earned = max(this_attempt_score, self.raw_earned or 0.0)
 
+        # only_if_higher=True คือกลไกมาตรฐานของ XBlock grading (แบบเดียวกับที่
+        # capa_block.py ใช้) ให้ gradebook เก็บคะแนนสูงสุดข้ามรอบเองโดยอัตโนมัติ
+        # ส่งค่าของรอบนี้ไป ไม่ใช่ self.raw_earned ที่ max ไว้แล้ว กัน publish
+        # ซ้ำเป็นค่าเดิมเมื่อรอบหลังได้คะแนนน้อยกว่ารอบก่อน
         self.runtime.publish(self, "grade", {
-            "value": self.raw_earned,
+            "value": this_attempt_score,
             "max_value": self.weight,
+            "only_if_higher": True,
         })
 
         return {
@@ -263,7 +308,24 @@ class MilitaryRandomQuizXBlock(XBlock):
             "correct_count": correct_count,
             "total": total,
             "score": self.get_score(),
+            "can_retake": self._attempts_remaining(),
+            "attempt_number": self.attempt_number,
+            "max_attempts": self.max_attempts,
         }
+
+    @XBlock.json_handler
+    def retake_quiz(self, data, suffix=""):
+        """เริ่มทำรอบใหม่ -- สุ่มชุดข้อใหม่เสมอ (ไม่ reuse ชุดเดิม) เพราะผู้ใช้
+        ต้องการให้แต่ละรอบสุ่มใหม่ กันจำคำตอบข้ามรอบ คะแนนสูงสุด (raw_earned) และ
+        attempt_number ไม่ถูกแตะ -- เก็บประวัติไว้ตามที่ควร"""
+        if self.is_submitted != "submitted":
+            return {"error": "ยังไม่ได้ส่งคำตอบรอบปัจจุบัน"}
+        if not self._attempts_remaining():
+            return {"error": "ทำครบจำนวนครั้งที่กำหนดแล้ว ไม่สามารถทำซ้ำได้อีก"}
+        self.assigned_block_keys = []
+        self.submitted_answers = {}
+        self.is_submitted = ""
+        return {"success": True}
 
     # ------------------------------------------------------------------
     # studio_view (CMS) -- editor แบบลิสต์ (ไม่ใช่การ์ด) สำหรับเลือกข้อจากคลัง
@@ -275,6 +337,7 @@ class MilitaryRandomQuizXBlock(XBlock):
             library_key=self.library_key or "",
             count=self.count or 10,
             weight=self.weight or 10.0,
+            max_attempts=self.max_attempts if self.max_attempts is not None else 1,
             csrf_token=_get_csrf_token(),
         ))
         frag.add_css(self.resource_string("static/military_random_quiz/viewer.css"))
@@ -282,6 +345,8 @@ class MilitaryRandomQuizXBlock(XBlock):
         frag.initialize_js("MilitaryRandomQuizStudio", {
             "selected_block_keys": self.selected_block_keys,
             "randomize": self.randomize,
+            "show_answer_after_submit": self.show_answer_after_submit,
+            "show_score_after_submit": self.show_score_after_submit,
         })
         return frag
 
@@ -375,6 +440,12 @@ class MilitaryRandomQuizXBlock(XBlock):
         self.count = max(1, int(count)) if count is not None else (self.count or 10)
         weight = data.get("weight")
         self.weight = float(weight) if weight is not None else (self.weight if self.weight is not None else 10.0)
+        max_attempts = data.get("max_attempts")
+        self.max_attempts = max(0, int(max_attempts)) if max_attempts is not None else (self.max_attempts or 1)
+        show_answer = data.get("show_answer_after_submit")
+        self.show_answer_after_submit = bool(show_answer) if show_answer is not None else self.show_answer_after_submit
+        show_score = data.get("show_score_after_submit")
+        self.show_score_after_submit = bool(show_score) if show_score is not None else self.show_score_after_submit
         return {"result": "success"}
 
     @staticmethod

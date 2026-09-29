@@ -46,7 +46,18 @@
       <span>คะแนนเต็ม</span>
       <input type="number" id="mil-rq-weight" value="{weight}" min="0" step="0.5" />
     </label>
+    <label class="mil-rq-field mil-rq-field-inline">
+      <span>จำนวนครั้งที่ทำได้ (0 = ไม่จำกัด)</span>
+      <input type="number" id="mil-rq-max-attempts" value="{max_attempts}" min="0" />
+    </label>
   </div>
+
+  <label class="mil-rq-selectall">
+    <input type="checkbox" id="mil-rq-show-answer" /> เฉลยคำตอบหลังส่ง
+  </label>
+  <label class="mil-rq-selectall">
+    <input type="checkbox" id="mil-rq-show-score" /> แสดงคะแนนหลังส่ง
+  </label>
 
   <p id="mil-rq-error" class="mil-rq-error" style="display:none;"></p>
   <p id="mil-rq-selected-summary" class="mil-rq-summary"></p>

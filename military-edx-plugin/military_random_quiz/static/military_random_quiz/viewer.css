@@ -7,8 +7,12 @@
 .mil-rq-choice { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
 .mil-rq-choice:hover { background: #f7f5fa; }
 .mil-rq-choice-letter { font-weight: 600; }
+.mil-rq-choice-correct { background: #ecfdf5; border: 1px solid #34d399; }
+.mil-rq-choice-wrong { background: #fef2f2; border: 1px solid #f87171; }
 .mil-rq-submit-btn { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 1em; }
 .mil-rq-submit-btn:hover { background: #1d4ed8; }
+.mil-rq-retake-btn { background: #16a34a; margin-left: 8px; }
+.mil-rq-retake-btn:hover { background: #15803d; }
 .mil-rq-result { margin-top: 16px; padding: 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; font-weight: 600; }
 .mil-rq-empty { color: #9a92a8; text-align: center; padding: 16px; }
 
