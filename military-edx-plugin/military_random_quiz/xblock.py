@@ -107,6 +107,12 @@ class MilitaryRandomQuizXBlock(XBlock):
         default=True,
         scope=Scope.settings,
     )
+    access_code = String(
+        display_name="รหัสเข้าสอบ",
+        default="",
+        scope=Scope.settings,
+        help="รหัสเดียวใช้ร่วมกันทั้งห้องสอบ -- เว้นว่าง = ไม่ต้องใช้รหัส เปิดทำข้อสอบได้ทันที",
+    )
 
     # ── ต่อนักเรียนแต่ละคน (Scope.user_state) ──────────────────────────
     assigned_block_keys = List(default=[], scope=Scope.user_state)
@@ -114,6 +120,7 @@ class MilitaryRandomQuizXBlock(XBlock):
     is_submitted = String(default="", scope=Scope.user_state)     # "" | "submitted"
     attempt_number = Integer(default=0, scope=Scope.user_state)   # จำนวนครั้งที่ส่งคำตอบไปแล้ว
     raw_earned = Float(default=None, scope=Scope.user_state)      # คะแนน "สูงสุด" ที่เคยทำได้
+    access_code_verified = Boolean(default=False, scope=Scope.user_state)  # กรอกรหัสเข้าสอบถูกแล้ว
 
     # ------------------------------------------------------------------
     # grading -- has_score=True หมายถึง XBlock grading machinery จะเรียก
@@ -198,6 +205,11 @@ class MilitaryRandomQuizXBlock(XBlock):
             return True
         return self.attempt_number < self.max_attempts
 
+    def _needs_access_code(self):
+        """True ถ้าตั้งรหัสเข้าสอบไว้ (ไม่ว่าง) และนักเรียนคนนี้ยังไม่เคยกรอกถูก
+        -- กรอกถูกครั้งเดียวพอ ไม่ต้องกรอกซ้ำทุกครั้งที่เข้าหน้า/ทำรอบใหม่"""
+        return bool((self.access_code or "").strip()) and not self.access_code_verified
+
     def _load_questions_for_student(self, reveal_correct=False):
         """คืน [{key, stem, choices:[{index,text[,correct]}], answered}, ...]
         -- ไม่มี field บอกคำตอบที่ถูกต้องเลย เว้นแต่ reveal_correct=True (ใช้เฉพาะ
@@ -225,10 +237,18 @@ class MilitaryRandomQuizXBlock(XBlock):
         return questions
 
     def student_view(self, context=None):
-        self._ensure_assigned_questions()
-        is_submitted = self.is_submitted == "submitted"
-        reveal = is_submitted and self.show_answer_after_submit
-        questions = self._load_questions_for_student(reveal_correct=reveal)
+        needs_code = self._needs_access_code()
+        if needs_code:
+            # ยังไม่ยืนยันรหัสเข้าสอบ -- ห้ามสุ่ม/โหลดข้อสอบเด็ดขาด กันข้อสอบรั่วผ่าน
+            # initArgs ก่อนกรอกรหัสถูก (ไม่ใช่แค่ซ่อนด้วย CSS ฝั่ง client)
+            is_submitted = False
+            reveal = False
+            questions = []
+        else:
+            self._ensure_assigned_questions()
+            is_submitted = self.is_submitted == "submitted"
+            reveal = is_submitted and self.show_answer_after_submit
+            questions = self._load_questions_for_student(reveal_correct=reveal)
         html = self.resource_string("static/military_random_quiz/student_view.html")
         frag = Fragment(html.format(
             display_name=self.display_name or "แบบทดสอบสุ่มข้อ",
@@ -237,6 +257,7 @@ class MilitaryRandomQuizXBlock(XBlock):
         frag.add_css(self.resource_string("static/military_random_quiz/viewer.css"))
         frag.add_javascript(self.resource_string("static/military_random_quiz/viewer.js"))
         frag.initialize_js("MilitaryRandomQuizXBlock", {
+            "needs_code": needs_code,
             "questions": questions,
             "is_submitted": is_submitted,
             "reveal_answer": reveal,
@@ -250,8 +271,24 @@ class MilitaryRandomQuizXBlock(XBlock):
         return frag
 
     @XBlock.json_handler
+    def submit_access_code(self, data, suffix=""):
+        """ตรวจรหัสเข้าสอบ -- เทียบแบบ strip()+ไม่สนตัวพิมพ์เล็กใหญ่ ลดปัญหาพิมพ์ผิด
+        Shift ค้าง/Caps Lock ตอนแจกรหัสปากเปล่าในห้องสอบ"""
+        expected = (self.access_code or "").strip()
+        if not expected:
+            self.access_code_verified = True
+            return {"success": True}
+        submitted = (data.get("code") or "").strip()
+        if submitted.lower() == expected.lower():
+            self.access_code_verified = True
+            return {"success": True}
+        return {"error": "รหัสเข้าสอบไม่ถูกต้อง"}
+
+    @XBlock.json_handler
     def submit_quiz(self, data, suffix=""):
         """ตรวจคำตอบ -- parse OLX ใหม่ทุกครั้ง ไม่เชื่อค่าเฉลยจาก client เด็ดขาด"""
+        if self._needs_access_code():
+            return {"error": "กรุณากรอกรหัสเข้าสอบก่อน"}
         if self.is_submitted == "submitted":
             return {"error": "ส่งคำตอบไปแล้ว ไม่สามารถส่งซ้ำได้"}
         if not self.assigned_block_keys:
@@ -318,6 +355,8 @@ class MilitaryRandomQuizXBlock(XBlock):
         """เริ่มทำรอบใหม่ -- สุ่มชุดข้อใหม่เสมอ (ไม่ reuse ชุดเดิม) เพราะผู้ใช้
         ต้องการให้แต่ละรอบสุ่มใหม่ กันจำคำตอบข้ามรอบ คะแนนสูงสุด (raw_earned) และ
         attempt_number ไม่ถูกแตะ -- เก็บประวัติไว้ตามที่ควร"""
+        if self._needs_access_code():
+            return {"error": "กรุณากรอกรหัสเข้าสอบก่อน"}
         if self.is_submitted != "submitted":
             return {"error": "ยังไม่ได้ส่งคำตอบรอบปัจจุบัน"}
         if not self._attempts_remaining():
@@ -338,6 +377,7 @@ class MilitaryRandomQuizXBlock(XBlock):
             count=self.count or 10,
             weight=self.weight or 10.0,
             max_attempts=self.max_attempts if self.max_attempts is not None else 1,
+            access_code=self.access_code or "",
             csrf_token=_get_csrf_token(),
         ))
         frag.add_css(self.resource_string("static/military_random_quiz/viewer.css"))
@@ -446,6 +486,8 @@ class MilitaryRandomQuizXBlock(XBlock):
         self.show_answer_after_submit = bool(show_answer) if show_answer is not None else self.show_answer_after_submit
         show_score = data.get("show_score_after_submit")
         self.show_score_after_submit = bool(show_score) if show_score is not None else self.show_score_after_submit
+        access_code = data.get("access_code")
+        self.access_code = access_code.strip() if access_code is not None else self.access_code
         return {"result": "success"}
 
     @staticmethod

@@ -15,6 +15,7 @@
 .mil-rq-retake-btn:hover { background: #15803d; }
 .mil-rq-result { margin-top: 16px; padding: 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; font-weight: 600; }
 .mil-rq-empty { color: #9a92a8; text-align: center; padding: 16px; }
+.mil-rq-code-input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 1em; margin-right: 8px; }
 
 /* Studio editor */
 .mil-rq-editor { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }

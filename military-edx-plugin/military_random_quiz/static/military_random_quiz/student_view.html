@@ -1,7 +1,15 @@
 <div class="mil-rq-wrapper" id="mil-rq-{block_id}">
   <h3 class="mil-rq-title">{display_name}</h3>
-  <div id="mil-rq-questions"></div>
-  <div id="mil-rq-result" class="mil-rq-result" style="display:none;"></div>
-  <button type="button" id="mil-rq-submit" class="mil-rq-submit-btn">ส่งคำตอบ</button>
-  <button type="button" id="mil-rq-retake" class="mil-rq-submit-btn mil-rq-retake-btn" style="display:none;">ทำข้อสอบใหม่ (สุ่มชุดใหม่)</button>
+  <div id="mil-rq-gate" style="display:none;">
+    <p>แบบทดสอบนี้ต้องกรอกรหัสเข้าสอบก่อนจึงจะเริ่มทำได้</p>
+    <input type="text" id="mil-rq-code-input" class="mil-rq-code-input" placeholder="กรอกรหัสเข้าสอบ" />
+    <button type="button" id="mil-rq-code-submit" class="mil-rq-submit-btn">เข้าสอบ</button>
+    <p id="mil-rq-code-error" class="mil-rq-error" style="display:none;"></p>
+  </div>
+  <div id="mil-rq-body">
+    <div id="mil-rq-questions"></div>
+    <div id="mil-rq-result" class="mil-rq-result" style="display:none;"></div>
+    <button type="button" id="mil-rq-submit" class="mil-rq-submit-btn">ส่งคำตอบ</button>
+    <button type="button" id="mil-rq-retake" class="mil-rq-submit-btn mil-rq-retake-btn" style="display:none;">ทำข้อสอบใหม่ (สุ่มชุดใหม่)</button>
+  </div>
 </div>
