@@ -1,0 +1,34 @@
+/* Military Random Quiz XBlock */
+.mil-rq-wrapper { border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin: 12px 0; }
+.mil-rq-title { margin: 0 0 16px; font-size: 1.2em; }
+.mil-rq-question { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f0f0f0; }
+.mil-rq-stem { margin: 0 0 10px; }
+.mil-rq-choices { display: flex; flex-direction: column; gap: 6px; }
+.mil-rq-choice { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.mil-rq-choice:hover { background: #f7f5fa; }
+.mil-rq-choice-letter { font-weight: 600; }
+.mil-rq-submit-btn { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 1em; }
+.mil-rq-submit-btn:hover { background: #1d4ed8; }
+.mil-rq-result { margin-top: 16px; padding: 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; font-weight: 600; }
+.mil-rq-empty { color: #9a92a8; text-align: center; padding: 16px; }
+
+/* Studio editor */
+.mil-rq-editor { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
+.mil-rq-field { display: flex; flex-direction: column; gap: 4px; }
+.mil-rq-field span { font-size: 0.85em; font-weight: 600; color: #4a4456; }
+.mil-rq-field input, .mil-rq-field select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; }
+.mil-rq-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mil-rq-toolbar #mil-rq-search { flex: 1; min-width: 160px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; }
+.mil-rq-selectall { display: flex; align-items: center; gap: 6px; font-size: 0.9em; }
+.mil-rq-list-wrap { max-height: 360px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; }
+.mil-rq-list { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.mil-rq-list thead { position: sticky; top: 0; background: #f7f5fa; }
+.mil-rq-list th, .mil-rq-list td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+.mil-rq-col-check, .mil-rq-col-idx { width: 32px; }
+.mil-rq-settings-row { display: flex; gap: 16px; }
+.mil-rq-field-inline { flex: 1; }
+.mil-rq-error { color: #dc2626; }
+.mil-rq-summary { color: #4a4456; font-weight: 600; }
+.mil-rq-actions { display: flex; gap: 10px; }
+.mil-rq-btn-save { padding: 8px 20px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+.mil-rq-btn-cancel { padding: 8px 20px; background: #f3f4f6; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; }

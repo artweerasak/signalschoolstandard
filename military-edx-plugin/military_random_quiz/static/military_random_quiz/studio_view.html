@@ -1,0 +1,54 @@
+<div class="mil-rq-editor">
+  <input type="hidden" id="mil-rq-csrf-token" value="{csrf_token}" />
+  <input type="hidden" id="mil-rq-current-library-key" value="{library_key}" />
+
+  <label class="mil-rq-field">
+    <span>ชื่อแบบทดสอบ</span>
+    <input type="text" id="mil-rq-display-name" value="{display_name}" />
+  </label>
+
+  <label class="mil-rq-field">
+    <span>คลังข้อสอบ (Library)</span>
+    <select id="mil-rq-library-select">
+      <option value="">-- กำลังโหลด... --</option>
+    </select>
+  </label>
+
+  <div class="mil-rq-toolbar">
+    <span id="mil-rq-count-label">0 ข้อ</span>
+    <input type="text" id="mil-rq-search" placeholder="🔍 ค้นหาข้อสอบ..." />
+    <label class="mil-rq-selectall">
+      <input type="checkbox" id="mil-rq-select-all" /> เลือกทั้งหมด
+    </label>
+  </div>
+
+  <div class="mil-rq-list-wrap">
+    <table class="mil-rq-list">
+      <thead>
+        <tr><th class="mil-rq-col-check"></th><th class="mil-rq-col-idx">#</th><th>คำถาม</th></tr>
+      </thead>
+      <tbody id="mil-rq-block-list">
+        <tr><td colspan="3" class="mil-rq-empty">เลือกคลังข้อสอบก่อน</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mil-rq-settings-row">
+    <label class="mil-rq-field mil-rq-field-inline">
+      <span>จำนวนข้อสุ่มต่อคน</span>
+      <input type="number" id="mil-rq-count" value="{count}" min="1" />
+    </label>
+    <label class="mil-rq-field mil-rq-field-inline">
+      <span>คะแนนเต็ม</span>
+      <input type="number" id="mil-rq-weight" value="{weight}" min="0" step="0.5" />
+    </label>
+  </div>
+
+  <p id="mil-rq-error" class="mil-rq-error" style="display:none;"></p>
+  <p id="mil-rq-selected-summary" class="mil-rq-summary"></p>
+
+  <div class="mil-rq-actions">
+    <button type="button" id="mil-rq-save" class="mil-rq-btn-save">Save</button>
+    <button type="button" id="mil-rq-cancel" class="mil-rq-btn-cancel">Cancel</button>
+  </div>
+</div>

@@ -32,6 +32,7 @@ setup(
         ],
         "xblock.v1": [
             "military-pdf-viewer = military_pdf_viewer.xblock:MilitaryPdfViewerXBlock",
+            "military-random-quiz = military_random_quiz.xblock:MilitaryRandomQuizXBlock",
         ],
         "openedx.block_structure_transformer": [
             "military_itembank_grading = military_profile.itembank_grading_transformer:ItemBankGradingTransformer",
