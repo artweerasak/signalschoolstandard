@@ -4,6 +4,15 @@ function MilitaryRandomQuizStudio(runtime, element, initArgs) {
   var selected = new Set(initArgs.selected_block_keys || []);
   var allBlocks = [];
 
+  var randomizeCheckbox = document.getElementById('mil-rq-randomize');
+  randomizeCheckbox.checked = initArgs.randomize !== false;
+  function updateCountFieldVisibility() {
+    document.getElementById('mil-rq-count-field').style.display =
+      randomizeCheckbox.checked ? '' : 'none';
+  }
+  randomizeCheckbox.addEventListener('change', updateCountFieldVisibility);
+  updateCountFieldVisibility();
+
   function ajax(handlerName, data) {
     return $.ajax({
       type: 'POST',
@@ -123,6 +132,7 @@ function MilitaryRandomQuizStudio(runtime, element, initArgs) {
       display_name: document.getElementById('mil-rq-display-name').value.trim(),
       library_key: libraryKey,
       selected_block_keys: Array.from(selected),
+      randomize: randomizeCheckbox.checked,
       count: document.getElementById('mil-rq-count').value,
       weight: document.getElementById('mil-rq-weight').value,
     }).done(function (resp) {
