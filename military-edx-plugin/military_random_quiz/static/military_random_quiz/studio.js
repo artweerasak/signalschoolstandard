@@ -13,6 +13,9 @@ function MilitaryRandomQuizStudio(runtime, element, initArgs) {
   randomizeCheckbox.addEventListener('change', updateCountFieldVisibility);
   updateCountFieldVisibility();
 
+  document.getElementById('mil-rq-show-answer').checked = initArgs.show_answer_after_submit !== false;
+  document.getElementById('mil-rq-show-score').checked = initArgs.show_score_after_submit !== false;
+
   function ajax(handlerName, data) {
     return $.ajax({
       type: 'POST',
@@ -135,6 +138,9 @@ function MilitaryRandomQuizStudio(runtime, element, initArgs) {
       randomize: randomizeCheckbox.checked,
       count: document.getElementById('mil-rq-count').value,
       weight: document.getElementById('mil-rq-weight').value,
+      max_attempts: document.getElementById('mil-rq-max-attempts').value,
+      show_answer_after_submit: document.getElementById('mil-rq-show-answer').checked,
+      show_score_after_submit: document.getElementById('mil-rq-show-score').checked,
     }).done(function (resp) {
       if (resp.error) {
         errEl.textContent = resp.error;
