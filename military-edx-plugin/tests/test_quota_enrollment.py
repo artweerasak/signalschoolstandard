@@ -239,6 +239,54 @@ class TestCascadeEnrollment:
                 assert resp.status_code == 201
         assert CurriculumEnrollmentRequest.objects.filter(curriculum=active_curriculum, student=student).count() == 1
 
+    def test_enroll_async_dispatch_deferred_until_transaction_commits(
+        self, db, prep_personnel_user, active_curriculum, organization,
+    ):
+        """เคยเป็นบั๊กจริงบน production: dispatch cascade_enroll_student_task
+        ทันทีหลัง get_or_create แทนที่จะรอ transaction commit ก่อน ทำให้
+        worker หยิบงานไปหา CurriculumEnrollmentRequest ที่ "ยังไม่มีอยู่จริง"
+        (มองจาก connection ของ worker) แล้ว log "not found" เงียบๆ ค้างเป็น
+        pending ถาวร (เคสจริง: 74 คนค้าง 3 วัน) — ตอนนี้ dispatch ผ่าน
+        transaction.on_commit เทสนี้ยืนยันว่า .delay() ไม่ถูกเรียกเลยถ้า
+        transaction ยังไม่ commit"""
+        student_ids = []
+        for i in range(31):
+            student = _make_user(f"async_race_{i}", "student", organization)
+            student_ids.append(student.id)
+
+        with patch("military_curriculum.tasks.cascade_enroll_student_task.delay") as mock_delay:
+            client = Client()
+            client.force_login(prep_personnel_user)
+            resp = client.post(
+                f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enroll/",
+                data=json.dumps({"student_ids": student_ids}),
+                content_type="application/json",
+            )
+            assert resp.status_code == 201
+            assert resp.json()["mode"] == "async"
+            # ยังไม่ commit (อยู่ใน with เดียวกัน) — ต้องยังไม่ถูกเรียกเลย
+            assert mock_delay.call_count == 0
+
+    def test_enroll_async_dispatch_fires_after_transaction_commits(
+        self, db, prep_personnel_user, active_curriculum, organization, django_capture_on_commit_callbacks,
+    ):
+        student_ids = []
+        for i in range(31):
+            student = _make_user(f"async_commit_{i}", "student", organization)
+            student_ids.append(student.id)
+
+        with patch("military_curriculum.tasks.cascade_enroll_student_task.delay") as mock_delay:
+            with django_capture_on_commit_callbacks(execute=True):
+                client = Client()
+                client.force_login(prep_personnel_user)
+                resp = client.post(
+                    f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enroll/",
+                    data=json.dumps({"student_ids": student_ids}),
+                    content_type="application/json",
+                )
+        assert resp.status_code == 201
+        assert mock_delay.call_count == 31
+
     def test_enroll_rejects_non_active_curriculum(self, db, prep_personnel_user, submitted_curriculum, organization):
         student = _make_user("blocked_student", "student", organization)
         client = Client()
@@ -281,6 +329,28 @@ class TestCascadeEnrollment:
         assert req.status == "completed"
         assert req.result_detail["course-v1:Signal+101+2570"] == "enrolled"
         assert req.result_detail["course-v1:Signal+102+2570"] == "enrolled"
+
+    def test_retry_runs_full_cascade_for_pending_request(self, db, prep_personnel_user, active_curriculum, organization):
+        """คำขอที่ค้างสถานะ pending ถาวร (เช่นจากบั๊ก race condition เดิม)
+        ไม่มี result_detail ให้ retry_failed_courses() ทำงานได้ (prior={} ->
+        ไม่มีอะไรให้ retry) ต้องรัน cascade_enroll_student เต็มรูปแบบแทน"""
+        student = _make_user("retry_pending_student", "student", organization)
+        req = CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=student, requested_by=prep_personnel_user,
+            status="pending", result_detail={},
+        )
+        with patch(
+            "military_curriculum.services.enrollment_service._enroll_single_course",
+            return_value=EnrollmentResult("course-v1:X", True, None),
+        ):
+            client = Client()
+            client.force_login(prep_personnel_user)
+            resp = client.post(f"/military/api/v1/curriculum/enrollment-requests/{req.id}/retry/")
+
+        assert resp.status_code == 200
+        req.refresh_from_db()
+        assert req.status == "completed"
+        assert req.result_detail
 
     def test_retry_rejects_non_failed_request(self, db, prep_personnel_user, active_curriculum, organization):
         student = _make_user("no_retry_student", "student", organization)
@@ -352,7 +422,7 @@ class TestCatchUpEnrollment:
         assert resp.status_code == 403
 
     def test_catch_up_dispatches_async_over_threshold(
-        self, db, prep_personnel_user, active_curriculum, organization,
+        self, db, prep_personnel_user, active_curriculum, organization, django_capture_on_commit_callbacks,
     ):
         for i in range(31):
             student = _make_user(f"catchup_bulk_{i}", "student", organization)
@@ -361,10 +431,16 @@ class TestCatchUpEnrollment:
                 status="completed", result_detail={"course-v1:Signal+101+2570": "enrolled"},
             )
 
+        # dispatch เกิดผ่าน transaction.on_commit (กัน race กับ Celery worker
+        # หยิบงานไปประมวลผลก่อน transaction ที่สร้าง/แก้ row จะ commit จริง —
+        # ต้องจำลองการ commit ในเทสด้วย django_capture_on_commit_callbacks
+        # ไม่งั้น callback จะไม่ถูกเรียกเลยเพราะเทสทั้งก้อนอยู่ใน transaction
+        # ที่ rollback ท้ายเทสเสมอ)
         with patch("military_curriculum.tasks.cascade_enroll_student_task.delay") as mock_delay:
-            client = Client()
-            client.force_login(prep_personnel_user)
-            resp = client.post(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/catch-up-enrollment/")
+            with django_capture_on_commit_callbacks(execute=True):
+                client = Client()
+                client.force_login(prep_personnel_user)
+                resp = client.post(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/catch-up-enrollment/")
 
         assert resp.status_code == 200
         assert resp.json()["mode"] == "async"

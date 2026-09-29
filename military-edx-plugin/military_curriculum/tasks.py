@@ -22,7 +22,19 @@ def cascade_enroll_student_task(self, enrollment_request_id: int):
     try:
         enrollment_request = CurriculumEnrollmentRequest.objects.get(pk=enrollment_request_id)
     except CurriculumEnrollmentRequest.DoesNotExist:
-        logger.error("cascade_enroll_student_task: request %s not found", enrollment_request_id)
-        return
+        # ผู้เรียกควรส่งงานหลัง transaction ที่สร้าง row นี้ commit แล้วเสมอ
+        # (ดู quota_views.py: transaction.on_commit(...)) แต่เผื่อพลาดจุดนั้น
+        # ที่ไหนสักแห่งในอนาคต ลอง retry สั้นๆ ก่อนยอมแพ้ — ไม่งั้น row ที่
+        # เพิ่ง commit ไปหมาดๆ แต่ worker ยังมองไม่เห็น จะค้างเป็น pending
+        # ถาวรแบบเงียบๆ ไม่มี error ให้เห็นเลย (เคยเกิดจริง 74 คนค้าง 3 วัน)
+        logger.warning(
+            "cascade_enroll_student_task: request %s not found yet, retrying (%s/%s)",
+            enrollment_request_id, self.request.retries, self.max_retries,
+        )
+        try:
+            raise self.retry(countdown=5)
+        except self.MaxRetriesExceededError:
+            logger.error("cascade_enroll_student_task: request %s never appeared after retries", enrollment_request_id)
+            return
 
     cascade_enroll_student(enrollment_request)
