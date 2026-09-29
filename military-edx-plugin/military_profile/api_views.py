@@ -4682,6 +4682,19 @@ def _normalize_fonts_pptx(xml: str) -> str:
     ให้ชี้ไปที่ TH SarabunPSK แทนการ fallback ไป OS default
     """
     import re as _re2
+
+    # ไฟล์ที่ export จาก PowerPoint พร้อม "Embed fonts in the file" จะมี
+    # ppt/presentation.xml เก็บ <p:embeddedFontLst> ที่ผูกชื่อฟอนต์เดิม (เช่น
+    # Abadi/Calibri) เข้ากับ binary จริงใน ppt/fonts/*.fntdata — ถ้าปล่อยให้ regex
+    # ด้านล่างรีเนม typeface ในนี้เป็น "TH SarabunPSK" ไปด้วย จะเกิด embeddedFont
+    # หลายรายการชนชื่อ "TH SarabunPSK" กัน แต่ละอันชี้ไปที่ binary ฟอนต์เดิมคนละตัว
+    # (ซึ่งไม่มี glyph ไทย) — LibreOffice จะสับสนว่าใช้ตัวไหน มักได้ binary ที่ไม่มี
+    # ภาษาไทยมาแทน ทำให้ตัวอักษรทั้งหมดกลายเป็นกล่องสี่เหลี่ยม (.notdef) ทั้งที่ฟอนต์
+    # TH SarabunPSK ตัวจริงติดตั้งอยู่ในระบบแล้ว → ตัด embeddedFontLst ทิ้งทั้งก้อน
+    # ให้ fallback ไปใช้ฟอนต์ระบบตามชื่อแทน
+    xml = _re2.sub(r'<p:embeddedFontLst>.*?</p:embeddedFontLst>', '', xml, flags=_re2.DOTALL)
+    xml = _re2.sub(r'embedTrueTypeFonts="[^"]*"', 'embedTrueTypeFonts="0"', xml)
+
     def _replace(m):
         val = m.group(1)
         if val.startswith('+'):   # +mn-lt, +mj-cs ฯลฯ = theme font ref → ไม่แตะ
