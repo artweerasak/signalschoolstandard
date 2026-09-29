@@ -33,14 +33,25 @@ def _make_user(username, role, organization=None):
 @pytest.fixture
 def signal_school_org(db):
     # SIGNAL_SCHOOL_ORG_ID เป็น pk ตายตัว (161) — ต้องบังคับ pk ตอนสร้างใน test DB
-    return Organization.objects.create(
-        id=SIGNAL_SCHOOL_ORG_ID, name="โรงเรียนทหารสื่อสาร กรมการทหารสื่อสาร", code="RS-SS",
+    # get_or_create (ไม่ใช่ create ตรงๆ): กันชนกับแถวเดิมที่หลุดรอดจากการ rollback
+    # ของเทสอื่นที่ใช้ fixture นี้เหมือนกัน — เจอ duplicate-key error เป็นระยะ
+    # (military_profile_organization_pkey, id=161) มาแล้วหลายรอบ get_or_create
+    # ทำให้เทสทนทานต่อปัญหานี้แน่นอน ไม่ว่าสาเหตุที่แท้จริงของการหลุดรอดจะเป็นอะไร
+    org, _ = Organization.objects.get_or_create(
+        id=SIGNAL_SCHOOL_ORG_ID,
+        defaults=dict(name="โรงเรียนทหารสื่อสาร กรมการทหารสื่อสาร", code="RS-SS"),
     )
+    return org
 
 
 @pytest.fixture
 def other_org(db):
-    return Organization.objects.create(name="หน่วยอื่น", code="T-OTHER")
+    # id ตายตัวห่างไกลจาก SIGNAL_SCHOOL_ORG_ID มากๆ (ไม่ใช้ auto-increment
+    # เฉยๆ) กัน sequence ของ Postgres ที่ "เดิน" ข้ามเทสไปเรื่อยๆ โดยไม่ rollback
+    # (nextval() ไม่ transactional แม้ตัวแถวจะถูก rollback ก็ตาม) จนวิ่งมาเท่ากับ
+    # 161 พอดีในบางรอบรัน ทำให้หน่วย "อื่น" นี้ดันมี id ชนกับ รร.ส.สส. โดยบังเอิญ
+    # และเทสสิทธิ์ (ที่ควรได้ 403) กลับผ่านเป็น 200 แบบสุ่มๆ ตามลำดับการรันจริง
+    return Organization.objects.create(id=SIGNAL_SCHOOL_ORG_ID + 900000, name="หน่วยอื่น", code="T-OTHER")
 
 
 @pytest.fixture
