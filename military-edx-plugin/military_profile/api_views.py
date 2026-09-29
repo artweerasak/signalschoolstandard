@@ -103,6 +103,47 @@ def _deindex_library_blocks(usage_key_strs) -> None:
             )
 
 
+def _get_library_index_count(library_key_str: str):
+    """
+    Count how many of a library's blocks are currently searchable in the
+    Meilisearch index, queried directly over HTTP.
+
+    _reindex_library_search() dispatches indexing to the CMS celery worker
+    fire-and-forget -- there's no way from LMS to know when (or whether) that
+    finished, since openedx.core.djangoapps.content.search (which owns a
+    Python Meilisearch client) is CMS-only and not importable here. Meilisearch
+    itself is a plain HTTP service though, and MEILISEARCH_URL/API_KEY are
+    ordinary Django settings present in both processes, so this queries it
+    directly instead of going through that app. Used by the import UI to show
+    real "indexing..." -> "done" progress instead of a fire-and-forget guess.
+
+    Returns None (rather than 0) on any failure, so callers can distinguish
+    "index not caught up yet" from "couldn't reach Meilisearch at all".
+    """
+    import requests as _req
+    from django.conf import settings as _djsettings
+    base_url = getattr(_djsettings, 'MEILISEARCH_URL', None)
+    api_key = getattr(_djsettings, 'MEILISEARCH_API_KEY', None)
+    prefix = getattr(_djsettings, 'MEILISEARCH_INDEX_PREFIX', 'tutor_')
+    if not base_url or not api_key:
+        return None
+    index_name = f"{prefix}studio_content"
+    try:
+        resp = _req.post(
+            f"{base_url}/indexes/{index_name}/search",
+            json={"q": "", "filter": f'context_key = "{library_key_str}"', "limit": 1},
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        return resp.json().get("estimatedTotalHits")
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to query Meilisearch index count for library %s", library_key_str
+        )
+        return None
+
+
 def _grant_course_creator(user) -> None:
     """Grant CourseCreator status:
     1. course_creators_coursecreator  (Studio homepage badge / status display)
@@ -3058,6 +3099,7 @@ def api_import_execute(request):
             return JsonResponse({"error": "ไม่พบข้อสอบในไฟล์", "parse_errors": parse_errors}, status=400)
 
         library_key = LibraryLocatorV2.from_string(library_key_str)
+        index_baseline = _get_library_index_count(library_key_str)
         imported = 0
         import_errors = []
 
@@ -3093,10 +3135,30 @@ def api_import_execute(request):
             "total": len(questions),
             "parse_errors": parse_errors,
             "import_errors": import_errors,
+            "library_key": library_key_str,
+            # Lets the UI poll api_import_index_status() and show real
+            # "indexing..." -> "done" progress instead of a blind guess at
+            # how long the background Meilisearch reindex will take.
+            "index_baseline": index_baseline,
+            "index_expected": (index_baseline + imported) if index_baseline is not None else None,
         })
     except Exception as e:
         import traceback
         return JsonResponse({"error": str(e), "detail": traceback.format_exc()}, status=500)
+
+
+@require_http_methods(["GET"])
+def api_import_index_status(request, library_key_str):
+    """GET /military/api/v1/import/libraries/<key>/index-status/ -- lets the
+    import UI poll whether the async Meilisearch reindex triggered by
+    api_import_execute() has caught up yet, by checking the library's live
+    searchable document count. See _get_library_index_count()."""
+    if not _is_admin_or_instructor(request.user):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    count = _get_library_index_count(library_key_str)
+    if count is None:
+        return JsonResponse({"error": "ตรวจสอบ index ไม่ได้ในขณะนี้"}, status=503)
+    return JsonResponse({"count": count})
 
 
 @require_http_methods(["DELETE"])
