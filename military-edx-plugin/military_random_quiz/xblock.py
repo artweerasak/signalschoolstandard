@@ -91,12 +91,19 @@ class MilitaryRandomQuizXBlock(XBlock):
         default=10.0,
         scope=Scope.settings,
     )
-    max_attempts = Integer(
+    quiz_max_attempts = Integer(
         display_name="จำนวนครั้งที่ทำได้",
         default=1,
         scope=Scope.settings,
         help="ใส่ 0 = ไม่จำกัดจำนวนครั้ง",
     )
+    # ตั้งชื่อ field ว่า quiz_max_attempts (ไม่ใช่ max_attempts เฉยๆ) เพราะ
+    # "max_attempts" ชนกับ field เดียวกันใน xmodule.modulestore.inheritance.
+    # InheritanceMixin (นโยบาย "Maximum Attempts" ระดับคอร์ส/section ของ Capa
+    # เดิม) ซึ่งทุก XBlock ในระบบ mixin เข้าไปโดยอัตโนมัติ -- ถ้าใช้ชื่อซ้ำ ค่าที่
+    # อ่านได้จะถูกแทนที่ด้วยค่า inherited จากนโยบายคอร์สแทนค่า default ของเราเอง
+    # (เจอบั๊กจริงตอนเทส: field แสดงค่า 2 ทั้งที่ default=1 เพราะ subsection นั้น
+    # มีนโยบาย Maximum Attempts=2 ของ Capa อยู่)
     show_answer_after_submit = Boolean(
         display_name="เฉลยคำตอบหลังส่ง",
         default=True,
@@ -200,10 +207,10 @@ class MilitaryRandomQuizXBlock(XBlock):
         return order
 
     def _attempts_remaining(self):
-        """True ถ้ายังทำ(ซ้ำ)ได้อีก -- max_attempts=0 หมายถึงไม่จำกัด"""
-        if self.max_attempts == 0:
+        """True ถ้ายังทำ(ซ้ำ)ได้อีก -- quiz_max_attempts=0 หมายถึงไม่จำกัด"""
+        if self.quiz_max_attempts == 0:
             return True
-        return self.attempt_number < self.max_attempts
+        return self.attempt_number < self.quiz_max_attempts
 
     def _needs_access_code(self):
         """True ถ้าตั้งรหัสเข้าสอบไว้ (ไม่ว่าง) และนักเรียนคนนี้ยังไม่เคยกรอกถูก
@@ -265,7 +272,7 @@ class MilitaryRandomQuizXBlock(XBlock):
             "score": self.get_score(),
             "weight": self.weight,
             "attempt_number": self.attempt_number,
-            "max_attempts": self.max_attempts,
+            "max_attempts": self.quiz_max_attempts,
             "can_retake": is_submitted and self._attempts_remaining(),
         })
         return frag
@@ -295,7 +302,7 @@ class MilitaryRandomQuizXBlock(XBlock):
             return {"error": "ยังไม่มีข้อสอบสำหรับผู้ใช้นี้"}
         # ป้องกันไว้อีกชั้น เผื่อ state ไม่ตรงกัน (ปกติ retake_quiz จะกันไว้แล้วว่า
         # ต้องเหลือจำนวนครั้งก่อนถึงจะเคลียร์ state ให้ทำรอบใหม่ได้)
-        if self.max_attempts != 0 and self.attempt_number >= self.max_attempts:
+        if self.quiz_max_attempts != 0 and self.attempt_number >= self.quiz_max_attempts:
             return {"error": "ทำครบจำนวนครั้งที่กำหนดแล้ว"}
 
         from openedx.core.djangoapps.xblock.api import get_block_olx
@@ -347,7 +354,7 @@ class MilitaryRandomQuizXBlock(XBlock):
             "score": self.get_score(),
             "can_retake": self._attempts_remaining(),
             "attempt_number": self.attempt_number,
-            "max_attempts": self.max_attempts,
+            "max_attempts": self.quiz_max_attempts,
         }
 
     @XBlock.json_handler
@@ -376,7 +383,7 @@ class MilitaryRandomQuizXBlock(XBlock):
             library_key=self.library_key or "",
             count=self.count or 10,
             weight=self.weight or 10.0,
-            max_attempts=self.max_attempts if self.max_attempts is not None else 1,
+            max_attempts=self.quiz_max_attempts if self.quiz_max_attempts is not None else 1,
             access_code=self.access_code or "",
             csrf_token=_get_csrf_token(),
         ))
@@ -481,7 +488,7 @@ class MilitaryRandomQuizXBlock(XBlock):
         weight = data.get("weight")
         self.weight = float(weight) if weight is not None else (self.weight if self.weight is not None else 10.0)
         max_attempts = data.get("max_attempts")
-        self.max_attempts = max(0, int(max_attempts)) if max_attempts is not None else (self.max_attempts or 1)
+        self.quiz_max_attempts = max(0, int(max_attempts)) if max_attempts is not None else (self.quiz_max_attempts or 1)
         show_answer = data.get("show_answer_after_submit")
         self.show_answer_after_submit = bool(show_answer) if show_answer is not None else self.show_answer_after_submit
         show_score = data.get("show_score_after_submit")
