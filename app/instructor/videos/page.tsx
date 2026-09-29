@@ -226,9 +226,10 @@ export default function VideosPage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
     const dropped = Array.from(e.dataTransfer.files).filter(
-      f => f.type.startsWith('video/') || f.name.match(/\.(mp4|mov|avi|mkv|webm|flv|wmv)$/i));
+      f => f.type.startsWith('video/') || f.type.startsWith('audio/')
+        || f.name.match(/\.(mp4|mov|avi|mkv|webm|flv|wmv|mp3|wav|m4a|ogg|aac|wma|flac)$/i));
     if (dropped.length > 0) addFiles(dropped);
-    else setError('กรุณาเลือกไฟล์วิดีโอเท่านั้น');
+    else setError('กรุณาเลือกไฟล์วิดีโอหรือไฟล์เสียงเท่านั้น');
   }, [addFiles]);
 
   const createSubject = async () => {
@@ -342,7 +343,7 @@ export default function VideosPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#2D0F42]">จัดการวิดีโอการสอน</h1>
-        <p className="text-[#6b6478] mt-1 text-sm">วิดีโอแยกตามหมวดหมู่ — แชร์ทั้ง folder ให้ครูอื่นได้เลยด้วยปุ่ม 👥 แชร์</p>
+        <p className="text-[#6b6478] mt-1 text-sm">วิดีโอ/ไฟล์เสียงแยกตามหมวดหมู่ — แชร์ทั้ง folder ให้ครูอื่นได้เลยด้วยปุ่ม 👥 แชร์</p>
       </div>
 
       {/* Subject Management */}
@@ -416,7 +417,7 @@ export default function VideosPage() {
                 <div className="text-[#9a92a8] text-sm">หรือคลิกเพื่อเลือกไฟล์ · รองรับหลายไฟล์พร้อมกัน</div>
               </div>
             )}
-            <input ref={fileRef} type="file" accept="video/*" multiple
+            <input ref={fileRef} type="file" accept="video/*,audio/*" multiple
               onChange={e => {
                 const fs = Array.from(e.target.files || []);
                 if (fs.length) addFiles(fs);
