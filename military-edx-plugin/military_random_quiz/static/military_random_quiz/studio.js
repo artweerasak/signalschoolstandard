@@ -141,6 +141,7 @@ function MilitaryRandomQuizStudio(runtime, element, initArgs) {
       max_attempts: document.getElementById('mil-rq-max-attempts').value,
       show_answer_after_submit: document.getElementById('mil-rq-show-answer').checked,
       show_score_after_submit: document.getElementById('mil-rq-show-score').checked,
+      access_code: document.getElementById('mil-rq-access-code').value,
     }).done(function (resp) {
       if (resp.error) {
         errEl.textContent = resp.error;

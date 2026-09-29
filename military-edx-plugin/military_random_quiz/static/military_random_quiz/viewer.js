@@ -4,6 +4,7 @@ function MilitaryRandomQuizXBlock(runtime, element, initArgs) {
   var revealAnswer = initArgs.reveal_answer;
   var showScore = initArgs.show_score;
   var canRetake = initArgs.can_retake;
+  var needsCode = initArgs.needs_code;
   var THAI_LETTERS = ['ก', 'ข', 'ค', 'ง', 'จ', 'ฉ', 'ช', 'ซ'];
 
   function getCsrfToken() {
@@ -111,5 +112,39 @@ function MilitaryRandomQuizXBlock(runtime, element, initArgs) {
     });
   });
 
-  render();
+  function submitAccessCode() {
+    var errEl = document.getElementById('mil-rq-code-error');
+    var code = document.getElementById('mil-rq-code-input').value;
+    var handlerUrl = runtime.handlerUrl(element, 'submit_access_code');
+    $.ajax({
+      type: 'POST',
+      url: handlerUrl,
+      data: JSON.stringify({ code: code }),
+      contentType: 'application/json',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    }).done(function (resp) {
+      if (resp.error) {
+        errEl.textContent = resp.error;
+        errEl.style.display = 'block';
+        return;
+      }
+      // โหลดหน้าใหม่ -- server จะไม่ gate อีกเพราะ access_code_verified ถูกบันทึกแล้ว
+      window.location.reload();
+    }).fail(function () {
+      errEl.textContent = 'ตรวจรหัสไม่สำเร็จ กรุณาลองใหม่';
+      errEl.style.display = 'block';
+    });
+  }
+
+  if (needsCode) {
+    // ยังไม่กรอกรหัสถูก -- ซ่อนตัวข้อสอบทั้งหมด (questions ว่างอยู่แล้วจากฝั่ง server ด้วย)
+    document.getElementById('mil-rq-body').style.display = 'none';
+    document.getElementById('mil-rq-gate').style.display = 'block';
+    document.getElementById('mil-rq-code-submit').addEventListener('click', submitAccessCode);
+    document.getElementById('mil-rq-code-input').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') submitAccessCode();
+    });
+  } else {
+    render();
+  }
 }
