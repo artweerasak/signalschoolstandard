@@ -348,6 +348,74 @@ class CurriculumCourse(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# CurriculumTemplate (พิมพ์เขียวหลักสูตร) — ให้ prep_school "บันทึกเป็นแม่แบบ"
+# จากหลักสูตรที่ทำเสร็จแล้วปีนี้ แล้วปีถัดไป "สร้างจากแม่แบบ" แทนการแอดวิชาใหม่
+# ทั้งหมดซ้ำทุกปี — ไม่มี status workflow/quota จริงเพราะไม่ใช่หลักสูตรที่เปิดจริง
+# เป็นแค่พิมพ์เขียวไว้คัดลอก ไม่เก็บผู้สอน (มอบหมายใหม่ทุกปีตามความเหมาะสม)
+# ---------------------------------------------------------------------------
+
+class CurriculumTemplate(models.Model):
+    """แม่แบบหลักสูตร — เกณฑ์คุณสมบัติ+รายวิชา ที่ prep_school คัดลอกไปสร้าง
+    Curriculum ของปี/รุ่นใหม่ได้โดยไม่ต้องแอดวิชาใหม่ทั้งหมด"""
+
+    name = models.CharField(max_length=255, verbose_name="ชื่อแม่แบบ")
+    organization = models.ForeignKey(
+        "military_profile.Organization",
+        on_delete=models.CASCADE,
+        related_name="curriculum_templates",
+        verbose_name="หน่วยงานเจ้าของแม่แบบ",
+    )
+    eligible_rank_class = models.JSONField(default=list, blank=True, verbose_name="คุณสมบัติผู้รับการฝึกอบรม (รายข้อ)")
+    eligible_rank_min = models.CharField(max_length=10, choices=CURRICULUM_RANK_CHOICES, blank=True, default="", verbose_name="ยศต่ำสุดที่มีสิทธิ์")
+    eligible_rank_max = models.CharField(max_length=10, choices=CURRICULUM_RANK_CHOICES, blank=True, default="", verbose_name="ยศสูงสุดที่มีสิทธิ์")
+    eligible_branch = models.CharField(max_length=20, choices=ELIGIBLE_BRANCH_CHOICES, blank=True, default="", verbose_name="เหล่าที่มีสิทธิ์")
+    eligible_personnel_type = models.JSONField(default=list, blank=True, verbose_name="ประเภทบุคลากรที่มีสิทธิ์")
+    eligible_min_years_in_rank = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="ระยะเวลาครองยศขั้นต่ำ (ปี)")
+    category = models.CharField(max_length=30, choices=CURRICULUM_CATEGORY_CHOICES, blank=True, default="", verbose_name="ประเภทหลักสูตร (สำหรับจับคู่ prerequisite)")
+    training_purpose = models.CharField(max_length=30, choices=TRAINING_PURPOSE_CHOICES, blank=True, default="", verbose_name="ประเภทหลักสูตร (แผนกเตรียมการ)")
+    eligible_prerequisite_categories = models.JSONField(default=list, blank=True, verbose_name="ต้องผ่านหลักสูตรประเภทใดมาก่อน")
+    quota_total = models.PositiveIntegerField(default=0, verbose_name="ยอดผู้เข้ารับการฝึกอบรมตามแผน (ค่าแนะนำ)")
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="curriculum_templates_created", verbose_name="ผู้สร้าง")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "แม่แบบหลักสูตร"
+        verbose_name_plural = "แม่แบบหลักสูตร"
+
+    def __str__(self):
+        return self.name
+
+
+class CurriculumTemplateCourse(models.Model):
+    """วิชาในแม่แบบหลักสูตร — field ตรงกับ CurriculumCourse เป๊ะ (ยกเว้นไม่ผูก
+    กับ Curriculum จริง) เพื่อโคลนตรงๆ ตอนสร้างหลักสูตรจากแม่แบบ"""
+
+    template = models.ForeignKey(CurriculumTemplate, on_delete=models.CASCADE, related_name="courses")
+    course_id = models.CharField(max_length=255, db_index=True, verbose_name="Course ID (edX)")
+    display_name = models.CharField(max_length=255, verbose_name="ชื่อวิชา")
+    sequence_order = models.PositiveIntegerField(default=0, verbose_name="ลำดับในหลักสูตร")
+    credit_hours = models.DecimalField(max_digits=5, decimal_places=1, verbose_name="จำนวนชั่วโมง")
+    credits = models.DecimalField(max_digits=4, decimal_places=1, verbose_name="หน่วยกิต")
+    assessment_type = models.CharField(
+        max_length=20, choices=CurriculumCourse.ASSESSMENT_TYPE_CHOICES, default="score",
+        verbose_name="ประเภทการวัดผล",
+    )
+    passing_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="คะแนนผ่าน")
+    is_required = models.BooleanField(default=True, verbose_name="วิชาบังคับ")
+
+    class Meta:
+        unique_together = [("template", "course_id")]
+        ordering = ["sequence_order"]
+        verbose_name = "วิชาในแม่แบบหลักสูตร"
+        verbose_name_plural = "วิชาในแม่แบบหลักสูตร"
+
+    def __str__(self):
+        return f"{self.template} — {self.display_name}"
+
+
+# ---------------------------------------------------------------------------
 # Cascade Enrollment (prep_personnel)
 # ---------------------------------------------------------------------------
 

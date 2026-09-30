@@ -55,6 +55,14 @@ from .transcript_views import (
     api_my_certificate,
     api_org_completions,
 )
+from .template_views import (
+    api_templates,
+    api_template_detail,
+    api_template_courses,
+    api_template_course_detail,
+    api_curriculum_save_as_template,
+    api_template_create_curriculum,
+)
 
 app_name = "military_curriculum"
 
@@ -119,4 +127,13 @@ urlpatterns = [
 
     # Org-wide personnel completion history (org_admin) — Sprint 2 (2026-09)
     path("api/v1/curriculum/org/completions/", api_org_completions, name="api_org_completions"),
+
+    # Curriculum Template (แม่แบบหลักสูตร) — prep_school "บันทึกเป็นแม่แบบ" /
+    # "สร้างจากแม่แบบ" เพื่อลดภาระงานแอดวิชาซ้ำทุกปี (2026-09)
+    path("api/v1/curriculum/templates/", api_templates, name="api_templates"),
+    path("api/v1/curriculum/templates/<int:template_id>/", api_template_detail, name="api_template_detail"),
+    path("api/v1/curriculum/templates/<int:template_id>/courses/", api_template_courses, name="api_template_courses"),
+    path("api/v1/curriculum/templates/<int:template_id>/courses/<int:course_pk>/", api_template_course_detail, name="api_template_course_detail"),
+    path("api/v1/curriculum/curricula/<int:curriculum_id>/save-as-template/", api_curriculum_save_as_template, name="api_curriculum_save_as_template"),
+    path("api/v1/curriculum/templates/<int:template_id>/create-curriculum/", api_template_create_curriculum, name="api_template_create_curriculum"),
 ]
