@@ -82,6 +82,11 @@ DATABASES['default']['CONN_MAX_AGE'] = 60
 DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 MILITARY_ENCRYPTION_KEY = "{{ MILITARY_ENCRYPTION_KEY }}"
+# ThaID OIDC assertion signing secret — ต้องเป็นค่าเดียวกับ THAID_ASSERTION_SECRET
+# ใน .env.local ของ signal-frontend เป๊ะ (ดู military_profile/thaid_views.py:
+# verify_assertion คืน None เงียบๆ ถ้าค่านี้ว่าง/ไม่ตรงกัน — ทำให้ ThaID login/
+# สมัครสมาชิกพังทั้งหมดแบบไม่มี error ที่ชัดเจนในแอปเอง ต้องดู log แทน)
+MILITARY_THAID_ASSERTION_SECRET = "{{ MILITARY_THAID_ASSERTION_SECRET }}"
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SAMESITE = "None"
@@ -261,6 +266,10 @@ def _register_military_compose_mount(
 
 hooks.Filters.CONFIG_DEFAULTS.add_items([
     ("MILITARY_ENCRYPTION_KEY", "CHANGE_ME_32_byte_base64_encoded_key_here_=="),
+    # ห้ามใส่ใน CONFIG_UNIQUE — ต้องตั้งด้วยมือให้ตรงกับ THAID_ASSERTION_SECRET
+    # ฝั่ง signal-frontend เป๊ะ (คนละ service กัน ไม่มีทางรู้ค่ากันเอง) ถ้าใส่
+    # unique จะได้ค่าสุ่มคนละตัวกับฝั่ง frontend ทันทีที่ config save
+    ("MILITARY_THAID_ASSERTION_SECRET", "CHANGE_ME_must_match_signal_frontend_THAID_ASSERTION_SECRET"),
     ("MILITARY_HR_EMAILS", ["hr@yourorg.mil.th"]),
     ("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", 5),
     ("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300),
