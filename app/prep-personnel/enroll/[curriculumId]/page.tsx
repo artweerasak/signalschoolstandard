@@ -50,9 +50,13 @@ export default function EnrollPage() {
           r.eligible_rank_min_display || r.eligible_rank_max_display
             ? `ยศ ${r.eligible_rank_min_display || "ไม่จำกัด"} – ${r.eligible_rank_max_display || "ไม่จำกัด"}`
             : null,
-          r.eligible_personnel_type_display,
+          r.eligible_personnel_type_display.length > 0
+            ? r.eligible_personnel_type_display.join(", ")
+            : null,
           r.eligible_prerequisite_categories_display.length > 0
-            ? `ต้องผ่านมาก่อน: ${r.eligible_prerequisite_categories_display.join(", ")}`
+            ? `ต้องผ่านมาก่อน: ${r.eligible_prerequisite_categories_display.map(p =>
+                p.min_years_since ? `${p.category_display} (อย่างน้อย ${p.min_years_since} ปี)` : p.category_display
+              ).join(", ")}`
             : null,
         ].filter(Boolean).join(" · "))
       })

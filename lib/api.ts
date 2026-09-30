@@ -238,6 +238,17 @@ export interface CurriculumCourseItem {
   owner_name: string | null
 }
 
+export interface PrerequisiteCategoryRequirement {
+  category: string
+  min_years_since: number | null
+}
+
+export interface PrerequisiteCategoryRequirementDisplay {
+  category: string
+  category_display: string
+  min_years_since: number | null
+}
+
 export interface CurriculumSummary {
   id: number
   name: string
@@ -251,6 +262,8 @@ export interface CurriculumSummary {
   quota_total: number
   category: string
   category_display: string | null
+  training_purpose: string
+  training_purpose_display: string | null
   course_count: number
   created_at: string | null
   submitted_at: string | null
@@ -264,16 +277,18 @@ export interface LegacyCurriculumCompletionRow {
 }
 
 export interface CurriculumDetail extends CurriculumSummary {
-  eligible_rank_class: string
+  eligible_rank_class: string[]
   eligible_rank_min: string
   eligible_rank_min_display: string | null
   eligible_rank_max: string
   eligible_rank_max_display: string | null
   eligible_min_years_in_rank: number | null
-  eligible_personnel_type: string
-  eligible_personnel_type_display: string | null
-  eligible_prerequisite_categories: string[]
-  eligible_prerequisite_categories_display: string[]
+  eligible_branch: string
+  eligible_branch_display: string | null
+  eligible_personnel_type: string[]
+  eligible_personnel_type_display: string[]
+  eligible_prerequisite_categories: PrerequisiteCategoryRequirement[]
+  eligible_prerequisite_categories_display: PrerequisiteCategoryRequirementDisplay[]
   region_quotas: CurriculumRegionQuota[]
   courses: CurriculumCourseItem[]
 }
@@ -327,10 +342,10 @@ export interface EligibleDensityReport {
   eligible_rank_max: string
   eligible_rank_max_display: string | null
   eligible_min_years_in_rank: number | null
-  eligible_personnel_type: string
-  eligible_personnel_type_display: string | null
-  eligible_prerequisite_categories: string[]
-  eligible_prerequisite_categories_display: string[]
+  eligible_personnel_type: string[]
+  eligible_personnel_type_display: string[]
+  eligible_prerequisite_categories: PrerequisiteCategoryRequirement[]
+  eligible_prerequisite_categories_display: PrerequisiteCategoryRequirementDisplay[]
   national: {
     eligible_count: number
     needs_verification_count: number
@@ -357,8 +372,8 @@ export interface OrgQuotaReport {
   has_eligibility_criteria: boolean
   eligible_rank_min_display: string | null
   eligible_rank_max_display: string | null
-  eligible_personnel_type_display: string | null
-  eligible_prerequisite_categories_display: string[]
+  eligible_personnel_type_display: string[]
+  eligible_prerequisite_categories_display: PrerequisiteCategoryRequirementDisplay[]
 }
 
 export interface PersonnelSearchRow {
@@ -1047,27 +1062,32 @@ export const api = {
   },
 
   // ── Curriculum (prep_school) ─────────────────────────────────────────────
-  listCurricula: (params?: { status?: string; org_id?: number }) => {
+  listCurricula: (params?: { status?: string; org_id?: number; academic_year?: number }) => {
     const qs = new URLSearchParams()
     if (params?.status) qs.set("status", params.status)
     if (params?.org_id) qs.set("org_id", String(params.org_id))
+    if (params?.academic_year) qs.set("academic_year", String(params.academic_year))
     return fetchAPI<{ count: number; results: CurriculumSummary[] }>(`api/v1/curriculum/curricula/?${qs}`)
   },
   createCurriculum: (body: {
     name: string; batch_code: string; academic_year: number; organization_id?: number
     start_date?: string | null; end_date?: string | null
-    eligible_rank_class?: string; eligible_rank_min?: string; eligible_rank_max?: string
-    eligible_min_years_in_rank?: number | null; eligible_personnel_type?: string; quota_total?: number
-    category?: string; eligible_prerequisite_categories?: string[]
+    eligible_rank_class?: string[]; eligible_rank_min?: string; eligible_rank_max?: string
+    eligible_min_years_in_rank?: number | null; eligible_branch?: string
+    eligible_personnel_type?: string[]; quota_total?: number
+    category?: string; training_purpose?: string
+    eligible_prerequisite_categories?: PrerequisiteCategoryRequirement[]
     region_quotas?: { army_region: string; quota: number }[]
   }) => fetchAPIPost<CurriculumDetail>("api/v1/curriculum/curricula/", body),
   getCurriculum: (id: number) => fetchAPI<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`),
   updateCurriculum: (id: number, body: Partial<{
     name: string; batch_code: string; academic_year: number
     start_date: string | null; end_date: string | null
-    eligible_rank_class: string; eligible_rank_min: string; eligible_rank_max: string
-    eligible_min_years_in_rank: number | null; eligible_personnel_type: string; quota_total: number
-    category: string; eligible_prerequisite_categories: string[]
+    eligible_rank_class: string[]; eligible_rank_min: string; eligible_rank_max: string
+    eligible_min_years_in_rank: number | null; eligible_branch: string
+    eligible_personnel_type: string[]; quota_total: number
+    category: string; training_purpose: string
+    eligible_prerequisite_categories: PrerequisiteCategoryRequirement[]
   }>) => fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/`, body, "PATCH"),
   deleteCurriculum: (id: number) =>
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/curricula/${id}/`, {}, "DELETE"),
@@ -1088,6 +1108,10 @@ export const api = {
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/curricula/${id}/courses/${coursePk}/`, {}, "DELETE"),
   submitCurriculum: (id: number) =>
     fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/submit/`, {}),
+  bulkSubmitCurricula: (ids: number[]) =>
+    fetchAPIPost<{ submitted: number[]; failed: { id: number; error: string }[] }>(
+      "api/v1/curriculum/curricula/bulk-submit/", { ids }
+    ),
 
   // ── Quota/Demand Report + Cascade Enrollment (prep_personnel) ────────────
   listSubmittedCurricula: (status?: "submitted" | "active") => {

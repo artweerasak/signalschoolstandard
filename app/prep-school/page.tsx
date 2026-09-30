@@ -4,9 +4,9 @@
  */
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { api, CurriculumSummary } from "@/lib/api"
+import { api, CurriculumSummary, PrerequisiteCategoryRequirement } from "@/lib/api"
 import Card from "@/components/ui/Card"
 import PageHeader from "@/components/ui/PageHeader"
 import Button from "@/components/ui/Button"
@@ -25,8 +25,11 @@ const STATUS_TONES: Record<string, "neutral" | "warning" | "success" | "error"> 
   closed: "error",
 }
 
-// ต้องตรงกับ RANK_CHOICES/PERSONNEL_TYPE_CHOICES ใน military_profile/models.py เป๊ะ
+// ต้องตรงกับ CURRICULUM_RANK_CHOICES/PERSONNEL_TYPE_CHOICES ใน
+// military_curriculum/models.py + military_profile/models.py เป๊ะ — "นนส."
+// เป็น choice เฉพาะของฟอร์มหลักสูตรเท่านั้น (ไม่ใช่ยศจริงของกำลังพล)
 const RANK_CHOICES = [
+  ["NNS","นนส. (นักเรียนนายสิบ)"],
   ["PVT","พลทหาร"],["CPL","สิบตรี"],["SGT3","สิบโท"],["SGT2","สิบเอก"],
   ["SSGT","จ่าสิบตรี"],["MSGT","จ่าสิบโท"],["CSGT","จ่าสิบเอก"],["CSGT_S","จ่าสิบเอกพิเศษ"],
   ["WO1","พันจ่าตรี"],["WO2","พันจ่าโท"],["WO3","พันจ่าเอก"],
@@ -38,6 +41,7 @@ const PERSONNEL_TYPE_CHOICES = [
   ["military", "ทหาร"], ["civilian", "ลูกจ้างประจำ"], ["government", "พนักงานราชการ"],
 ]
 // ต้องตรงกับ CURRICULUM_CATEGORY_CHOICES ใน military_curriculum/models.py เป๊ะ
+// — ใช้จับคู่ prerequisite เท่านั้น คนละเรื่องกับ TRAINING_PURPOSE_CHOICES
 const CURRICULUM_CATEGORY_CHOICES = [
   ["nco_basic", "นายสิบชั้นต้น"],
   ["nco_senior", "นายสิบชั้นสูง (อาวุโส)"],
@@ -46,6 +50,19 @@ const CURRICULUM_CATEGORY_CHOICES = [
   ["officer_senior", "นายทหารสัญญาบัตร ชั้นนายพล/เสนาธิการ"],
   ["other", "อื่นๆ"],
 ]
+// ต้องตรงกับ TRAINING_PURPOSE_CHOICES ใน military_curriculum/models.py เป๊ะ
+const TRAINING_PURPOSE_CHOICES = [
+  ["production", "หลักสูตรผลิต"],
+  ["career_track", "หลักสูตรตามแนวทางรับราชการ"],
+  ["skill_enrichment", "หลักสูตรเพิ่มพูนความรู้"],
+  ["special_external_budget", "หลักสูตรพิเศษ (ใช้งบประมาณจากภายนอก)"],
+]
+// ต้องตรงกับ ELIGIBLE_BRANCH_CHOICES ใน military_curriculum/models.py เป๊ะ
+const ELIGIBLE_BRANCH_CHOICES = [
+  ["signal", "เหล่า ส."],
+  ["any", "ไม่จำกัดเหล่า"],
+  ["unspecified", "ไม่ระบุ"],
+]
 
 interface FormData {
   name: string
@@ -53,21 +70,22 @@ interface FormData {
   academic_year: number
   start_date: string
   end_date: string
-  eligible_rank_class: string
+  eligible_rank_class: string[]
   eligible_rank_min: string
   eligible_rank_max: string
-  eligible_min_years_in_rank: string
-  eligible_personnel_type: string
+  eligible_branch: string
+  eligible_personnel_type: string[]
   category: string
-  eligible_prerequisite_categories: string[]
+  training_purpose: string
+  eligible_prerequisite_categories: PrerequisiteCategoryRequirement[]
   quota_total: number
 }
 const EMPTY_FORM: FormData = {
   name: "", batch_code: "", academic_year: new Date().getFullYear() + 543,
   start_date: "", end_date: "",
-  eligible_rank_class: "", eligible_rank_min: "", eligible_rank_max: "",
-  eligible_min_years_in_rank: "", eligible_personnel_type: "",
-  category: "", eligible_prerequisite_categories: [],
+  eligible_rank_class: [], eligible_rank_min: "", eligible_rank_max: "",
+  eligible_branch: "", eligible_personnel_type: [],
+  category: "", training_purpose: "", eligible_prerequisite_categories: [],
   quota_total: 0,
 }
 
@@ -79,6 +97,10 @@ export default function PrepSchoolPage() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState("")
+  const [year, setYear] = useState<number | "all">("all")
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [bulkSubmitting, setBulkSubmitting] = useState(false)
+  const [bulkError, setBulkError] = useState("")
 
   const load = () => {
     setLoading(true)
@@ -89,6 +111,22 @@ export default function PrepSchoolPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // ผตก. เสนอแผนการฝึกอบรมล่วงหน้า 1 ปี — ร่างปีถัดไปจะปนกับปีปัจจุบันในหน้า
+  // เดียวกัน ถ้าไม่มีตัวกรอง จึงต้องมีแถบปีการศึกษาให้แยกดู (client-side filter
+  // เหมือน pattern เดียวกับ app/org-admin/school-curricula/page.tsx)
+  const years = useMemo(
+    () => Array.from(new Set(curricula.map(c => c.academic_year))).sort((a, b) => b - a),
+    [curricula]
+  )
+  const filtered = useMemo(
+    () => (year === "all" ? curricula : curricula.filter(c => c.academic_year === year)),
+    [curricula, year]
+  )
+  const selectableIds = useMemo(
+    () => filtered.filter(c => c.status === "draft" && c.course_count > 0).map(c => c.id),
+    [filtered]
+  )
 
   const openAdd = () => {
     setForm(EMPTY_FORM)
@@ -107,8 +145,7 @@ export default function PrepSchoolPage() {
     try {
       await api.createCurriculum({
         ...form,
-        eligible_min_years_in_rank: form.eligible_min_years_in_rank
-          ? Number(form.eligible_min_years_in_rank) : null,
+        eligible_rank_class: form.eligible_rank_class.filter(item => item.trim()),
       })
       setShowModal(false)
       load()
@@ -116,6 +153,29 @@ export default function PrepSchoolPage() {
       setFormError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const handleBulkSubmit = async () => {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`ต้องการส่งหลักสูตรที่เลือก ${selectedIds.length} รายการให้แผนกเตรียมพลใช่หรือไม่?`)) return
+    setBulkSubmitting(true)
+    setBulkError("")
+    try {
+      const result = await api.bulkSubmitCurricula(selectedIds)
+      if (result.failed.length > 0) {
+        setBulkError(`ส่งไม่สำเร็จ ${result.failed.length} รายการ: ${result.failed.map(f => f.error).join(", ")}`)
+      }
+      setSelectedIds([])
+      load()
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด")
+    } finally {
+      setBulkSubmitting(false)
     }
   }
 
@@ -130,11 +190,33 @@ export default function PrepSchoolPage() {
       {error && (
         <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-4 py-3 rounded-xl text-sm">{error}</div>
       )}
+      {bulkError && (
+        <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-4 py-3 rounded-xl text-sm">{bulkError}</div>
+      )}
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-[#6b6478]">ปีการศึกษา</label>
+          <select
+            value={year}
+            onChange={e => { setYear(e.target.value === "all" ? "all" : Number(e.target.value)); setSelectedIds([]) }}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]"
+          >
+            <option value="all">ทุกปีการศึกษา</option>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        {selectedIds.length > 0 && (
+          <Button onClick={handleBulkSubmit} disabled={bulkSubmitting}>
+            {bulkSubmitting ? "กำลังส่ง..." : `ส่งที่เลือก (${selectedIds.length})`}
+          </Button>
+        )}
+      </div>
 
       <Card className="overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-[#9a92a8]">กำลังโหลด...</div>
-        ) : curricula.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-[#9a92a8]">
             <p className="text-lg mb-2">ยังไม่มีหลักสูตร</p>
             <p className="text-sm">คลิก &ldquo;สร้างหลักสูตรใหม่&rdquo; เพื่อเริ่มต้น</p>
@@ -143,17 +225,27 @@ export default function PrepSchoolPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#e6e1ee] bg-[#f7f5fa] text-left text-xs text-[#6b6478] uppercase">
+                <th className="px-4 py-3 w-8"></th>
                 <th className="px-4 py-3">ชื่อหลักสูตร</th>
                 <th className="px-4 py-3">รุ่น</th>
                 <th className="px-4 py-3">ปีการศึกษา</th>
                 <th className="px-4 py-3">จำนวนวิชา</th>
-                <th className="px-4 py-3">โควตา</th>
+                <th className="px-4 py-3">ยอดตามแผน</th>
                 <th className="px-4 py-3">สถานะ</th>
               </tr>
             </thead>
             <tbody>
-              {curricula.map(c => (
+              {filtered.map(c => (
                 <tr key={c.id} className="border-b border-[#f0ecf6] hover:bg-[#f7f5fa]">
+                  <td className="px-4 py-3">
+                    {c.status === "draft" && c.course_count > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(c.id)}
+                        onChange={() => toggleSelected(c.id)}
+                      />
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <Link href={`/prep-school/curricula/${c.id}`} className="text-[#4A1A6B] font-medium hover:underline">
                       {c.name}
@@ -220,6 +312,7 @@ export default function PrepSchoolPage() {
                     className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
                 </div>
               </div>
+
               <div className="border-t border-[#e6e1ee] pt-4">
                 <p className="text-sm font-semibold text-[#2D0F42] mb-1">คุณสมบัติผู้เข้าเรียน (ไม่บังคับ)</p>
                 <p className="text-xs text-[#9a92a8] mb-3">ใช้คำนวณจำนวนกำลังพลที่เข้าเกณฑ์ในรายงานความคับคั่งของแผนกเตรียมพล — เว้นว่างช่องไหน = ไม่จำกัดด้านนั้น</p>
@@ -243,39 +336,80 @@ export default function PrepSchoolPage() {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ระยะเวลาครองยศขั้นต่ำ (ปี)</label>
-                    <input type="number" min={0} placeholder="ไม่จำกัด" value={form.eligible_min_years_in_rank}
-                      onChange={e => setForm({ ...form, eligible_min_years_in_rank: e.target.value })}
-                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#4a4456] mb-1">ประเภทบุคลากร</label>
-                    <select value={form.eligible_personnel_type}
-                      onChange={e => setForm({ ...form, eligible_personnel_type: e.target.value })}
-                      className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
-                      <option value="">ทุกประเภท</option>
-                      {PERSONNEL_TYPE_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-                    </select>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">เหล่า</label>
+                  <select value={form.eligible_branch}
+                    onChange={e => setForm({ ...form, eligible_branch: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+                    <option value="">— ไม่ระบุ —</option>
+                    {ELIGIBLE_BRANCH_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  </select>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">ประเภทบุคลากร (เลือกได้หลายข้อ)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {PERSONNEL_TYPE_CHOICES.map(([code, label]) => {
+                      const checked = form.eligible_personnel_type.includes(code)
+                      return (
+                        <label key={code} className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer ${
+                          checked ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-[#4a4456] border-[#d9d2e6]"
+                        }`}>
+                          <input type="checkbox" className="hidden" checked={checked}
+                            onChange={() => setForm(f => ({
+                              ...f,
+                              eligible_personnel_type: checked
+                                ? f.eligible_personnel_type.filter(c => c !== code)
+                                : [...f.eligible_personnel_type, code],
+                            }))} />
+                          {label}
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
                 <div className="mt-3">
-                  <label className="block text-sm font-medium text-[#4a4456] mb-1">คำอธิบายเพิ่มเติม (ไม่บังคับ)</label>
-                  <input type="text" placeholder="เช่น ต้องผ่านหลักสูตรพื้นฐานมาก่อน" value={form.eligible_rank_class}
-                    onChange={e => setForm({ ...form, eligible_rank_class: e.target.value })}
-                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">คุณสมบัติผู้รับการฝึกอบรม (รายข้อ ไม่บังคับ)</label>
+                  <div className="space-y-2">
+                    {form.eligible_rank_class.map((item, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input type="text" value={item} placeholder="เช่น ผ่านการฝึกภาคสนามมาก่อน"
+                          onChange={e => setForm(f => ({
+                            ...f,
+                            eligible_rank_class: f.eligible_rank_class.map((v, vi) => vi === i ? e.target.value : v),
+                          }))}
+                          className="flex-1 border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                        <button type="button"
+                          onClick={() => setForm(f => ({
+                            ...f, eligible_rank_class: f.eligible_rank_class.filter((_, vi) => vi !== i),
+                          }))}
+                          className="text-[#9a92a8] hover:text-[#b91c1c] px-2">✕</button>
+                      </div>
+                    ))}
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, eligible_rank_class: [...f.eligible_rank_class, ""] }))}
+                      className="text-xs text-[#4A1A6B] font-medium hover:underline">+ เพิ่มคุณสมบัติ</button>
+                  </div>
                 </div>
               </div>
+
               <div className="border-t border-[#e6e1ee] pt-4">
                 <p className="text-sm font-semibold text-[#2D0F42] mb-1">ประเภทหลักสูตร (ไม่บังคับ)</p>
-                <p className="text-xs text-[#9a92a8] mb-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">ประเภทหลักสูตร (แผนกเตรียมการ)</label>
+                  <select value={form.training_purpose}
+                    onChange={e => setForm({ ...form, training_purpose: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
+                    <option value="">— ไม่ระบุ —</option>
+                    {TRAINING_PURPOSE_CHOICES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                  </select>
+                </div>
+                <p className="text-xs text-[#9a92a8] mt-3 mb-1">
                   ใช้จับคู่ว่าหลักสูตรนี้เป็นประเภทเดียวกับหลักสูตรอื่นไหม แม้ชื่อ/รุ่นจะต่างกันไปในแต่ละปี
                   (เช่น &ldquo;นายสิบชั้นต้นผ่านสื่อฯ&rdquo; กับ &ldquo;นายสิบชั้นต้นเร่งรัด&rdquo; เป็นประเภทเดียวกันได้) —
-                  ใช้กับเงื่อนไข &ldquo;ต้องผ่านหลักสูตรประเภทนี้มาก่อน&rdquo; ของหลักสูตรอื่น
+                  ใช้กับเงื่อนไข &ldquo;ต้องผ่านหลักสูตรประเภทนี้มาก่อน&rdquo; ของหลักสูตรอื่น คนละเรื่องกับด้านบน
                 </p>
                 <div>
-                  <label className="block text-sm font-medium text-[#4a4456] mb-1">หลักสูตรนี้เป็นประเภท</label>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">หลักสูตรนี้เป็นประเภท (สำหรับจับคู่ prerequisite)</label>
                   <select value={form.category}
                     onChange={e => setForm({ ...form, category: e.target.value })}
                     className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B] bg-white">
@@ -285,29 +419,47 @@ export default function PrepSchoolPage() {
                 </div>
                 <div className="mt-3">
                   <label className="block text-sm font-medium text-[#4a4456] mb-1">ต้องผ่านหลักสูตรประเภทใดมาก่อน</label>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2">
                     {CURRICULUM_CATEGORY_CHOICES.map(([code, label]) => {
-                      const checked = form.eligible_prerequisite_categories.includes(code)
+                      const entry = form.eligible_prerequisite_categories.find(p => p.category === code)
+                      const checked = !!entry
                       return (
-                        <label key={code} className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer ${
-                          checked ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-[#4a4456] border-[#d9d2e6]"
-                        }`}>
-                          <input type="checkbox" className="hidden" checked={checked}
-                            onChange={() => setForm(f => ({
-                              ...f,
-                              eligible_prerequisite_categories: checked
-                                ? f.eligible_prerequisite_categories.filter(c => c !== code)
-                                : [...f.eligible_prerequisite_categories, code],
-                            }))} />
-                          {label}
-                        </label>
+                        <div key={code} className="flex items-center gap-2">
+                          <label className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer ${
+                            checked ? "bg-[#4A1A6B] text-white border-[#4A1A6B]" : "bg-white text-[#4a4456] border-[#d9d2e6]"
+                          }`}>
+                            <input type="checkbox" className="hidden" checked={checked}
+                              onChange={() => setForm(f => ({
+                                ...f,
+                                eligible_prerequisite_categories: checked
+                                  ? f.eligible_prerequisite_categories.filter(p => p.category !== code)
+                                  : [...f.eligible_prerequisite_categories, { category: code, min_years_since: null }],
+                              }))} />
+                            {label}
+                          </label>
+                          {checked && (
+                            <input type="number" min={0} placeholder="ผ่านมาแล้วกี่ปี (ไม่บังคับ)"
+                              value={entry?.min_years_since ?? ""}
+                              onChange={e => {
+                                const v = e.target.value === "" ? null : Number(e.target.value)
+                                setForm(f => ({
+                                  ...f,
+                                  eligible_prerequisite_categories: f.eligible_prerequisite_categories.map(p =>
+                                    p.category === code ? { ...p, min_years_since: v } : p
+                                  ),
+                                }))
+                              }}
+                              className="w-44 border border-[#d9d2e6] rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                          )}
+                        </div>
                       )
                     })}
                   </div>
                 </div>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-[#4a4456] mb-1">โควตารวม</label>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ยอดผู้เข้ารับการฝึกอบรมตามแผน</label>
                 <input type="number" value={form.quota_total}
                   onChange={e => setForm({ ...form, quota_total: Number(e.target.value) })}
                   className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
