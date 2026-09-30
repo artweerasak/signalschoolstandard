@@ -23,16 +23,22 @@ from military_profile.models import RANK_CHOICES, PERSONNEL_TYPE_CHOICES
 
 User = get_user_model()
 
-# ลำดับชั้นยศจาก RANK_CHOICES (เรียงจากต่ำสุด→สูงสุดอยู่แล้วในนิยามต้นฉบับ) —
-# ใช้เทียบช่วงยศ (eligible_rank_min/max) โดยไม่ต้อง hardcode ลำดับซ้ำที่นี่
-RANK_ORDER = {code: i for i, (code, _) in enumerate(RANK_CHOICES)}
+# "นนส." (นักเรียนนายสิบ) ไม่ใช่ยศจริง (ยังไม่ได้รับการบรรจุยศ) จึงไม่อยู่ใน
+# RANK_CHOICES กลางของ military_profile (ซึ่งผูกกับ MilitaryUserProfile.rank
+# ของกำลังพลจริง) — เพิ่มเป็น choice เฉพาะสำหรับ dropdown คุณสมบัติผู้เข้ารับ
+# การฝึกอบรมของ Curriculum เท่านั้น อยู่ลำดับต่ำสุด (ก่อน พลทหาร)
+CURRICULUM_RANK_CHOICES = [("NNS", "นนส. (นักเรียนนายสิบ)")] + list(RANK_CHOICES)
+
+# ลำดับชั้นยศจาก CURRICULUM_RANK_CHOICES (เรียงจากต่ำสุด→สูงสุด) — ใช้เทียบ
+# ช่วงยศ (eligible_rank_min/max) โดยไม่ต้อง hardcode ลำดับซ้ำที่นี่
+RANK_ORDER = {code: i for i, (code, _) in enumerate(CURRICULUM_RANK_CHOICES)}
 
 
 def ranks_in_range(rank_min: str, rank_max: str) -> list:
     """คืนรายการรหัสยศทั้งหมดที่อยู่ในช่วง [rank_min, rank_max] (รวมขอบ) —
     ว่างทั้งคู่ = ไม่จำกัดช่วงยศ (คืนทุกยศ), ว่างด้านเดียว = ไม่จำกัดด้านนั้น"""
     lo = RANK_ORDER.get(rank_min, 0) if rank_min else 0
-    hi = RANK_ORDER.get(rank_max, len(RANK_CHOICES) - 1) if rank_max else len(RANK_CHOICES) - 1
+    hi = RANK_ORDER.get(rank_max, len(CURRICULUM_RANK_CHOICES) - 1) if rank_max else len(CURRICULUM_RANK_CHOICES) - 1
     return [code for code, idx in RANK_ORDER.items() if lo <= idx <= hi]
 
 
@@ -51,45 +57,108 @@ CURRICULUM_CATEGORY_CHOICES = [
 ]
 CURRICULUM_CATEGORY_CODES = {code for code, _ in CURRICULUM_CATEGORY_CHOICES}
 
+# ประเภทหลักสูตรตามเกณฑ์ของแผนกเตรียมการ (คนละเรื่องกับ CURRICULUM_CATEGORY_
+# CHOICES ข้างบน ซึ่งเป็น key ภายในไว้จับคู่ prerequisite เท่านั้น) — ใช้แค่
+# แสดง/กรองตามเกณฑ์การจัดหลักสูตรของแผนกเตรียมการ ไม่ผูกกับ logic อื่นใด
+TRAINING_PURPOSE_CHOICES = [
+    ("production", "หลักสูตรผลิต"),
+    ("career_track", "หลักสูตรตามแนวทางรับราชการ"),
+    ("skill_enrichment", "หลักสูตรเพิ่มพูนความรู้"),
+    ("special_external_budget", "หลักสูตรพิเศษ (ใช้งบประมาณจากภายนอก)"),
+]
+TRAINING_PURPOSE_CODES = {code for code, _ in TRAINING_PURPOSE_CHOICES}
 
-def has_completed_curriculum_category(student, category_codes) -> bool:
-    """เช็ค*คนเดียว* ว่าเคยผ่าน (ทุกวิชาในหลักสูตรนั้น passed=True) หลักสูตร
-    ที่มี category อยู่ใน category_codes มาก่อนไหม (ไม่นับ category ที่ไม่มี
-    วิชาเลย เพราะไม่มีอะไรให้ตัดสินว่า "ผ่าน") หรือมีบันทึก
-    LegacyCurriculumCompletion (ผ่านมาก่อนระบบนี้จะมีข้อมูล) — ใช้กับ
-    เคสเดี่ยวๆ เท่านั้น ดู student_ids_completed_curriculum_category สำหรับ
-    เช็คหลายคนพร้อมกันแบบมีประสิทธิภาพ (รายงาน/ค้นหา)"""
-    if not category_codes:
+ELIGIBLE_BRANCH_CHOICES = [
+    ("signal", "เหล่า ส."),
+    ("any", "ไม่จำกัดเหล่า"),
+    ("unspecified", "ไม่ระบุ"),
+]
+ELIGIBLE_BRANCH_CODES = {code for code, _ in ELIGIBLE_BRANCH_CHOICES}
+
+
+def personnel_type_display(codes) -> list:
+    """eligible_personnel_type เป็น JSONField list ของ code แล้ว (เดิมเป็น
+    CharField เดี่ยวที่มี get_eligible_personnel_type_display() ให้ใช้ฟรีจาก
+    Django) — ฟังก์ชันนี้ทำหน้าที่แทนสำหรับ list"""
+    labels = dict(PERSONNEL_TYPE_CHOICES)
+    return [labels.get(code, code) for code in (codes or [])]
+
+
+def prerequisite_categories_display(prerequisites) -> list:
+    """eligible_prerequisite_categories เป็น list ของ {"category","min_years_since"}
+    แล้ว (เดิมเป็น list[str] เฉยๆ) — คืน list ของ {"category_display","min_years_since"}"""
+    labels = dict(CURRICULUM_CATEGORY_CHOICES)
+    return [
+        {
+            "category": req.get("category"),
+            "category_display": labels.get(req.get("category"), req.get("category")),
+            "min_years_since": req.get("min_years_since"),
+        }
+        for req in (prerequisites or [])
+    ]
+
+
+def has_completed_curriculum_category(student, prerequisites) -> bool:
+    """เช็ค*คนเดียว* ว่าผ่านเกณฑ์ prerequisites ข้อใดข้อหนึ่งไหม (OR ระหว่าง
+    entry) — ใช้กับเคสเดี่ยวๆ เท่านั้น ดู student_ids_completed_curriculum_category
+    สำหรับเช็คหลายคนพร้อมกันแบบมีประสิทธิภาพ (รายงาน/ค้นหา)
+
+    prerequisites: list ของ {"category": str, "min_years_since": int|None}"""
+    if not prerequisites:
         return True
-    return student.id in student_ids_completed_curriculum_category(category_codes)
+    return student.id in student_ids_completed_curriculum_category(prerequisites)
 
 
-def student_ids_completed_curriculum_category(category_codes) -> set:
-    """เช็คหลายคนพร้อมกัน คืน set ของ student_id ที่ผ่านเกณฑ์ — คิว query
-    ตามจำนวนหลักสูตรใน category นั้น (ไม่ใช่ตามจำนวนคน) ใช้กับรายงาน/ค้นหา
-    ที่ต้องกรองกำลังพลจำนวนมากพร้อมกัน"""
+def student_ids_completed_curriculum_category(prerequisites) -> set:
+    """เช็คหลายคนพร้อมกัน คืน set ของ student_id ที่ผ่านเกณฑ์ข้อใดข้อหนึ่งใน
+    prerequisites (OR ระหว่าง entry เหมือนพฤติกรรมเดิมตอน category_codes ยัง
+    เป็น list[str] เฉยๆ)
+
+    หมายเหตุเรื่อง "ผ่านมาแล้วกี่ปี": ไม่มี field วันที่ผ่านจริงเก็บแยกใน
+    FinalCourseResult (computed_at เป็นแค่เวลาคำนวณ/คำนวณซ้ำล่าสุด ไม่ใช่วันที่
+    ผ่าน) จึงใช้ Curriculum.end_date ของหลักสูตรที่ผ่านเป็นวันอ้างอิงแทน —
+    หลักสูตรที่ไม่มี end_date ถือว่าไม่ทราบวันที่ผ่าน ไม่นับเข้าเกณฑ์ที่มี
+    min_years_since กำกับ ส่วน LegacyCurriculumCompletion ไม่มีวันที่เก็บเลย
+    จึงนับเป็นผ่านเฉพาะเกณฑ์ที่ไม่มีเงื่อนไขปี (min_years_since ว่าง/None)"""
+    from datetime import date
+
     from django.db.models import Count
 
-    if not category_codes:
+    if not prerequisites:
         return set()
 
-    qualifying = set(
-        LegacyCurriculumCompletion.objects.filter(category__in=category_codes)
-        .values_list("student_id", flat=True)
-    )
-    for c in Curriculum.objects.filter(category__in=category_codes).prefetch_related("courses"):
-        course_ids = list(c.courses.values_list("id", flat=True))
-        if not course_ids:
+    qualifying: set = set()
+    for req in prerequisites:
+        category = req.get("category")
+        min_years_since = req.get("min_years_since")
+        if not category:
             continue
-        passed_all_ids = (
-            FinalCourseResult.objects
-            .filter(curriculum_course_id__in=course_ids, passed=True)
-            .values("student_id")
-            .annotate(n=Count("curriculum_course_id", distinct=True))
-            .filter(n=len(course_ids))
-            .values_list("student_id", flat=True)
-        )
-        qualifying.update(passed_all_ids)
+
+        if not min_years_since:
+            qualifying.update(
+                LegacyCurriculumCompletion.objects.filter(category=category)
+                .values_list("student_id", flat=True)
+            )
+
+        for c in Curriculum.objects.filter(category=category).prefetch_related("courses"):
+            if min_years_since:
+                if not c.end_date:
+                    continue
+                years_since = (date.today() - c.end_date).days / 365.25
+                if years_since < min_years_since:
+                    continue
+            course_ids = list(c.courses.values_list("id", flat=True))
+            if not course_ids:
+                continue
+            passed_all_ids = (
+                FinalCourseResult.objects
+                .filter(curriculum_course_id__in=course_ids, passed=True)
+                .values("student_id")
+                .annotate(n=Count("curriculum_course_id", distinct=True))
+                .filter(n=len(course_ids))
+                .values_list("student_id", flat=True)
+            )
+            qualifying.update(passed_all_ids)
     return qualifying
 
 
@@ -119,45 +188,68 @@ class Curriculum(models.Model):
         related_name="curricula",
         verbose_name="หน่วยงานผู้จัด",
     )
-    # ฟิลด์เดิม (free text) — คงไว้เพื่อไม่ทำลายข้อมูลหลักสูตรเก่าที่มีอยู่แล้ว
-    # ใช้แสดงผลเป็นคำอธิบายเสริมเท่านั้น ไม่ใช้กรองข้อมูลกำลังพล (ดู field
+    # เดิมเป็น CharField (คำอธิบายเดียว) — เปลี่ยนเป็น list ของคุณสมบัติทีละข้อ
+    # ตามที่แผนกเตรียมการขอ เพื่อให้แผนกเตรียมพลกรอกข้อมูลประกอบการพิจารณาได้
+    # ง่ายกว่าอ่านข้อความก้อนเดียว (ดู migration 0007 สำหรับการแปลงข้อมูลเดิม)
+    # ยังคงเป็นคำอธิบายเสริมเท่านั้น ไม่ใช้กรองข้อมูลกำลังพล (ดู field
     # eligible_rank_min/eligible_rank_max ด้านล่างสำหรับเกณฑ์ที่ query ได้จริง)
-    eligible_rank_class = models.CharField(
-        max_length=100, blank=True, default="",
-        verbose_name="ช่วงชั้นยศที่มีสิทธิ์ (คำอธิบาย)",
+    eligible_rank_class = models.JSONField(
+        default=list, blank=True,
+        verbose_name="คุณสมบัติผู้รับการฝึกอบรม (รายข้อ)",
+        help_text='list ของคำอธิบายแต่ละข้อ เช่น ["ผ่านการฝึกภาคสนามมาก่อน"]',
     )
     eligible_rank_min = models.CharField(
-        max_length=10, choices=RANK_CHOICES, blank=True, default="",
+        max_length=10, choices=CURRICULUM_RANK_CHOICES, blank=True, default="",
         verbose_name="ยศต่ำสุดที่มีสิทธิ์",
     )
     eligible_rank_max = models.CharField(
-        max_length=10, choices=RANK_CHOICES, blank=True, default="",
+        max_length=10, choices=CURRICULUM_RANK_CHOICES, blank=True, default="",
         verbose_name="ยศสูงสุดที่มีสิทธิ์",
     )
     eligible_min_years_in_rank = models.PositiveSmallIntegerField(
         null=True, blank=True,
         verbose_name="ระยะเวลาครองยศขั้นต่ำ (ปี)",
+        help_text="ไม่แสดงในฟอร์มสร้าง/แก้ไขแล้วตามคำขอของแผนกเตรียมการ "
+                   "(ไม่ได้ใช้งานจริง) แต่คงไว้เพราะรายงานความคับคั่งยังอ้างอิงอยู่",
     )
-    eligible_personnel_type = models.CharField(
-        max_length=100, choices=PERSONNEL_TYPE_CHOICES, blank=True, default="",
+    eligible_branch = models.CharField(
+        max_length=20, choices=ELIGIBLE_BRANCH_CHOICES, blank=True, default="",
+        verbose_name="เหล่าที่มีสิทธิ์",
+    )
+    # เดิมเป็น CharField เดี่ยว — เปลี่ยนเป็น list ตามคำขอของแผนกเตรียมการ
+    # (เลือกได้หลายประเภทบุคลากรต่อหลักสูตร) ดู migration 0007
+    eligible_personnel_type = models.JSONField(
+        default=list, blank=True,
         verbose_name="ประเภทบุคลากรที่มีสิทธิ์",
+        help_text='list ของ PERSONNEL_TYPE_CHOICES code เช่น ["military","civilian"]',
     )
     category = models.CharField(
         max_length=30, choices=CURRICULUM_CATEGORY_CHOICES, blank=True, default="",
-        verbose_name="ประเภทหลักสูตร",
+        verbose_name="ประเภทหลักสูตร (สำหรับจับคู่ prerequisite)",
         help_text="ใช้จับคู่ว่าหลักสูตรนี้เป็นประเภทเดียวกับหลักสูตรอื่นไหม "
-                   "(ชื่อ/รุ่นต่างกันได้ แต่ category เดียวกัน) สำหรับ prerequisite",
+                   "(ชื่อ/รุ่นต่างกันได้ แต่ category เดียวกัน) สำหรับ prerequisite "
+                   "เท่านั้น — คนละเรื่องกับ training_purpose ด้านล่าง",
+    )
+    training_purpose = models.CharField(
+        max_length=30, choices=TRAINING_PURPOSE_CHOICES, blank=True, default="",
+        verbose_name="ประเภทหลักสูตร (แผนกเตรียมการ)",
+        help_text="การจัดประเภทตามเกณฑ์ของแผนกเตรียมการ (ผลิต/ตามแนวทางรับราชการ/"
+                   "เพิ่มพูนความรู้/พิเศษ) — ไม่เกี่ยวกับ category ด้านบน",
     )
     eligible_prerequisite_categories = models.JSONField(
         default=list, blank=True,
         verbose_name="ต้องผ่านหลักสูตรประเภทใดมาก่อน",
-        help_text='list ของ category code เช่น ["nco_basic"] — ว่าง = ไม่มีเงื่อนไขนี้',
+        help_text='list ของ {"category": code, "min_years_since": int|None} เช่น '
+                   '[{"category": "nco_basic", "min_years_since": 2}] — '
+                   "min_years_since ว่าง/None = ไม่มีเงื่อนไขปี, list ว่าง = ไม่มีเงื่อนไขนี้เลย",
     )
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="draft", db_index=True,
         verbose_name="สถานะ",
     )
-    quota_total = models.PositiveIntegerField(default=0, verbose_name="โควตารวม (ส่วนกลาง)")
+    quota_total = models.PositiveIntegerField(
+        default=0, verbose_name="ยอดผู้เข้ารับการฝึกอบรมตามแผน",
+    )
     created_by = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="curricula_created",
         verbose_name="ผู้สร้าง",

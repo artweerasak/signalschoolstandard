@@ -15,6 +15,7 @@ tests/test_curriculum_category_prerequisite.py
 - self-edit LegacyCurriculumCompletion (กำลังพลกรอกเองว่าเคยผ่านมาก่อนระบบนี้)
 """
 import json
+from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -61,6 +62,12 @@ def prep_personnel_user(db):
     return _make_user("cat_prep_personnel", "prep_personnel")
 
 
+def _prereq(category, min_years_since=None):
+    """สร้าง entry เดียวของ eligible_prerequisite_categories (list ของ dict
+    {"category","min_years_since"} ตั้งแต่ PR แผนกเตรียมการ — เดิมเป็น list[str] เฉยๆ)"""
+    return {"category": category, "min_years_since": min_years_since}
+
+
 def _make_passed_curriculum(organization, creator, category, course_count=2, credit=1):
     c = Curriculum.objects.create(
         name=f"หลักสูตร {category}", batch_code="1", academic_year=2569,
@@ -84,7 +91,7 @@ class TestCurriculumCategoryModel:
             name="หลักสูตรไม่มีวิชา", batch_code="1", academic_year=2569,
             organization=organization, created_by=creator, category="nco_basic",
         )
-        assert not has_completed_curriculum_category(student, ["nco_basic"])
+        assert not has_completed_curriculum_category(student, [_prereq("nco_basic")])
 
     def test_passes_when_all_courses_passed(self, db, organization):
         creator = _make_user("cat_creator_pass", "prep_school", organization)
@@ -93,8 +100,8 @@ class TestCurriculumCategoryModel:
         for cc in courses:
             FinalCourseResult.objects.create(curriculum_course=cc, student=student, passed=True)
 
-        assert has_completed_curriculum_category(student, ["nco_basic"]) is True
-        assert student.id in student_ids_completed_curriculum_category(["nco_basic"])
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic")]) is True
+        assert student.id in student_ids_completed_curriculum_category([_prereq("nco_basic")])
 
     def test_fails_when_only_some_courses_passed(self, db, organization):
         creator = _make_user("cat_creator_partial", "prep_school", organization)
@@ -103,7 +110,7 @@ class TestCurriculumCategoryModel:
         FinalCourseResult.objects.create(curriculum_course=courses[0], student=student, passed=True)
         FinalCourseResult.objects.create(curriculum_course=courses[1], student=student, passed=False)
 
-        assert has_completed_curriculum_category(student, ["nco_basic"]) is False
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic")]) is False
 
     def test_different_category_curriculum_not_counted(self, db, organization):
         creator = _make_user("cat_creator_wrong_cat", "prep_school", organization)
@@ -112,12 +119,55 @@ class TestCurriculumCategoryModel:
         for cc in courses:
             FinalCourseResult.objects.create(curriculum_course=cc, student=student, passed=True)
 
-        assert has_completed_curriculum_category(student, ["nco_basic"]) is False
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic")]) is False
 
     def test_legacy_completion_counts_as_passed(self, db, organization):
         student = _make_user("cat_student_legacy", "student", organization)
         LegacyCurriculumCompletion.objects.create(student=student, category="nco_basic", note="จบปี 2560")
-        assert has_completed_curriculum_category(student, ["nco_basic"]) is True
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic")]) is True
+
+    def test_legacy_completion_does_not_count_when_min_years_since_set(self, db, organization):
+        """LegacyCurriculumCompletion ไม่มีวันที่ผ่านเก็บไว้เลย จึงไม่นับเข้า
+        เกณฑ์ที่มีเงื่อนไขปีกำกับ (ดู docstring student_ids_completed_curriculum_category)"""
+        student = _make_user("cat_student_legacy_years", "student", organization)
+        LegacyCurriculumCompletion.objects.create(student=student, category="nco_basic", note="จบปี 2560")
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic", min_years_since=2)]) is False
+
+    def test_min_years_since_blocks_recent_completion(self, db, organization):
+        creator = _make_user("cat_creator_recent", "prep_school", organization)
+        student = _make_user("cat_student_recent", "student", organization)
+        c, courses = _make_passed_curriculum(organization, creator, "nco_basic")
+        c.end_date = date.today() - timedelta(days=30)  # จบมาแค่ ~1 เดือน
+        c.save(update_fields=["end_date"])
+        for cc in courses:
+            FinalCourseResult.objects.create(curriculum_course=cc, student=student, passed=True)
+
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic", min_years_since=2)]) is False
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic")]) is True
+
+    def test_min_years_since_allows_old_enough_completion(self, db, organization):
+        creator = _make_user("cat_creator_old", "prep_school", organization)
+        student = _make_user("cat_student_old", "student", organization)
+        c, courses = _make_passed_curriculum(organization, creator, "nco_basic")
+        c.end_date = date.today() - timedelta(days=365 * 3)  # จบมาแล้ว ~3 ปี
+        c.save(update_fields=["end_date"])
+        for cc in courses:
+            FinalCourseResult.objects.create(curriculum_course=cc, student=student, passed=True)
+
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic", min_years_since=2)]) is True
+
+    def test_min_years_since_ignores_completion_with_no_end_date(self, db, organization):
+        """หลักสูตรที่ไม่มี end_date ถือว่าไม่ทราบวันที่ผ่าน ไม่นับเข้าเกณฑ์ที่
+        มีเงื่อนไขปีกำกับ (แต่ยังนับเข้าเกณฑ์ที่ไม่มีเงื่อนไขปีตามปกติ)"""
+        creator = _make_user("cat_creator_noend", "prep_school", organization)
+        student = _make_user("cat_student_noend", "student", organization)
+        c, courses = _make_passed_curriculum(organization, creator, "nco_basic")
+        assert c.end_date is None
+        for cc in courses:
+            FinalCourseResult.objects.create(curriculum_course=cc, student=student, passed=True)
+
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic", min_years_since=2)]) is False
+        assert has_completed_curriculum_category(student, [_prereq("nco_basic")]) is True
 
     def test_empty_category_list_means_no_restriction(self, db, organization):
         student = _make_user("cat_student_norestriction", "student", organization)
@@ -134,7 +184,7 @@ class TestCurriculumCreateWithCategory:
                 "name": "นายสิบอาวุโส", "batch_code": "1", "academic_year": 2570,
                 "organization_id": organization.id,
                 "category": "nco_senior",
-                "eligible_prerequisite_categories": ["nco_basic"],
+                "eligible_prerequisite_categories": [{"category": "nco_basic", "min_years_since": 2}],
             }),
             content_type="application/json",
         )
@@ -142,8 +192,10 @@ class TestCurriculumCreateWithCategory:
         body = resp.json()
         assert body["category"] == "nco_senior"
         assert body["category_display"] == "นายสิบชั้นสูง (อาวุโส)"
-        assert body["eligible_prerequisite_categories"] == ["nco_basic"]
-        assert body["eligible_prerequisite_categories_display"] == ["นายสิบชั้นต้น"]
+        assert body["eligible_prerequisite_categories"] == [{"category": "nco_basic", "min_years_since": 2}]
+        assert body["eligible_prerequisite_categories_display"] == [
+            {"category": "nco_basic", "category_display": "นายสิบชั้นต้น", "min_years_since": 2}
+        ]
 
     def test_create_rejects_invalid_category(self, db, prep_school_user, organization):
         client = Client()
@@ -166,7 +218,7 @@ class TestCurriculumCreateWithCategory:
             data=json.dumps({
                 "name": "x", "batch_code": "1", "academic_year": 2570,
                 "organization_id": organization.id,
-                "eligible_prerequisite_categories": ["ไม่มีอยู่จริง"],
+                "eligible_prerequisite_categories": [{"category": "ไม่มีอยู่จริง"}],
             }),
             content_type="application/json",
         )
@@ -310,7 +362,7 @@ class TestEligibleDensityReportPrerequisite:
         target = Curriculum.objects.create(
             name="นายสิบอาวุโส เทส", batch_code="1", academic_year=2570,
             organization=organization, created_by=prep_personnel_user,
-            eligible_prerequisite_categories=["nco_basic"],
+            eligible_prerequisite_categories=[_prereq("nco_basic")],
         )
 
         client = Client()
@@ -318,7 +370,9 @@ class TestEligibleDensityReportPrerequisite:
         resp = client.get(f"/military/api/v1/curriculum/reports/eligible-density/?curriculum_id={target.id}")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["eligible_prerequisite_categories_display"] == ["นายสิบชั้นต้น"]
+        assert body["eligible_prerequisite_categories_display"] == [
+            {"category": "nco_basic", "category_display": "นายสิบชั้นต้น", "min_years_since": None}
+        ]
         assert body["national"]["eligible_count"] == 1
         row = body["results"][0]
         assert row["eligible_count"] == 1
@@ -337,7 +391,7 @@ class TestPersonnelSearchPrerequisite:
         target = Curriculum.objects.create(
             name="เทสค้นหา", batch_code="1", academic_year=2570,
             organization=organization, created_by=prep_personnel_user,
-            eligible_prerequisite_categories=["nco_basic"],
+            eligible_prerequisite_categories=[_prereq("nco_basic")],
         )
 
         client = Client()
@@ -353,14 +407,16 @@ class TestOrgQuotasHasEligibilityCriteriaIncludesPrerequisite:
         c = Curriculum.objects.create(
             name="x", batch_code="1", academic_year=2570,
             organization=organization, created_by=prep_personnel_user,
-            eligible_prerequisite_categories=["nco_basic"],
+            eligible_prerequisite_categories=[_prereq("nco_basic")],
         )
         client = Client()
         client.force_login(prep_personnel_user)
         resp = client.get(f"/military/api/v1/curriculum/curricula/{c.id}/org-quotas/")
         body = resp.json()
         assert body["has_eligibility_criteria"] is True
-        assert body["eligible_prerequisite_categories_display"] == ["นายสิบชั้นต้น"]
+        assert body["eligible_prerequisite_categories_display"] == [
+            {"category": "nco_basic", "category_display": "นายสิบชั้นต้น", "min_years_since": None}
+        ]
 
 
 class TestLegacyCurriculumCompletionSelfEdit:
