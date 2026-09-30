@@ -6,7 +6,8 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { api, CurriculumSummary, PrerequisiteCategoryRequirement } from "@/lib/api"
+import { useRouter } from "next/navigation"
+import { api, CurriculumSummary, CurriculumTemplateSummary, PrerequisiteCategoryRequirement } from "@/lib/api"
 import Card from "@/components/ui/Card"
 import PageHeader from "@/components/ui/PageHeader"
 import Button from "@/components/ui/Button"
@@ -90,6 +91,7 @@ const EMPTY_FORM: FormData = {
 }
 
 export default function PrepSchoolPage() {
+  const router = useRouter()
   const [curricula, setCurricula] = useState<CurriculumSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -101,6 +103,15 @@ export default function PrepSchoolPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkError, setBulkError] = useState("")
+
+  const [templates, setTemplates] = useState<CurriculumTemplateSummary[]>([])
+  const [showUseTemplateModal, setShowUseTemplateModal] = useState(false)
+  const [useTemplateForm, setUseTemplateForm] = useState({
+    template_id: 0, name: "", batch_code: "", academic_year: new Date().getFullYear() + 543,
+    start_date: "", end_date: "",
+  })
+  const [useTemplateSaving, setUseTemplateSaving] = useState(false)
+  const [useTemplateError, setUseTemplateError] = useState("")
 
   const load = () => {
     setLoading(true)
@@ -132,6 +143,42 @@ export default function PrepSchoolPage() {
     setForm(EMPTY_FORM)
     setFormError("")
     setShowModal(true)
+  }
+
+  const openUseTemplate = () => {
+    setUseTemplateError("")
+    setUseTemplateForm({
+      template_id: 0, name: "", batch_code: "", academic_year: new Date().getFullYear() + 543,
+      start_date: "", end_date: "",
+    })
+    setShowUseTemplateModal(true)
+    if (templates.length === 0) {
+      api.listTemplates().then(r => setTemplates(r.results)).catch(() => {})
+    }
+  }
+
+  const handleCreateFromTemplate = async () => {
+    if (!useTemplateForm.template_id) { setUseTemplateError("กรุณาเลือกแม่แบบ"); return }
+    if (!useTemplateForm.name.trim()) { setUseTemplateError("กรุณากรอกชื่อหลักสูตร"); return }
+    if (!useTemplateForm.batch_code.trim()) { setUseTemplateError("กรุณากรอกรุ่นที่"); return }
+    if (useTemplateForm.start_date && useTemplateForm.end_date && useTemplateForm.start_date > useTemplateForm.end_date) {
+      setUseTemplateError("วันเริ่มหลักสูตรต้องไม่หลังวันจบหลักสูตร"); return
+    }
+    setUseTemplateSaving(true)
+    setUseTemplateError("")
+    try {
+      const c = await api.createCurriculumFromTemplate(useTemplateForm.template_id, {
+        name: useTemplateForm.name.trim(),
+        batch_code: useTemplateForm.batch_code.trim(),
+        academic_year: useTemplateForm.academic_year,
+        start_date: useTemplateForm.start_date || null,
+        end_date: useTemplateForm.end_date || null,
+      })
+      router.push(`/prep-school/curricula/${c.id}`)
+    } catch (err) {
+      setUseTemplateError(err instanceof Error ? err.message : "สร้างหลักสูตรไม่สำเร็จ")
+      setUseTemplateSaving(false)
+    }
   }
 
   const handleSave = async () => {
@@ -184,7 +231,12 @@ export default function PrepSchoolPage() {
       <PageHeader
         title="หลักสูตรของหน่วย"
         description="สร้างกรอบหลักสูตรประจำปี/รุ่น แล้วส่งต่อแผนกเตรียมพลเพื่อบรรจุกำลังพล"
-        action={<Button onClick={openAdd}>+ สร้างหลักสูตรใหม่</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={openUseTemplate}>สร้างจากแม่แบบ</Button>
+            <Button onClick={openAdd}>+ สร้างหลักสูตรใหม่</Button>
+          </div>
+        }
       />
 
       {error && (
@@ -471,6 +523,85 @@ export default function PrepSchoolPage() {
               </Button>
               <Button onClick={handleSave} disabled={saving}>
                 {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUseTemplateModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
+              <h3 className="font-bold text-[#2D0F42]">สร้างหลักสูตรจากแม่แบบ</h3>
+              <button onClick={() => setShowUseTemplateModal(false)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {useTemplateError && (
+                <div className="bg-[#fee2e2] border border-[#f3a0a0] text-[#b91c1c] px-3 py-2 rounded-xl text-sm">{useTemplateError}</div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">แม่แบบ</label>
+                {templates.length === 0 ? (
+                  <p className="text-sm text-[#9a92a8]">
+                    ยังไม่มีแม่แบบหลักสูตร — สร้างได้จากหน้า{" "}
+                    <Link href="/prep-school/templates" className="text-[#4A1A6B] hover:underline">แม่แบบหลักสูตร</Link>
+                  </p>
+                ) : (
+                  <select value={useTemplateForm.template_id}
+                    onChange={e => {
+                      const id = Number(e.target.value)
+                      const t = templates.find(x => x.id === id)
+                      setUseTemplateForm(f => ({ ...f, template_id: id, name: t ? t.name : f.name }))
+                    }}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]">
+                    <option value={0}>— เลือกแม่แบบ —</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.course_count} วิชา)</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ชื่อหลักสูตร</label>
+                <input type="text" value={useTemplateForm.name}
+                  onChange={e => setUseTemplateForm({ ...useTemplateForm, name: e.target.value })}
+                  className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">รุ่นที่</label>
+                  <input type="text" value={useTemplateForm.batch_code}
+                    onChange={e => setUseTemplateForm({ ...useTemplateForm, batch_code: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">ปีการศึกษา (พ.ศ.)</label>
+                  <input type="number" value={useTemplateForm.academic_year}
+                    onChange={e => setUseTemplateForm({ ...useTemplateForm, academic_year: Number(e.target.value) })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">วันเริ่มหลักสูตร (ไม่บังคับ)</label>
+                  <input type="date" value={useTemplateForm.start_date}
+                    onChange={e => setUseTemplateForm({ ...useTemplateForm, start_date: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#4a4456] mb-1">วันจบหลักสูตร (ไม่บังคับ)</label>
+                  <input type="date" value={useTemplateForm.end_date}
+                    onChange={e => setUseTemplateForm({ ...useTemplateForm, end_date: e.target.value })}
+                    className="w-full border border-[#d9d2e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+                </div>
+              </div>
+              <p className="text-xs text-[#9a92a8]">วิชาทั้งหมดและเกณฑ์คุณสมบัติจะถูกคัดลอกมาให้อัตโนมัติ — ปรับแก้ต่อได้ทันทีหลังสร้างเสร็จ</p>
+            </div>
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
+              <Button variant="ghost" onClick={() => setShowUseTemplateModal(false)}>ยกเลิก</Button>
+              <Button onClick={handleCreateFromTemplate} disabled={useTemplateSaving}>
+                {useTemplateSaving ? "กำลังสร้าง..." : "สร้างหลักสูตร"}
               </Button>
             </div>
           </div>

@@ -102,6 +102,11 @@ export default function CurriculumDetailPage() {
   const [editError, setEditError] = useState("")
   const [deleting, setDeleting] = useState(false)
 
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false)
+  const [saveTemplateName, setSaveTemplateName] = useState("")
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [saveTemplateError, setSaveTemplateError] = useState("")
+
   const [assigningCourseId, setAssigningCourseId] = useState<number | null>(null)
   const [instructorQuery, setInstructorQuery] = useState("")
   const [instructorResults, setInstructorResults] = useState<PersonnelSearchRow[]>([])
@@ -280,6 +285,25 @@ export default function CurriculumDetailPage() {
     }
   }
 
+  const openSaveTemplate = () => {
+    setSaveTemplateName(curriculum ? `${curriculum.name} (แม่แบบ)` : "")
+    setSaveTemplateError("")
+    setShowSaveTemplateModal(true)
+  }
+
+  const handleSaveTemplate = async () => {
+    if (!saveTemplateName.trim()) { setSaveTemplateError("กรุณากรอกชื่อแม่แบบ"); return }
+    setSavingTemplate(true)
+    setSaveTemplateError("")
+    try {
+      const t = await api.saveCurriculumAsTemplate(curriculumId, saveTemplateName.trim())
+      router.push(`/prep-school/templates/${t.id}`)
+    } catch (err) {
+      setSaveTemplateError(err instanceof Error ? err.message : "บันทึกเป็นแม่แบบไม่สำเร็จ")
+      setSavingTemplate(false)
+    }
+  }
+
   const openAssignInstructor = (courseId: number) => {
     setAssigningCourseId(courseId)
     setInstructorQuery("")
@@ -342,6 +366,12 @@ export default function CurriculumDetailPage() {
               className="border border-[#d9d2e6] text-[#4A1A6B] hover:bg-[#f7f5fa] text-sm font-medium px-4 py-2.5 rounded-lg">
               แก้ไขข้อมูล
             </button>
+            {curriculum.courses.length > 0 && (
+              <button onClick={openSaveTemplate}
+                className="border border-[#d9d2e6] text-[#4A1A6B] hover:bg-[#f7f5fa] text-sm font-medium px-4 py-2.5 rounded-lg">
+                บันทึกเป็นแม่แบบ
+              </button>
+            )}
             {isDraft && (
               <button onClick={handleDelete} disabled={deleting}
                 className="border border-red-200 text-red-600 hover:bg-red-50 text-sm font-medium px-4 py-2.5 rounded-lg disabled:opacity-50">
@@ -837,6 +867,41 @@ export default function CurriculumDetailPage() {
               <button onClick={handleSaveEdit} disabled={savingEdit}
                 className="bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-medium px-6 py-2 rounded-lg disabled:opacity-50">
                 {savingEdit ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSaveTemplateModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-[#e6e1ee] flex items-center justify-between">
+              <h3 className="font-bold text-[#2D0F42]">บันทึกเป็นแม่แบบหลักสูตร</h3>
+              <button onClick={() => setShowSaveTemplateModal(false)} className="text-[#9a92a8] hover:text-[#6b6478]">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-xs text-[#9a92a8]">
+                คัดลอกเกณฑ์คุณสมบัติ+วิชาทั้งหมด ({curriculum.courses.length} วิชา) ของหลักสูตรนี้ลงแม่แบบใหม่
+                — ปีถัดไปดึงแม่แบบมาสร้างหลักสูตรใหม่ได้โดยไม่ต้องแอดวิชาซ้ำ
+              </p>
+              {saveTemplateError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{saveTemplateError}</div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-[#4a4456] mb-1">ชื่อแม่แบบ</label>
+                <input type="text" value={saveTemplateName} autoFocus
+                  onChange={e => setSaveTemplateName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4A1A6B]" />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-[#e6e1ee] flex gap-3 justify-end">
+              <button onClick={() => setShowSaveTemplateModal(false)} className="px-4 py-2 text-sm text-[#6b6478] hover:text-[#2D0F42]">
+                ยกเลิก
+              </button>
+              <button onClick={handleSaveTemplate} disabled={savingTemplate}
+                className="bg-[#4A1A6B] hover:bg-[#2D0F42] text-white text-sm font-medium px-6 py-2 rounded-lg disabled:opacity-50">
+                {savingTemplate ? "กำลังบันทึก..." : "บันทึกเป็นแม่แบบ"}
               </button>
             </div>
           </div>

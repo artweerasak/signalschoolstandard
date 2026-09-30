@@ -293,6 +293,51 @@ export interface CurriculumDetail extends CurriculumSummary {
   courses: CurriculumCourseItem[]
 }
 
+// ── Curriculum Template (แม่แบบหลักสูตร) ───────────────────────────────────
+
+export interface CurriculumTemplateCourseItem {
+  id: number
+  course_id: string
+  display_name: string
+  sequence_order: number
+  credit_hours: string
+  credits: string
+  assessment_type: "score" | "pass_fail"
+  passing_score: string | null
+  is_required: boolean
+}
+
+export interface CurriculumTemplateSummary {
+  id: number
+  name: string
+  organization_id: number
+  organization_name: string | null
+  course_count: number
+  category: string
+  category_display: string | null
+  training_purpose: string
+  training_purpose_display: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface CurriculumTemplateDetail extends CurriculumTemplateSummary {
+  eligible_rank_class: string[]
+  eligible_rank_min: string
+  eligible_rank_min_display: string | null
+  eligible_rank_max: string
+  eligible_rank_max_display: string | null
+  eligible_min_years_in_rank: number | null
+  eligible_branch: string
+  eligible_branch_display: string | null
+  eligible_personnel_type: string[]
+  eligible_personnel_type_display: string[]
+  eligible_prerequisite_categories: PrerequisiteCategoryRequirement[]
+  eligible_prerequisite_categories_display: PrerequisiteCategoryRequirementDisplay[]
+  quota_total: number
+  courses: CurriculumTemplateCourseItem[]
+}
+
 // ── Quota/Demand Report + Cascade Enrollment (prep_personnel) ─────────────
 
 export interface SubmittedCurriculumItem {
@@ -1106,6 +1151,48 @@ export const api = {
   ),
   removeCurriculumCourse: (id: number, coursePk: number) =>
     fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/curricula/${id}/courses/${coursePk}/`, {}, "DELETE"),
+
+  // ── Curriculum Template (แม่แบบหลักสูตร) ────────────────────────────────
+  listTemplates: (params?: { org_id?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.org_id) qs.set("org_id", String(params.org_id))
+    return fetchAPI<{ count: number; results: CurriculumTemplateSummary[] }>(`api/v1/curriculum/templates/?${qs}`)
+  },
+  createTemplate: (body: {
+    name: string; organization_id?: number
+    eligible_rank_class?: string[]; eligible_rank_min?: string; eligible_rank_max?: string
+    eligible_min_years_in_rank?: number | null; eligible_branch?: string
+    eligible_personnel_type?: string[]; quota_total?: number
+    category?: string; training_purpose?: string
+    eligible_prerequisite_categories?: PrerequisiteCategoryRequirement[]
+  }) => fetchAPIPost<CurriculumTemplateDetail>("api/v1/curriculum/templates/", body),
+  getTemplate: (id: number) => fetchAPI<CurriculumTemplateDetail>(`api/v1/curriculum/templates/${id}/`),
+  updateTemplate: (id: number, body: Partial<{
+    name: string
+    eligible_rank_class: string[]; eligible_rank_min: string; eligible_rank_max: string
+    eligible_min_years_in_rank: number | null; eligible_branch: string
+    eligible_personnel_type: string[]; quota_total: number
+    category: string; training_purpose: string
+    eligible_prerequisite_categories: PrerequisiteCategoryRequirement[]
+  }>) => fetchAPIPost<CurriculumTemplateDetail>(`api/v1/curriculum/templates/${id}/`, body, "PATCH"),
+  deleteTemplate: (id: number) =>
+    fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/templates/${id}/`, {}, "DELETE"),
+  addTemplateCourse: (id: number, body: {
+    course_id: string; display_name: string; credit_hours: number; credits: number
+    assessment_type?: "score" | "pass_fail"; passing_score?: number
+    is_required?: boolean; sequence_order?: number
+  }) => fetchAPIPost<{ id: number; course_id: string; display_name: string }>(
+    `api/v1/curriculum/templates/${id}/courses/`, body
+  ),
+  removeTemplateCourse: (id: number, coursePk: number) =>
+    fetchAPIPost<{ deleted: boolean }>(`api/v1/curriculum/templates/${id}/courses/${coursePk}/`, {}, "DELETE"),
+  saveCurriculumAsTemplate: (curriculumId: number, name: string) =>
+    fetchAPIPost<CurriculumTemplateDetail>(`api/v1/curriculum/curricula/${curriculumId}/save-as-template/`, { name }),
+  createCurriculumFromTemplate: (templateId: number, body: {
+    name: string; batch_code: string; academic_year: number
+    start_date?: string | null; end_date?: string | null
+  }) => fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/templates/${templateId}/create-curriculum/`, body),
+
   submitCurriculum: (id: number) =>
     fetchAPIPost<CurriculumDetail>(`api/v1/curriculum/curricula/${id}/submit/`, {}),
   bulkSubmitCurricula: (ids: number[]) =>
