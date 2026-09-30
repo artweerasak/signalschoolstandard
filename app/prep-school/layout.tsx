@@ -7,6 +7,7 @@ import Crest from "@/components/Crest"
 
 const navItems = [
   { href: "/prep-school", label: "หลักสูตรของหน่วย", icon: "📚" },
+  { href: "/prep-school/templates", label: "แม่แบบหลักสูตร", icon: "🗂️" },
 ]
 
 const personalNavItems = [
