@@ -140,7 +140,7 @@ class TestEligibleDensityReport:
         assert row["needs_verification_count"] == 0
 
     def test_filters_by_personnel_type(self, db, org_a, prep_personnel_user, curriculum_factory):
-        c = curriculum_factory(eligible_personnel_type="civilian")
+        c = curriculum_factory(eligible_personnel_type=["civilian"])
 
         _make_user("t_military", "student", org_a, personnel_type="military")
         _make_user("t_civilian", "student", org_a, personnel_type="civilian")

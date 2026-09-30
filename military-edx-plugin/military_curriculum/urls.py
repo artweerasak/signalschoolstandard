@@ -13,6 +13,7 @@ from .curriculum_views import (
     api_curriculum_course_detail,
     api_curriculum_course_instructor,
     api_curriculum_submit,
+    api_curriculum_bulk_submit,
     api_school_curricula,
     api_school_curriculum_roster,
     api_my_legacy_curriculum_completions,
@@ -62,6 +63,7 @@ urlpatterns = [
     # หมายเหตุ: "submitted/" ต้องมาก่อน "<int:curriculum_id>/" ไม่งั้น Django
     # จะพยายาม match "submitted" เป็น int ก่อนแล้ว 404
     path("api/v1/curriculum/curricula/submitted/", api_curricula_submitted, name="api_curricula_submitted"),
+    path("api/v1/curriculum/curricula/bulk-submit/", api_curriculum_bulk_submit, name="api_curriculum_bulk_submit"),
     path("api/v1/curriculum/curricula/", api_curricula, name="api_curricula"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/", api_curriculum_detail, name="api_curriculum_detail"),
     path("api/v1/curriculum/curricula/<int:curriculum_id>/courses/", api_curriculum_courses, name="api_curriculum_courses"),

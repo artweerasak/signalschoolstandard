@@ -205,7 +205,7 @@ class TestEligibilityCriteria:
                 "name": "นายสิบชั้นต้น", "batch_code": "1", "academic_year": 2570,
                 "organization_id": organization.id,
                 "eligible_rank_min": "CPL", "eligible_rank_max": "CSGT",
-                "eligible_min_years_in_rank": 1, "eligible_personnel_type": "military",
+                "eligible_min_years_in_rank": 1, "eligible_personnel_type": ["military"],
             }),
             content_type="application/json",
         )
@@ -215,7 +215,7 @@ class TestEligibilityCriteria:
         assert body["eligible_rank_max"] == "CSGT"
         assert body["eligible_rank_min_display"] == "สิบตรี"
         assert body["eligible_min_years_in_rank"] == 1
-        assert body["eligible_personnel_type"] == "military"
+        assert body["eligible_personnel_type"] == ["military"]
 
     def test_create_rejects_invalid_rank_code(self, db, prep_school_user, organization):
         client = Client()
@@ -251,7 +251,7 @@ class TestEligibilityCriteria:
             "/military/api/v1/curriculum/curricula/",
             data=json.dumps({
                 "name": "x", "batch_code": "1", "academic_year": 2570,
-                "organization_id": organization.id, "eligible_personnel_type": "ไม่มีอยู่จริง",
+                "organization_id": organization.id, "eligible_personnel_type": ["ไม่มีอยู่จริง"],
             }),
             content_type="application/json",
         )

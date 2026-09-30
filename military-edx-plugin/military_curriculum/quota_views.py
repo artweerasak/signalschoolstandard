@@ -24,7 +24,8 @@ from military_profile.permissions import require_role, ROLE_ADMIN, ROLE_PREP_PER
 
 from .models import (
     Curriculum, CurriculumEnrollmentRequest, CurriculumOrgQuota, ranks_in_range,
-    CURRICULUM_CATEGORY_CHOICES, student_ids_completed_curriculum_category,
+    student_ids_completed_curriculum_category,
+    personnel_type_display, prerequisite_categories_display,
 )
 from .services.enrollment_service import (
     cascade_enroll_student,
@@ -196,7 +197,7 @@ def api_eligible_density_report(request):
     qs = MilitaryUserProfile.objects.exclude(role__in=("admin", "org_admin")).select_related("organization")
 
     if c.eligible_personnel_type:
-        qs = qs.filter(personnel_type=c.eligible_personnel_type)
+        qs = qs.filter(personnel_type__in=c.eligible_personnel_type)
 
     if c.eligible_rank_min or c.eligible_rank_max:
         qs = qs.filter(rank__in=ranks_in_range(c.eligible_rank_min, c.eligible_rank_max))
@@ -254,11 +255,9 @@ def api_eligible_density_report(request):
         "eligible_rank_max_display": c.get_eligible_rank_max_display() if c.eligible_rank_max else None,
         "eligible_min_years_in_rank": c.eligible_min_years_in_rank,
         "eligible_personnel_type": c.eligible_personnel_type,
-        "eligible_personnel_type_display": c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None,
+        "eligible_personnel_type_display": personnel_type_display(c.eligible_personnel_type),
         "eligible_prerequisite_categories": c.eligible_prerequisite_categories,
-        "eligible_prerequisite_categories_display": [
-            dict(CURRICULUM_CATEGORY_CHOICES).get(code, code) for code in c.eligible_prerequisite_categories
-        ],
+        "eligible_prerequisite_categories_display": prerequisite_categories_display(c.eligible_prerequisite_categories),
         "national": {
             "eligible_count": sum(r["eligible_count"] for r in rows),
             "needs_verification_count": sum(r["needs_verification_count"] for r in rows),
@@ -319,10 +318,8 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
             "has_eligibility_criteria": has_eligibility_criteria,
             "eligible_rank_min_display": c.get_eligible_rank_min_display() if c.eligible_rank_min else None,
             "eligible_rank_max_display": c.get_eligible_rank_max_display() if c.eligible_rank_max else None,
-            "eligible_personnel_type_display": c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None,
-            "eligible_prerequisite_categories_display": [
-                dict(CURRICULUM_CATEGORY_CHOICES).get(code, code) for code in c.eligible_prerequisite_categories
-            ],
+            "eligible_personnel_type_display": personnel_type_display(c.eligible_personnel_type),
+            "eligible_prerequisite_categories_display": prerequisite_categories_display(c.eligible_prerequisite_categories),
         })
 
     if request.method != "POST":
@@ -426,7 +423,7 @@ def api_curriculum_personnel_search(request):
             elig_curriculum = None
         if elig_curriculum:
             if elig_curriculum.eligible_personnel_type:
-                qs = qs.filter(personnel_type=elig_curriculum.eligible_personnel_type)
+                qs = qs.filter(personnel_type__in=elig_curriculum.eligible_personnel_type)
             if elig_curriculum.eligible_rank_min or elig_curriculum.eligible_rank_max:
                 qs = qs.filter(rank__in=ranks_in_range(
                     elig_curriculum.eligible_rank_min, elig_curriculum.eligible_rank_max,

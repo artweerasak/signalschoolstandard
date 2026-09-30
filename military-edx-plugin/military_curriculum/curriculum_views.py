@@ -22,7 +22,9 @@ from military_profile.models import PERSONNEL_TYPE_CHOICES
 
 from .models import (
     Curriculum, CurriculumCourse, CurriculumRegionQuota, RANK_ORDER,
-    CURRICULUM_CATEGORY_CHOICES, CURRICULUM_CATEGORY_CODES, LegacyCurriculumCompletion,
+    CURRICULUM_CATEGORY_CODES, LegacyCurriculumCompletion,
+    TRAINING_PURPOSE_CODES, ELIGIBLE_BRANCH_CODES,
+    personnel_type_display, prerequisite_categories_display,
 )
 from .permissions import require_school_curriculum_read, SIGNAL_SCHOOL_ORG_ID
 
@@ -102,17 +104,40 @@ def _clean_eligibility_fields(data: dict, existing: Curriculum | None = None) ->
             updates["eligible_min_years_in_rank"] = years
 
     if "eligible_personnel_type" in data:
-        v = (data["eligible_personnel_type"] or "").strip()
-        if v and v not in dict(PERSONNEL_TYPE_CHOICES):
-            return {}, "eligible_personnel_type ไม่ถูกต้อง"
-        updates["eligible_personnel_type"] = v
+        raw = data["eligible_personnel_type"]
+        if raw in (None, ""):
+            updates["eligible_personnel_type"] = []
+        elif isinstance(raw, list):
+            invalid = [v for v in raw if v not in dict(PERSONNEL_TYPE_CHOICES)]
+            if invalid:
+                return {}, f"eligible_personnel_type มีค่าไม่ถูกต้อง: {', '.join(invalid)}"
+            updates["eligible_personnel_type"] = list(dict.fromkeys(raw))  # de-dup, คง order
+        else:
+            return {}, "eligible_personnel_type ต้องเป็น list"
+
+    if "eligible_branch" in data:
+        v = (data["eligible_branch"] or "").strip()
+        if v and v not in ELIGIBLE_BRANCH_CODES:
+            return {}, "eligible_branch ไม่ถูกต้อง"
+        updates["eligible_branch"] = v
+
+    if "eligible_rank_class" in data:
+        raw = data["eligible_rank_class"]
+        if raw in (None, ""):
+            updates["eligible_rank_class"] = []
+        elif isinstance(raw, list):
+            items = [str(item).strip() for item in raw if str(item).strip()]
+            updates["eligible_rank_class"] = items
+        else:
+            return {}, "eligible_rank_class ต้องเป็น list"
 
     return updates, None
 
 
 def _clean_category_fields(data: dict, existing: Curriculum | None = None) -> tuple:
-    """เตรียม+ตรวจสอบ category (ประเภทหลักสูตรนี้เอง) และ
-    eligible_prerequisite_categories (ต้องผ่านหลักสูตรประเภทไหนมาก่อน) —
+    """เตรียม+ตรวจสอบ category (สำหรับจับคู่ prerequisite), training_purpose
+    (ประเภทหลักสูตรของแผนกเตรียมการ — คนละเรื่องกับ category) และ
+    eligible_prerequisite_categories (ต้องผ่านหลักสูตรประเภทไหนมาก่อน กี่ปี) —
     คืน (updates, error) แบบเดียวกับ _clean_eligibility_fields"""
     updates: dict = {}
 
@@ -122,15 +147,40 @@ def _clean_category_fields(data: dict, existing: Curriculum | None = None) -> tu
             return {}, "category ไม่ถูกต้อง"
         updates["category"] = v
 
+    if "training_purpose" in data:
+        v = (data["training_purpose"] or "").strip()
+        if v and v not in TRAINING_PURPOSE_CODES:
+            return {}, "training_purpose ไม่ถูกต้อง"
+        updates["training_purpose"] = v
+
     if "eligible_prerequisite_categories" in data:
         raw = data["eligible_prerequisite_categories"]
         if raw in (None, ""):
             updates["eligible_prerequisite_categories"] = []
         elif isinstance(raw, list):
-            invalid = [v for v in raw if v not in CURRICULUM_CATEGORY_CODES]
-            if invalid:
-                return {}, f"eligible_prerequisite_categories มีค่าไม่ถูกต้อง: {', '.join(invalid)}"
-            updates["eligible_prerequisite_categories"] = list(dict.fromkeys(raw))  # de-dup, คง order
+            cleaned = []
+            seen = set()
+            for item in raw:
+                if not isinstance(item, dict):
+                    return {}, "eligible_prerequisite_categories แต่ละรายการต้องเป็น object"
+                category = (item.get("category") or "").strip()
+                if category not in CURRICULUM_CATEGORY_CODES:
+                    return {}, f"eligible_prerequisite_categories มีค่าไม่ถูกต้อง: {category}"
+                min_years_since = item.get("min_years_since")
+                if min_years_since not in (None, ""):
+                    try:
+                        min_years_since = int(min_years_since)
+                    except (TypeError, ValueError):
+                        return {}, "min_years_since ต้องเป็นตัวเลข"
+                    if min_years_since < 0:
+                        return {}, "min_years_since ต้องไม่ติดลบ"
+                else:
+                    min_years_since = None
+                if category in seen:  # de-dup ตาม category, คง order
+                    continue
+                seen.add(category)
+                cleaned.append({"category": category, "min_years_since": min_years_since})
+            updates["eligible_prerequisite_categories"] = cleaned
         else:
             return {}, "eligible_prerequisite_categories ต้องเป็น list"
 
@@ -152,6 +202,8 @@ def _curriculum_summary(c: Curriculum) -> dict:
         "quota_total": c.quota_total,
         "category": c.category,
         "category_display": c.get_category_display() if c.category else None,
+        "training_purpose": c.training_purpose,
+        "training_purpose_display": c.get_training_purpose_display() if c.training_purpose else None,
         "course_count": c.courses.count(),
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
@@ -166,14 +218,14 @@ def _curriculum_detail(c: Curriculum) -> dict:
     data["eligible_rank_max"] = c.eligible_rank_max
     data["eligible_rank_max_display"] = c.get_eligible_rank_max_display() if c.eligible_rank_max else None
     data["eligible_min_years_in_rank"] = c.eligible_min_years_in_rank
+    data["eligible_branch"] = c.eligible_branch
+    data["eligible_branch_display"] = c.get_eligible_branch_display() if c.eligible_branch else None
     data["eligible_personnel_type"] = c.eligible_personnel_type
-    data["eligible_personnel_type_display"] = c.get_eligible_personnel_type_display() if c.eligible_personnel_type else None
+    data["eligible_personnel_type_display"] = personnel_type_display(c.eligible_personnel_type)
     data["category"] = c.category
     data["category_display"] = c.get_category_display() if c.category else None
     data["eligible_prerequisite_categories"] = c.eligible_prerequisite_categories
-    data["eligible_prerequisite_categories_display"] = [
-        dict(CURRICULUM_CATEGORY_CHOICES).get(code, code) for code in c.eligible_prerequisite_categories
-    ]
+    data["eligible_prerequisite_categories_display"] = prerequisite_categories_display(c.eligible_prerequisite_categories)
     data["region_quotas"] = [
         {"id": q.id, "army_region": q.army_region, "quota": q.quota}
         for q in c.region_quotas.all()
@@ -223,6 +275,13 @@ def api_curricula(request):
         status = request.GET.get("status")
         if status:
             qs = qs.filter(status=status)
+
+        academic_year_filter = request.GET.get("academic_year", "").strip()
+        if academic_year_filter:
+            try:
+                qs = qs.filter(academic_year=int(academic_year_filter))
+            except ValueError:
+                return JsonResponse({"error": "academic_year ต้องเป็นตัวเลข"}, status=400)
 
         results = [_curriculum_summary(c) for c in qs.select_related("organization").order_by("-academic_year", "name")]
         return JsonResponse({"results": results, "count": len(results)})
@@ -274,12 +333,14 @@ def api_curricula(request):
             start_date=dates.get("start_date"),
             end_date=dates.get("end_date"),
             organization_id=organization_id,
-            eligible_rank_class=(data.get("eligible_rank_class") or "").strip(),
+            eligible_rank_class=eligibility.get("eligible_rank_class", []),
             eligible_rank_min=eligibility.get("eligible_rank_min", ""),
             eligible_rank_max=eligibility.get("eligible_rank_max", ""),
             eligible_min_years_in_rank=eligibility.get("eligible_min_years_in_rank"),
-            eligible_personnel_type=eligibility.get("eligible_personnel_type", ""),
+            eligible_branch=eligibility.get("eligible_branch", ""),
+            eligible_personnel_type=eligibility.get("eligible_personnel_type", []),
             category=category_fields.get("category", ""),
+            training_purpose=category_fields.get("training_purpose", ""),
             eligible_prerequisite_categories=category_fields.get("eligible_prerequisite_categories", []),
             quota_total=data.get("quota_total") or 0,
             created_by=request.user,
@@ -356,8 +417,8 @@ def api_curriculum_detail(request, curriculum_id: int):
 
         RESTRICTED_FIELDS = (
             "eligible_rank_class", "eligible_rank_min", "eligible_rank_max",
-            "eligible_min_years_in_rank", "eligible_personnel_type",
-            "category", "eligible_prerequisite_categories", "quota_total",
+            "eligible_min_years_in_rank", "eligible_branch", "eligible_personnel_type",
+            "category", "training_purpose", "eligible_prerequisite_categories", "quota_total",
         )
         if c.status != "draft" and any(f in data for f in RESTRICTED_FIELDS):
             return JsonResponse(
@@ -378,8 +439,6 @@ def api_curriculum_detail(request, curriculum_id: int):
             setattr(c, k, v)
 
         if c.status == "draft":
-            if "eligible_rank_class" in data:
-                c.eligible_rank_class = (data["eligible_rank_class"] or "").strip()
             if "quota_total" in data:
                 c.quota_total = data["quota_total"] or 0
 
@@ -583,6 +642,47 @@ def api_curriculum_submit(request, curriculum_id: int):
     c.submitted_at = timezone.now()
     c.save(update_fields=["status", "submitted_at"])
     return JsonResponse(_curriculum_detail(c))
+
+
+@csrf_exempt
+@require_role([ROLE_PREP_SCHOOL, ROLE_ADMIN])
+def api_curriculum_bulk_submit(request):
+    """POST /military/api/v1/curriculum/curricula/bulk-submit/  → {"ids": [1,2,3]}
+    ส่งหลายหลักสูตรพร้อมกัน — เกณฑ์เดียวกับ api_curriculum_submit ทีละ id
+    (draft-only + ต้องมีอย่างน้อย 1 วิชา) แต่ล้มเหลวบาง id ไม่ทำให้ id อื่น
+    ที่ผ่านเกณฑ์ถูกยกเลิกไปด้วย (partial success) — คืนผลลัพธ์แยกราย id"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids:
+        return JsonResponse({"error": "ids ต้องเป็น list ที่ไม่ว่าง"}, status=400)
+
+    from django.utils import timezone
+
+    submitted, failed = [], []
+    for curriculum_id in ids:
+        c, err = _get_curriculum_scoped(request, curriculum_id)
+        if err:
+            failed.append({"id": curriculum_id, "error": "ไม่พบ หรือไม่มีสิทธิ์เข้าถึง"})
+            continue
+        if c.status != "draft":
+            failed.append({"id": curriculum_id, "error": "ส่งได้เฉพาะหลักสูตรสถานะร่างเท่านั้น"})
+            continue
+        if not c.courses.exists():
+            failed.append({"id": curriculum_id, "error": "ต้องมีอย่างน้อย 1 วิชาก่อนส่ง"})
+            continue
+        c.status = "submitted"
+        c.submitted_at = timezone.now()
+        c.save(update_fields=["status", "submitted_at"])
+        submitted.append(curriculum_id)
+
+    return JsonResponse({"submitted": submitted, "failed": failed})
 
 
 @require_school_curriculum_read

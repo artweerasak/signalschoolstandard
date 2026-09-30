@@ -607,7 +607,7 @@ class TestPersonnelSearch:
         c = Curriculum.objects.create(
             name="หลักสูตรกรองสิทธิ์", batch_code="1", academic_year=2570,
             organization=organization, created_by=prep_personnel_user,
-            eligible_rank_min="CPL", eligible_rank_max="SGT2", eligible_personnel_type="military",
+            eligible_rank_min="CPL", eligible_rank_max="SGT2", eligible_personnel_type=["military"],
         )
         _make_user("elig_in_range", "student", organization, rank="SGT2")
         _make_user("elig_below_range", "student", organization, rank="PVT")
