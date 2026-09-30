@@ -83,9 +83,13 @@ export default function EligibleDensityReportPage() {
       ? `ยศ ${report.eligible_rank_min_display || "ไม่จำกัด"} – ${report.eligible_rank_max_display || "ไม่จำกัด"}`
       : null,
     report.eligible_min_years_in_rank ? `ครองยศมาแล้วอย่างน้อย ${report.eligible_min_years_in_rank} ปี` : null,
-    report.eligible_personnel_type_display,
+    report.eligible_personnel_type_display.length > 0
+      ? report.eligible_personnel_type_display.join(", ")
+      : null,
     report.eligible_prerequisite_categories_display.length > 0
-      ? `ต้องผ่านมาก่อน: ${report.eligible_prerequisite_categories_display.join(", ")}`
+      ? `ต้องผ่านมาก่อน: ${report.eligible_prerequisite_categories_display.map(p =>
+          p.min_years_since ? `${p.category_display} (อย่างน้อย ${p.min_years_since} ปี)` : p.category_display
+        ).join(", ")}`
       : null,
   ].filter(Boolean).join(" · ") || "ไม่ได้กำหนดเกณฑ์คุณสมบัติไว้ (นับกำลังพลทุกคน)"
 
