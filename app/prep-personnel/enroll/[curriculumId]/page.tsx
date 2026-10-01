@@ -9,9 +9,17 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { api, EnrollDryRunResult, EnrollExecuteResult, PersonnelSearchRow, Organization } from "@/lib/api"
+import { api, EnrollDryRunResult, EnrollExecuteResult, EnrolledRosterRow, PersonnelSearchRow, Organization } from "@/lib/api"
 
 interface CatchUpResult { mode: "sync" | "async"; affected_count: number }
+
+const ROSTER_STATUS_TONES: Record<string, string> = {
+  completed: "bg-emerald-100 text-emerald-700",
+  partial_failed: "bg-amber-100 text-amber-700",
+  failed: "bg-red-100 text-red-600",
+  pending: "bg-gray-100 text-gray-600",
+  processing: "bg-gray-100 text-gray-600",
+}
 
 export default function EnrollPage() {
   const params = useParams()
@@ -22,6 +30,10 @@ export default function EnrollPage() {
   const [hasEligibilityCriteria, setHasEligibilityCriteria] = useState(false)
   const [eligibilityLabel, setEligibilityLabel] = useState("")
   const [eligibleOnly, setEligibleOnly] = useState(true)
+
+  const [roster, setRoster] = useState<EnrolledRosterRow[]>([])
+  const [rosterLoading, setRosterLoading] = useState(true)
+  const [showRoster, setShowRoster] = useState(false)
 
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [orgFilter, setOrgFilter] = useState("")
@@ -39,8 +51,17 @@ export default function EnrollPage() {
   const [catchUpResult, setCatchUpResult] = useState<CatchUpResult | null>(null)
   const [catchUpError, setCatchUpError] = useState("")
 
+  const loadRoster = () => {
+    setRosterLoading(true)
+    api.getEnrolledRoster(curriculumId)
+      .then(r => setRoster(r.results))
+      .catch(() => setRoster([]))
+      .finally(() => setRosterLoading(false))
+  }
+
   useEffect(() => {
     if (!curriculumId) return
+    loadRoster()
     api.getOrgQuotas(curriculumId)
       .then(r => {
         setNationalQuota(r.national_quota)
@@ -113,6 +134,7 @@ export default function EnrollPage() {
   }
 
   const studentIds = Array.from(selected.keys())
+  const enrolledIds = new Set(roster.map(r => r.student_id))
 
   const handleCatchUp = async () => {
     if (!confirm("ยืนยัน \"ตามให้ครบ\"? ระบบจะลงทะเบียนกำลังพลที่บรรจุไปแล้วเข้าวิชาที่เพิ่งเพิ่มใหม่ (วิชาเดิมจะไม่ถูกแตะต้องซ้ำ)")) return
@@ -122,6 +144,7 @@ export default function EnrollPage() {
     try {
       const r = await api.catchUpEnrollment(curriculumId)
       setCatchUpResult(r)
+      loadRoster()
     } catch (err) {
       setCatchUpError(err instanceof Error ? err.message : "ดำเนินการไม่สำเร็จ")
     } finally {
@@ -157,6 +180,7 @@ export default function EnrollPage() {
       api.getOrgQuotas(curriculumId)
         .then(qr => { setNationalQuota(qr.national_quota); setAlreadyEnrolled(qr.national_requested) })
         .catch(() => {})
+      loadRoster()
     } catch (err) {
       setError(err instanceof Error ? err.message : "บรรจุไม่สำเร็จ")
     } finally {
@@ -193,6 +217,39 @@ export default function EnrollPage() {
           className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50">
           {catchingUp ? "กำลังดำเนินการ..." : "🔄 ตามให้ครบ"}
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="font-semibold text-[#2D0F42]">
+            กำลังพลที่บรรจุไปแล้ว {!rosterLoading && `(${roster.length} คน)`}
+          </h2>
+          {roster.length > 0 && (
+            <button type="button" onClick={() => setShowRoster(s => !s)}
+              className="text-xs font-medium text-[#4A1A6B] hover:underline">
+              {showRoster ? "ซ่อนรายชื่อ" : "ดูรายชื่อ"}
+            </button>
+          )}
+        </div>
+        {rosterLoading ? (
+          <p className="text-sm text-[#9a92a8]">กำลังโหลด...</p>
+        ) : roster.length === 0 ? (
+          <p className="text-sm text-[#9a92a8]">ยังไม่มีใครถูกบรรจุเข้าหลักสูตรนี้</p>
+        ) : showRoster ? (
+          <div className="border border-gray-200 rounded-lg divide-y max-h-80 overflow-y-auto">
+            {roster.map(r => (
+              <div key={r.student_id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#2D0F42] truncate">{r.full_name}</p>
+                  <p className="text-xs text-[#9a92a8] truncate">{r.organization_name || r.unit}</p>
+                </div>
+                <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${ROSTER_STATUS_TONES[r.status] || "bg-gray-100 text-gray-600"}`}>
+                  {r.status_display}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
@@ -258,7 +315,12 @@ export default function EnrollPage() {
                       className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 flex items-center justify-between gap-2
                         ${selected.has(p.id) ? "bg-purple-50" : "hover:bg-[#f7f5fa]"}`}>
                       <div className="min-w-0">
-                        <p className="font-medium text-[#2D0F42] truncate">{p.full_name}</p>
+                        <p className="font-medium text-[#2D0F42] truncate">
+                          {p.full_name}
+                          {enrolledIds.has(p.id) && (
+                            <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 align-middle">บรรจุแล้ว</span>
+                          )}
+                        </p>
                         <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
                       </div>
                       {selected.has(p.id) && <span className="text-[#4A1A6B] shrink-0">✓ เลือกแล้ว</span>}
@@ -275,7 +337,12 @@ export default function EnrollPage() {
             {Array.from(selected.values()).map(p => (
               <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-[#2D0F42] truncate">{p.full_name}</p>
+                  <p className="text-sm font-medium text-[#2D0F42] truncate">
+                    {p.full_name}
+                    {enrolledIds.has(p.id) && (
+                      <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 align-middle">บรรจุแล้ว</span>
+                    )}
+                  </p>
                   <p className="text-xs text-[#9a92a8] truncate">{p.organization_name || p.unit}</p>
                 </div>
                 <button onClick={() => removeSelected(p.id)} className="text-xs text-red-500 hover:underline shrink-0">ลบ</button>
