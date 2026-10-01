@@ -437,6 +437,17 @@ export interface PersonnelSearchResponse {
   results: PersonnelSearchRow[]
 }
 
+export interface EnrolledRosterRow {
+  student_id: number
+  full_name: string
+  rank_display: string
+  unit: string
+  organization_name: string | null
+  status: "pending" | "processing" | "completed" | "partial_failed" | "failed"
+  status_display: string
+  created_at: string | null
+}
+
 export interface EnrollCoursePreview {
   course_id: string
   would_enroll: boolean
@@ -1216,6 +1227,10 @@ export const api = {
   },
   getOrgQuotas: (curriculumId: number) =>
     fetchAPI<OrgQuotaReport>(`api/v1/curriculum/curricula/${curriculumId}/org-quotas/`),
+  getEnrolledRoster: (curriculumId: number) =>
+    fetchAPI<{ curriculum_id: number; curriculum_name: string; results: EnrolledRosterRow[]; count: number }>(
+      `api/v1/curriculum/curricula/${curriculumId}/enrolled-roster/`
+    ),
   setOrgQuota: (curriculumId: number, organizationId: number, quota: number) =>
     fetchAPIPost<{ organization_id: number; organization_name: string; quota: number }>(
       `api/v1/curriculum/curricula/${curriculumId}/org-quotas/`, { organization_id: organizationId, quota }
