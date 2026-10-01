@@ -545,6 +545,75 @@ class TestOrgQuotas:
         assert resp.status_code == 403
 
 
+class TestEnrolledRoster:
+    """รายชื่อกำลังพลที่มีคำขอบรรจุแล้วในหลักสูตร — ให้ prep_personnel เห็นว่า
+    ใครถูกแอดไปแล้วบ้างก่อนจะเพิ่มคนใหม่ ดู
+    military_curriculum/quota_views.py:api_curriculum_enrolled_roster"""
+
+    def test_lists_all_statuses_newest_first(self, db, prep_personnel_user, active_curriculum, organization):
+        s1 = _make_user("roster_student1", "student", organization)
+        s2 = _make_user("roster_student2", "student", organization)
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=s1, requested_by=prep_personnel_user,
+            status="completed",
+        )
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=s2, requested_by=prep_personnel_user,
+            status="failed",
+        )
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enrolled-roster/")
+        assert resp.status_code == 200, resp.content
+        body = resp.json()
+        assert body["count"] == 2
+        ids = {r["student_id"] for r in body["results"]}
+        assert ids == {s1.id, s2.id}
+        statuses = {r["student_id"]: r["status"] for r in body["results"]}
+        assert statuses[s1.id] == "completed"
+        assert statuses[s2.id] == "failed"
+
+    def test_includes_name_unit_org(self, db, prep_personnel_user, active_curriculum, organization):
+        student = _make_user("roster_detail_student", "student", organization)
+        CurriculumEnrollmentRequest.objects.create(
+            curriculum=active_curriculum, student=student, requested_by=prep_personnel_user,
+            status="completed",
+        )
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enrolled-roster/")
+        row = resp.json()["results"][0]
+        assert row["full_name"]
+        assert row["organization_name"] == organization.name
+        assert row["status_display"] == "สำเร็จ"
+
+    def test_empty_when_no_requests(self, db, prep_personnel_user, active_curriculum):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enrolled-roster/")
+        assert resp.json()["count"] == 0
+
+    def test_student_forbidden(self, db, active_curriculum, organization):
+        student = _make_user("roster_forbidden", "student", organization)
+        client = Client()
+        client.force_login(student)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enrolled-roster/")
+        assert resp.status_code == 403
+
+    def test_prep_school_forbidden(self, db, active_curriculum, organization):
+        prep_school = _make_user("roster_prep_school", "prep_school", organization)
+        client = Client()
+        client.force_login(prep_school)
+        resp = client.get(f"/military/api/v1/curriculum/curricula/{active_curriculum.id}/enrolled-roster/")
+        assert resp.status_code == 403
+
+    def test_not_found_for_unknown_curriculum(self, db, prep_personnel_user):
+        client = Client()
+        client.force_login(prep_personnel_user)
+        resp = client.get("/military/api/v1/curriculum/curricula/999999/enrolled-roster/")
+        assert resp.status_code == 404
+
+
 class TestPersonnelSearch:
     """ค้นหากำลังพลข้ามหน่วยสำหรับ prep_personnel เลือกคนมาบรรจุ — ดู
     military_curriculum/quota_views.py:api_curriculum_personnel_search"""
