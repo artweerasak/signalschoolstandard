@@ -1692,6 +1692,7 @@ def api_courses_catalog(request):
     from common.djangoapps.student.models import CourseEnrollment, CourseAccessRole
     from opaque_keys.edx.keys import CourseKey
     from .models import CourseAccessPolicy
+    from military_curriculum.models import CurriculumCourse
 
     search = request.GET.get('search_term', '')
     page = int(request.GET.get('page', 1))
@@ -1708,6 +1709,11 @@ def api_courses_catalog(request):
     if search:
         qs = qs.filter(display_name__icontains=search)
 
+    enrolled_ids = set(
+        str(e.course_id)
+        for e in CourseEnrollment.objects.filter(user=request.user, is_active=True)
+    )
+
     # ซ่อนหลักสูตร conditional ที่ระดับบุคลากรของผู้ใช้มองไม่เห็น (admin เห็นทุกหลักสูตร)
     if not is_priv:
         hidden = []
@@ -1722,6 +1728,22 @@ def api_courses_catalog(request):
         if hidden:
             qs = qs.exclude(id__in=hidden)
 
+        # ซ่อนหลักสูตรที่ผูกกับหลักสูตรประจำปี/รุ่น (military_curriculum.Curriculum)
+        # ออกจากคลังแบบเปิด — วิชาเหล่านี้ต้องผ่านการอนุมัติ/บรรจุโดยเตรียมพล
+        # (cascade enrollment) เท่านั้น ห้ามให้ใครก็ได้ค้นหาแล้วกด "ลงทะเบียน"
+        # เองข้ามขั้นตอนอนุมัติ — ยกเว้นคนที่ถูกบรรจุแล้วจริง (enrolled อยู่แล้ว)
+        # ยังต้องเห็นเพื่อกด "เข้าเรียน" ได้ตามปกติ (ดู enrolled_ids ด้านบน)
+        curriculum_course_ids = set(CurriculumCourse.objects.values_list('course_id', flat=True).distinct())
+        hide_curriculum = []
+        for cid in curriculum_course_ids:
+            if cid not in enrolled_ids:
+                try:
+                    hide_curriculum.append(CourseKey.from_string(cid))
+                except Exception:
+                    pass
+        if hide_curriculum:
+            qs = qs.exclude(id__in=hide_curriculum)
+
     total = qs.count()
     offset = (page - 1) * page_size
     courses = qs[offset:offset + page_size]
@@ -1734,11 +1756,6 @@ def api_courses_catalog(request):
             if p and p.course_type == 'conditional':
                 prereq_needed.update(p.prereq_list)
     passed_ids = _passed_course_ids(request.user, prereq_needed)
-
-    enrolled_ids = set(
-        str(e.course_id)
-        for e in CourseEnrollment.objects.filter(user=request.user, is_active=True)
-    )
 
     # หลักสูตรที่ user เป็น staff/instructor (สำหรับเปิดโหมดนักเรียน)
     if is_priv:
@@ -1836,6 +1853,16 @@ def api_enroll_course(request):
 
         # บังคับนโยบายหลักสูตรตามเงื่อนไข (admin ข้ามได้)
         if not (request.user.is_staff or request.user.is_superuser):
+            # วิชาที่ผูกกับหลักสูตรประจำปี/รุ่น (military_curriculum.Curriculum)
+            # ห้ามสมัครเองเด็ดขาด ต้องผ่านการอนุมัติ/บรรจุโดยเตรียมพลเท่านั้น
+            # (cascade enrollment) — กันไว้สองชั้นนอกจาก api_courses_catalog
+            # ที่ซ่อนปุ่ม "ลงทะเบียน" ไปแล้ว เผื่อมีคนยิง API ตรงๆ ข้าม UI
+            from military_curriculum.models import CurriculumCourse
+            if CurriculumCourse.objects.filter(course_id=course_id).exists():
+                return JsonResponse({
+                    "error": "หลักสูตรนี้ต้องผ่านการอนุมัติและบรรจุโดยแผนกเตรียมพลเท่านั้น ไม่สามารถลงทะเบียนเองได้"
+                }, status=403)
+
             from .models import CourseAccessPolicy
             try:
                 policy = CourseAccessPolicy.objects.get(course_id=course_id)
