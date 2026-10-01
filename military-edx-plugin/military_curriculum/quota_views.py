@@ -352,6 +352,54 @@ def api_curriculum_org_quotas(request, curriculum_id: int):
     return JsonResponse({"organization_id": org.id, "organization_name": org.name, "quota": oq.quota})
 
 
+@require_role([ROLE_PREP_PERSONNEL, ROLE_ADMIN])
+def api_curriculum_enrolled_roster(request, curriculum_id: int):
+    """
+    GET /military/api/v1/curriculum/curricula/{id}/enrolled-roster/
+
+    รายชื่อกำลังพลที่มีคำขอบรรจุ (CurriculumEnrollmentRequest) ในหลักสูตรนี้
+    แล้วทั้งหมด (ทุกสถานะ รวม pending/failed ด้วย ไม่ใช่แค่ completed) — แก้
+    ปัญหา prep_personnel เห็นแค่ "บรรจุไปแล้ว N คน" (ตัวเลขรวมจาก
+    api_curriculum_org_quotas) แต่ไม่เห็นรายชื่อจริงว่าใครบ้าง ทำให้ตอนจะ
+    เพิ่มคนใหม่ไม่รู้ว่าใครถูกแอดไปแล้ว ต้องเดา/จำเอง — endpoint นี้ให้ frontend
+    เอาไปทำ badge "บรรจุแล้ว" ในผลค้นหา + แสดงรายชื่อแบบ expand ได้ในหน้า enroll
+
+    เรียงจากคำขอล่าสุดก่อน (ใหม่สุดอยู่บนสุด) เพราะเจ้าหน้าที่มักอยากเห็นว่า
+    เพิ่งแอดใครไปบ้างในรอบล่าสุด
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        c = Curriculum.objects.get(pk=curriculum_id)
+    except Curriculum.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    requests = (
+        c.enrollment_requests
+        .select_related("student__military_profile", "student__military_profile__organization")
+        .order_by("-created_at")
+    )
+    results = []
+    for req in requests:
+        profile = getattr(req.student, "military_profile", None)
+        results.append({
+            "student_id": req.student_id,
+            "full_name": profile.display_full_name if profile else req.student.username,
+            "rank_display": profile.get_rank_display() if profile else "",
+            "unit": profile.unit if profile else "",
+            "organization_name": profile.organization.name if profile and profile.organization_id else None,
+            "status": req.status,
+            "status_display": req.get_status_display(),
+            "created_at": req.created_at.isoformat() if req.created_at else None,
+        })
+
+    return JsonResponse({
+        "curriculum_id": c.id, "curriculum_name": c.name,
+        "results": results, "count": len(results),
+    })
+
+
 @require_role([ROLE_PREP_PERSONNEL, ROLE_PREP_SCHOOL, ROLE_INSTRUCTOR, ROLE_ADMIN])
 def api_curriculum_personnel_search(request):
     """
